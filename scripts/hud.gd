@@ -38,13 +38,13 @@ func _ready() -> void:
 	root = Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.theme = _make_theme()
+	root.theme = make_theme()
 	add_child(root)
 	_build_top()
 	_build_bottom()
 	_build_side()
 	tip = Label.new()
-	tip.add_theme_stylebox_override("normal", _panel_style(Color(0.08, 0.1, 0.14, 0.85), 6))
+	tip.add_theme_stylebox_override("normal", panel_style(Color(0.08, 0.1, 0.14, 0.85), 6))
 	tip.visible = false
 	tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(tip)
@@ -53,17 +53,27 @@ func _ready() -> void:
 	toast.position = Vector2(-200, 90)
 	toast.size = Vector2(400, 40)
 	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	toast.add_theme_stylebox_override("normal", _panel_style(Color(0.6, 0.15, 0.12, 0.92), 10))
+	toast.add_theme_stylebox_override("normal", panel_style(Color(0.6, 0.15, 0.12, 0.92), 10))
 	toast.visible = false
 	root.add_child(toast)
+	no_keyboard_focus(root)
 
 
-func _make_theme() -> Theme:
+static func no_keyboard_focus(n: Node) -> void:
+	## A clicked button would otherwise keep the keyboard: Tab then only moves focus to the
+	## next button and Space presses it again, so neither reaches the game.
+	if n is Control:
+		(n as Control).focus_mode = Control.FOCUS_NONE
+	for c in n.get_children():
+		no_keyboard_focus(c)
+
+
+static func make_theme() -> Theme:
 	var t := Theme.new()
 	t.default_font_size = 17
-	var btn := _panel_style(Color(0.16, 0.19, 0.25, 0.92), 10)
-	var hov := _panel_style(Color(0.24, 0.28, 0.36, 0.95), 10)
-	var prs := _panel_style(Color(0.3, 0.55, 0.95, 1.0), 10)
+	var btn := panel_style(Color(0.16, 0.19, 0.25, 0.92), 10)
+	var hov := panel_style(Color(0.24, 0.28, 0.36, 0.95), 10)
+	var prs := panel_style(Color(0.3, 0.55, 0.95, 1.0), 10)
 	t.set_stylebox("normal", "Button", btn)
 	t.set_stylebox("hover", "Button", hov)
 	t.set_stylebox("pressed", "Button", prs)
@@ -73,11 +83,11 @@ func _make_theme() -> Theme:
 	t.set_color("font_pressed_color", "Button", Color.WHITE)
 	t.set_color("font_hover_pressed_color", "Button", Color.WHITE)
 	t.set_color("font_color", "Label", Color(0.93, 0.95, 0.98))
-	t.set_stylebox("panel", "PanelContainer", _panel_style(Color(0.07, 0.09, 0.13, 0.82), 14))
+	t.set_stylebox("panel", "PanelContainer", panel_style(Color(0.07, 0.09, 0.13, 0.82), 14))
 	return t
 
 
-func _panel_style(c: Color, radius: int) -> StyleBoxFlat:
+static func panel_style(c: Color, radius: int) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = c
 	s.set_corner_radius_all(radius)
@@ -190,9 +200,9 @@ func _build_side() -> void:
 		bar.min_value = -1.0
 		bar.max_value = 1.0
 		bar.step = 0.01
-		var fill := _panel_style(TOOL_COLORS[i + 2], 4)
+		var fill := panel_style(TOOL_COLORS[i + 2], 4)
 		bar.add_theme_stylebox_override("fill", fill)
-		bar.add_theme_stylebox_override("background", _panel_style(Color(0.2, 0.22, 0.28, 0.8), 4))
+		bar.add_theme_stylebox_override("background", panel_style(Color(0.2, 0.22, 0.28, 0.8), 4))
 		col.add_child(bar)
 		var l := Label.new()
 		l.text = ["R", "C", "I"][i]
@@ -239,7 +249,7 @@ func _build_side() -> void:
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD
 	v.add_child(info)
 	var help := Label.new()
-	help.text = "Tab  dive to the street and back\nWASD pan · Q/E or right-drag rotate\nwheel zoom · middle-drag grab\nSpace pause · N skip 1 hour\nF11 fullscreen · Esc cancel"
+	help.text = "Tab  dive to the street and back\nWASD pan · Q/E or right-drag rotate\nwheel zoom · middle-drag grab\nSpace pause · N skip 1 hour\nF11 full screen · Esc menu"
 	help.add_theme_font_size_override("font_size", 12)
 	help.add_theme_color_override("font_color", Color(0.55, 0.6, 0.7))
 	v.add_child(help)
@@ -279,6 +289,12 @@ func show_start() -> void:
 	b.custom_minimum_size = Vector2(0, 52)
 	b.pressed.connect(func(): _close_start(true))
 	v.add_child(b)
+	var q := Button.new()
+	q.text = "Quit"
+	q.custom_minimum_size = Vector2(0, 40)
+	q.pressed.connect(func(): get_tree().quit())
+	v.add_child(q)
+	no_keyboard_focus(start_panel)
 
 
 func _close_start(demo: bool) -> void:

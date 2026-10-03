@@ -22,6 +22,7 @@ var cam: MayorCamera
 var hud: Hud
 var life: CityLife  # traffic and pedestrians (citylife/), created when a game starts
 var street: StreetMode  # street-level player (player/), created when a game starts
+var menu: GameMenu  # Esc menu and the corner key hint; keeps running while the game is paused
 
 var tool := Tool.INSPECT
 var overlay := 0
@@ -78,6 +79,8 @@ func _ready() -> void:
 	hud.quality_selected.connect(_set_quality)
 	hud.start_chosen.connect(_start)
 	cam.moved.connect(day_night.set_view_distance)
+	menu = GameMenu.new()
+	add_child(menu)
 
 	quality = int(_args.get("quality", "1"))
 	_set_quality(quality)
@@ -124,6 +127,7 @@ func _start(demo: bool) -> void:
 	street.setup(city)
 	street.street_entered.connect(_on_street_entered)
 	street.street_exited.connect(_on_street_exited)
+	street.vehicle_changed.connect(func(_car): _update_hint())
 	started = true
 	if _args.has("screenshot"):
 		_set_speed(0)
@@ -137,6 +141,7 @@ func _start(demo: bool) -> void:
 		_toggle_perf()
 	if _args.has("street"):
 		go_street.call_deferred()
+	_update_hint()
 
 
 func _shoot(path: String) -> void:
@@ -207,6 +212,7 @@ func go_street() -> void:
 	cam.set_process_unhandled_input(false)
 	street.enter_street(cam, cam.focus)
 	life.set_camera(street.camera)
+	_update_hint()
 
 
 func go_mayor() -> void:
@@ -215,12 +221,14 @@ func go_mayor() -> void:
 	# Frame the mayor view on where the player ended up, looking the same way.
 	cam.set_view(street.focus_point(), 140.0, street.view_yaw())
 	street.exit_street(cam.global_transform, cam.fov)
+	_update_hint()
 
 
 func _on_street_entered() -> void:
 	day_night.set_view_distance(30.0)
 	day_night.exposure_scale = 1.25
 	day_night.ambient_scale = 1.4
+	_update_hint()
 
 
 func _on_street_exited() -> void:
@@ -233,6 +241,18 @@ func _on_street_exited() -> void:
 	life.set_camera(cam)
 	hud.visible = true
 	_set_speed(_speed_before_street)
+	_update_hint()
+
+
+func _update_hint() -> void:
+	## The corner key hint follows where the player is; it hides during the zooms.
+	var kind := &""
+	if started and not _args.has("nohud"):
+		if street.active:
+			kind = &"car" if street.car else &"foot"
+		elif not street.busy:
+			kind = &"mayor"
+	menu.show_hint(kind)
 
 
 # ---------------------------------------------------------------- settings ---
@@ -267,21 +287,43 @@ func _set_quality(q: int) -> void:
 
 # ------------------------------------------------------------------- input ---
 
-func _unhandled_input(e: InputEvent) -> void:
-	if street and not _dragging and e.is_action_pressed("street_toggle_view"):
+func _input(e: InputEvent) -> void:
+	## Keys that must always reach the game, read before the HUD gets them: a clicked HUD
+	## button used to keep the keyboard and swallow Tab. F11 and Alt+Enter live in GameMenu.
+	var key := _pressed_key(e)
+	var alt := e is InputEventWithModifiers and (e as InputEventWithModifiers).alt_pressed
+	if street and not _dragging and not alt and e.is_action_pressed("street_toggle_view"):
+		get_viewport().set_input_as_handled()
 		if street.active:
 			go_mayor()
 		else:
 			go_street()
+	elif key == KEY_ESCAPE:
 		get_viewport().set_input_as_handled()
-		return
+		# Esc first drops whatever is in hand (a drag, then the build tool), then opens the menu.
+		if _dragging:
+			_dragging = false
+			_update_preview()
+		elif tool != Tool.INSPECT:
+			_set_tool(Tool.INSPECT)
+		else:
+			menu.open()
+	elif GameMenu.is_start_button(e):
+		get_viewport().set_input_as_handled()
+		menu.open()
+	elif key == KEY_F3:
+		get_viewport().set_input_as_handled()
+		_toggle_perf()
+
+
+static func _pressed_key(e: InputEvent) -> Key:
+	var k := e as InputEventKey
+	return k.keycode if k and k.pressed and not k.echo else KEY_NONE
+
+
+func _unhandled_input(e: InputEvent) -> void:
 	if in_street():
-		# The street has its own controls; only fullscreen stays shared.
-		if e is InputEventKey and e.pressed and not e.echo and (e as InputEventKey).keycode == KEY_F11:
-			_toggle_fullscreen()
-		elif e is InputEventKey and e.pressed and not e.echo and (e as InputEventKey).keycode == KEY_F3:
-			_toggle_perf()
-		return
+		return  # the street has its own controls
 	if e is InputEventKey and e.pressed and not e.echo:
 		var k := (e as InputEventKey).keycode
 		if k >= KEY_1 and k <= KEY_6:
@@ -290,16 +332,6 @@ func _unhandled_input(e: InputEvent) -> void:
 			_set_speed(1 if speed_index == 0 else 0)
 		elif k == KEY_N and started:
 			city.advance(10.0, 1.0)
-		elif k == KEY_F11:
-			_toggle_fullscreen()
-		elif k == KEY_F3:
-			_toggle_perf()
-		elif k == KEY_ESCAPE:
-			if _dragging:
-				_dragging = false
-				_update_preview()
-			else:
-				_set_tool(Tool.INSPECT)
 		elif k == KEY_O:
 			_set_overlay((overlay + 1) % 4)
 		elif k == KEY_COMMA:
@@ -333,11 +365,6 @@ func _unhandled_input(e: InputEvent) -> void:
 			_hover = cc
 			_update_preview()
 		_update_tip((e as InputEventMouseMotion).position)
-
-
-func _toggle_fullscreen() -> void:
-	var w := get_window()
-	w.mode = Window.MODE_WINDOWED if w.mode == Window.MODE_FULLSCREEN else Window.MODE_FULLSCREEN
 
 
 func _cell_at(screen: Vector2) -> Variant:
