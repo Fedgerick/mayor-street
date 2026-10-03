@@ -188,12 +188,12 @@ def block_with_windows(m, x0, y0, x1, y1, z0, floors, fh, wall, win_w=1.3, win_h
         if all_skip:
             base = sk
             sk = (lambda f, c, b=base, nm=name, cs=cols: (b and b(f, c)) or all_skip(nm, f, c, cs))
-        facade(m, (ox, oy, z0), u, w, z0, floors, fh, win_w, win_h, sill, cols, wall,
+        facade(m, (ox, oy, 0.0), u, w, z0, floors, fh, win_w, win_h, sill, cols, wall,
                glass=glass, skip=sk, mullion=mullion, lintel=lintel, depth=depth)
 
 
 def flat_roof(m, x0, y0, x1, y1, z, parapet=0.6, rim="Trim", roof="Roof", t=0.3):
-    m.box(x0, y0, z - 0.01, x1, y1, z, roof, top=roof)
+    m.box(x0, y0, z, x1, y1, z + 0.03, roof, top=roof)  # sits above any cornice top (no z-fighting)
     m.box(x0 - 0.15, y0 - 0.15, z - 0.25, x1 + 0.15, y0 + t, z + parapet, rim)
     m.box(x0 - 0.15, y1 - t, z - 0.25, x1 + 0.15, y1 + 0.15, z + parapet, rim)
     m.box(x0 - 0.15, y0 + t, z - 0.25, x0 + t, y1 - t, z + parapet, rim)
