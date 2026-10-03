@@ -24,6 +24,7 @@ SimCity meets GTA, built in Godot 4.5 (Forward+). Design doc: `../design/core-lo
 | Time | Space pause, `,` `.` slower/faster (1x, 3x, 10x), N skips an hour |
 | Graphics | Low / Med / High buttons on the left (start on Med for a Ryzen 5700U) |
 | F11 | Toggle fullscreen |
+| Music | M toggles music on and off |
 
 ## Street level
 

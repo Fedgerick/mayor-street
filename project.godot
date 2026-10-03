@@ -15,6 +15,7 @@ boot_splash/show_image=false
 [autoload]
 
 Kit="*res://scripts/kit.gd"
+Audio="*res://audio/audio_director.gd"
 
 [display]
 
@@ -90,4 +91,8 @@ grid_alpha={
 tile_size={
 "type": "float",
 "value": 12.0
+}
+gfx_quality={
+"type": "int",
+"value": 1
 }
