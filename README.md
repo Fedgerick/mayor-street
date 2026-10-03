@@ -4,7 +4,12 @@ SimCity meets GTA, built in Godot 4.5 (Forward+). Design doc: `../design/core-lo
 
 ## Play it
 
-**Windows, no install:** download `builds/MayorStreet-sandbox-windows.zip` from the project files, unzip, double-click `MayorStreet.exe`.
+**Windows installer:** download `builds/MayorStreet-Setup.exe` from the project files and run it. It installs for
+your account only (no admin rights) into `%LOCALAPPDATA%\Programs\MayorStreet`, adds a Mayor Street icon to the
+desktop and Start menu, and can be removed from Apps & features. It isn't code-signed, so Windows SmartScreen
+warns the first time: click More info, then Run anyway.
+
+**Windows, no install:** download `builds/MayorStreet-sandbox-windows.zip`, unzip, double-click `MayorStreet.exe`.
 
 **From source (any OS):**
 1. Install Godot 4.5.1 (standard build, not .NET) from https://godotengine.org/download.
@@ -58,6 +63,9 @@ can merge into 2x2 skyscrapers.
 - `tools/blender/build_kit.py` generates `assets/kit/**.glb` (`pip install bpy`, then `python3 tools/blender/build_kit.py`,
   then `python3 art/tools/build_extra.py` for the art thread's pieces). Glass gets per-pane UVs for the window interiors;
   panes under 1.06 m tall or 0.2 m wide (balcony rails, glass edges) draw as frosted glass instead
+- `tools/icon/make_icon.py` draws `assets/icon/` (game, exe and shortcut icon) and the installer's side panel
+- `tools/installer/` builds the installer from an exported exe: `bash tools/installer/build.sh MayorStreet.exe [out_dir]`
+  (needs NSIS: `apt-get install nsis`). Test it on Linux with 64-bit Wine: `wine64 MayorStreet-Setup.exe /S`
 - `player/`, `citylife/`, `art/` are owned by their own threads
 
 ## Checks

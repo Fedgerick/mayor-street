@@ -9,6 +9,9 @@ config/name="Mayor Street: City Sandbox"
 config/description="SimCity meets GTA. Thread 2: the city sandbox."
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
+config/version="0.3.0"
+config/icon="res://assets/icon/icon.png"
+config/windows_native_icon="res://assets/icon/icon.ico"
 boot_splash/bg_color=Color(0.07, 0.08, 0.1, 1)
 boot_splash/show_image=false
 
