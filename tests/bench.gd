@@ -1,7 +1,7 @@
 extends SceneTree
 ## Frame-cost benchmark of the full main scene (sim + renderer bookkeeping + city life).
 ##   godot --headless --path . --script res://tests/bench.gd -- --demo [--hour=12]
-## Prints average and worst script time per frame at a few camera heights.
+## Prints average and worst script time per frame at a few camera heights, then on foot.
 
 const VIEWS := [["mayor wide", 700.0], ["mayor mid", 260.0], ["close", 70.0], ["street", 25.0]]
 
@@ -32,4 +32,23 @@ func _run(main: Node3D) -> void:
 			worst = maxf(worst, ms)
 		print("%-11s process avg %.2f ms, worst %.2f ms, cars %d, people %d" % [
 			v[0], total / n, worst, main.life.traffic.cars.size(), main.life.crowd.peds.size()])
+	# On foot downtown, with the full crowd and its rigged characters around the player.
+	main.cam.set_view(Vector3(562, 0, 612), 80.0, 0.0)
+	main.go_street()
+	await main.street.street_entered
+	for i in 90:
+		await process_frame
+	var total := 0.0
+	var worst := 0.0
+	var phys := 0.0
+	var n := 240
+	for i in n:
+		await process_frame
+		var ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		total += ms
+		worst = maxf(worst, ms)
+		phys += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	print("%-11s process avg %.2f ms, worst %.2f ms, physics avg %.2f ms, cars %d, people %d, rigged %s" % [
+		"on foot", total / n, worst, phys / n, main.life.traffic.cars.size(), main.life.crowd.peds.size(),
+		str(main.life.crowd.get("_hero_count"))])
 	quit()
