@@ -1,0 +1,561 @@
+{
+ "_about": "Special buildings from art/tools/build_specials.py. size is in 12 m tiles (0 = prop). door is in Godot local coords of the model (x right, z toward the street, the model's front faces +Z), yaw_deg the way you face walking in.",
+ "specials": [
+  {
+   "id": "coal_plant",
+   "name": "Coal Power Plant",
+   "size": 2,
+   "tier": 0,
+   "tags": [
+    "power",
+    "industry"
+   ],
+   "model": "res://assets/kit/specials/coal_plant.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 3766
+  },
+  {
+   "id": "power_pylon",
+   "name": "Power Line Pylon",
+   "size": 0,
+   "tier": 0,
+   "tags": [
+    "power"
+   ],
+   "model": "res://assets/kit/props/power_pylon.glb",
+   "interior": null,
+   "door": null,
+   "folder": "props",
+   "tris": 734
+  },
+  {
+   "id": "substation",
+   "name": "Substation",
+   "size": 1,
+   "tier": 0,
+   "tags": [
+    "power",
+    "spawned"
+   ],
+   "model": "res://assets/kit/specials/substation.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 2426
+  },
+  {
+   "id": "garbage_depot",
+   "name": "Garbage Depot",
+   "size": 1,
+   "tier": 0,
+   "tags": [
+    "sanitation"
+   ],
+   "model": "res://assets/kit/specials/garbage_depot.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 1728
+  },
+  {
+   "id": "landfill",
+   "name": "Landfill",
+   "size": 2,
+   "tier": 0,
+   "tags": [
+    "sanitation"
+   ],
+   "model": "res://assets/kit/specials/landfill.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 2602
+  },
+  {
+   "id": "police_station",
+   "name": "Police Station",
+   "size": 1,
+   "tier": 0,
+   "tags": [
+    "police",
+    "service"
+   ],
+   "model": "res://assets/kit/specials/police_station.glb",
+   "interior": "police",
+   "door": {
+    "x": 0.0,
+    "z": 5.8,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 1712
+  },
+  {
+   "id": "fire_station",
+   "name": "Fire Station",
+   "size": 1,
+   "tier": 0,
+   "tags": [
+    "fire",
+    "service"
+   ],
+   "model": "res://assets/kit/specials/fire_station.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 1774
+  },
+  {
+   "id": "gas_station",
+   "name": "Gas 'n' Go",
+   "size": 1,
+   "tier": 1,
+   "tags": [
+    "shop",
+    "gas",
+    "robbable"
+   ],
+   "model": "res://assets/kit/specials/gas_station.glb",
+   "interior": "shop",
+   "door": {
+    "x": 0.0,
+    "z": -1.5,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 1768
+  },
+  {
+   "id": "pawn_shop",
+   "name": "Lucky Pawn",
+   "size": 1,
+   "tier": 1,
+   "tags": [
+    "shop",
+    "pawn",
+    "fence",
+    "robbable"
+   ],
+   "model": "res://assets/kit/specials/pawn_shop.glb",
+   "interior": "shop",
+   "door": {
+    "x": 1.6,
+    "z": 3.0,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 1786
+  },
+  {
+   "id": "diner",
+   "name": "Starlite Diner",
+   "size": 1,
+   "tier": 1,
+   "tags": [
+    "shop",
+    "food",
+    "robbable"
+   ],
+   "model": "res://assets/kit/specials/diner.glb",
+   "interior": "shop",
+   "door": {
+    "x": -0.3,
+    "z": 2.9,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 1250
+  },
+  {
+   "id": "payphone",
+   "name": "Payphone",
+   "size": 0,
+   "tier": 1,
+   "tags": [
+    "payphone",
+    "mission_giver"
+   ],
+   "model": "res://assets/kit/props/payphone.glb",
+   "interior": null,
+   "door": null,
+   "folder": "props",
+   "tris": 70
+  },
+  {
+   "id": "armored_truck",
+   "name": "Armored Truck",
+   "size": 0,
+   "tier": 2,
+   "tags": [
+    "vehicle",
+    "spawned",
+    "robbable"
+   ],
+   "model": "res://assets/kit/props/armored_truck.glb",
+   "interior": null,
+   "door": null,
+   "folder": "props",
+   "tris": 120
+  },
+  {
+   "id": "bank",
+   "name": "Second National Bank",
+   "size": 1,
+   "tier": 2,
+   "tags": [
+    "bank",
+    "robbable",
+    "landmark"
+   ],
+   "model": "res://assets/kit/specials/bank.glb",
+   "interior": "bank",
+   "door": {
+    "x": 0.0,
+    "z": 4.2,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 2292
+  },
+  {
+   "id": "nightclub",
+   "name": "Club Voltage",
+   "size": 1,
+   "tier": 2,
+   "tags": [
+    "nightlife",
+    "club",
+    "gang"
+   ],
+   "model": "res://assets/kit/specials/nightclub.glb",
+   "interior": "nightclub",
+   "door": {
+    "x": 0.0,
+    "z": 3.4,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 1568
+  },
+  {
+   "id": "chop_shop",
+   "name": "Eddie's Auto Body",
+   "size": 1,
+   "tier": 2,
+   "tags": [
+    "garage",
+    "chop_shop",
+    "gang"
+   ],
+   "model": "res://assets/kit/specials/chop_shop.glb",
+   "interior": null,
+   "door": {
+    "x": -2.6,
+    "z": 2.0,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 1822
+  },
+  {
+   "id": "plaza",
+   "name": "Civic Plaza",
+   "size": 1,
+   "tier": 2,
+   "tags": [
+    "park",
+    "meeting_point"
+   ],
+   "model": "res://assets/kit/specials/plaza.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 2516
+  },
+  {
+   "id": "bunker",
+   "name": "The Bunker",
+   "size": 1,
+   "tier": 3,
+   "tags": [
+    "hideout",
+    "bunker",
+    "safehouse"
+   ],
+   "model": "res://assets/kit/specials/bunker.glb",
+   "interior": "bunker",
+   "door": {
+    "x": -2.4,
+    "z": 2.9,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 1418
+  },
+  {
+   "id": "police_hq",
+   "name": "Police Headquarters",
+   "size": 2,
+   "tier": 3,
+   "tags": [
+    "police",
+    "service",
+    "police_hq"
+   ],
+   "model": "res://assets/kit/specials/police_hq.glb",
+   "interior": "police",
+   "door": {
+    "x": 0.0,
+    "z": 8.6,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 4696
+  },
+  {
+   "id": "gas_plant",
+   "name": "Gas Power Plant",
+   "size": 1,
+   "tier": 3,
+   "tags": [
+    "power",
+    "industry"
+   ],
+   "model": "res://assets/kit/specials/gas_plant.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 1964
+  },
+  {
+   "id": "recycling_center",
+   "name": "Recycling Center",
+   "size": 1,
+   "tier": 3,
+   "tags": [
+    "sanitation"
+   ],
+   "model": "res://assets/kit/specials/recycling_center.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 1084
+  },
+  {
+   "id": "sports_field",
+   "name": "Municipal Sports Field",
+   "size": 2,
+   "tier": 3,
+   "tags": [
+    "park",
+    "sports",
+    "meeting_point"
+   ],
+   "model": "res://assets/kit/specials/sports_field.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 1302
+  },
+  {
+   "id": "hospital",
+   "name": "General Hospital",
+   "size": 2,
+   "tier": 3,
+   "tags": [
+    "hospital",
+    "service"
+   ],
+   "model": "res://assets/kit/civic/hospital.glb",
+   "interior": null,
+   "door": null,
+   "folder": "civic",
+   "tris": 4100
+  },
+  {
+   "id": "casino",
+   "name": "The Golden Ace Casino",
+   "size": 2,
+   "tier": 4,
+   "tags": [
+    "casino",
+    "robbable",
+    "nightlife",
+    "landmark"
+   ],
+   "model": "res://assets/kit/specials/casino.glb",
+   "interior": null,
+   "door": {
+    "x": 0.0,
+    "z": 7.6,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 4020
+  },
+  {
+   "id": "stadium",
+   "name": "City Stadium",
+   "size": 3,
+   "tier": 4,
+   "tags": [
+    "stadium",
+    "sports",
+    "landmark",
+    "meeting_point"
+   ],
+   "model": "res://assets/kit/specials/stadium.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 1574
+  },
+  {
+   "id": "city_park",
+   "name": "Central Park",
+   "size": 2,
+   "tier": 4,
+   "tags": [
+    "park",
+    "landmark",
+    "meeting_point"
+   ],
+   "model": "res://assets/kit/specials/city_park.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 3628
+  },
+  {
+   "id": "solar_farm",
+   "name": "Solar Farm",
+   "size": 2,
+   "tier": 4,
+   "tags": [
+    "power"
+   ],
+   "model": "res://assets/kit/specials/solar_farm.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 1182
+  },
+  {
+   "id": "wind_turbine",
+   "name": "Wind Turbine",
+   "size": 1,
+   "tier": 4,
+   "tags": [
+    "power"
+   ],
+   "model": "res://assets/kit/specials/wind_turbine.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 98
+  },
+  {
+   "id": "wind_turbine_rotor",
+   "name": "Wind Turbine Rotor",
+   "size": 0,
+   "tier": 4,
+   "tags": [
+    "power"
+   ],
+   "model": "res://assets/kit/props/wind_turbine_rotor.glb",
+   "interior": null,
+   "door": null,
+   "folder": "props",
+   "tris": 86
+  },
+  {
+   "id": "airfield",
+   "name": "Municipal Airfield",
+   "size": 3,
+   "tier": 4,
+   "tags": [
+    "airfield",
+    "escape",
+    "landmark"
+   ],
+   "model": "res://assets/kit/specials/airfield.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 1958
+  },
+  {
+   "id": "radio_tower",
+   "name": "KMAY Radio Tower",
+   "size": 1,
+   "tier": 4,
+   "tags": [
+    "radio",
+    "landmark"
+   ],
+   "model": "res://assets/kit/specials/radio_tower.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 2056
+  },
+  {
+   "id": "federal_reserve",
+   "name": "Federal Reserve",
+   "size": 2,
+   "tier": 5,
+   "tags": [
+    "bank",
+    "robbable",
+    "landmark",
+    "vault"
+   ],
+   "model": "res://assets/kit/specials/federal_reserve.glb",
+   "interior": "bank",
+   "door": {
+    "x": 0.0,
+    "z": 8.2,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 3793
+  },
+  {
+   "id": "mansion",
+   "name": "Mansion on the Hill",
+   "size": 2,
+   "tier": 5,
+   "tags": [
+    "home",
+    "mansion",
+    "luxury"
+   ],
+   "model": "res://assets/kit/specials/mansion.glb",
+   "interior": null,
+   "door": {
+    "x": 0.0,
+    "z": 2.2,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 3359
+  },
+  {
+   "id": "landmark_tower",
+   "name": "Mayor's Tower",
+   "size": 2,
+   "tier": 5,
+   "tags": [
+    "landmark",
+    "office"
+   ],
+   "model": "res://assets/kit/specials/landmark_tower.glb",
+   "interior": null,
+   "door": null,
+   "folder": "specials",
+   "tris": 8046
+  }
+ ]
+}
