@@ -110,7 +110,28 @@ func _initialize() -> void:
 	var day_cars := life.want_cars
 	city.minutes = float(city.game_day()) * 1440.0 + 3.0 * 60.0
 	life._update_area()
-	check(life.want_cars < day_cars * 0.5, "3am has fewer cars (%d vs %d)" % [life.want_cars, day_cars])
+	check(life.want_cars < day_cars * 0.25, "3am has far fewer cars (%d vs %d)" % [life.want_cars, day_cars])
+	# Growing the city updates density incrementally and matches a full rebuild.
+	var before := life.car_weight.duplicate()
+	var t_add := Time.get_ticks_usec()
+	city.simulate_hours(24)
+	var grow_ms := (Time.get_ticks_usec() - t_add) / 1000.0
+	var inc := life.car_weight.duplicate()
+	var t_full := Time.get_ticks_usec()
+	life.compute_weights()
+	var full_ms := (Time.get_ticks_usec() - t_full) / 1000.0
+	var diff := 0.0
+	for i in inc.size():
+		diff = maxf(diff, absf(inc[i] - life.car_weight[i]))
+	check(diff < 0.001, "incremental density matches a full rebuild (max diff %.4f)" % diff)
+	var t_one := Time.get_ticks_usec()
+	for id in city.buildings:
+		life._remove_building(id)
+		life._add_building(id)
+	var per_us := float(Time.get_ticks_usec() - t_one) / maxf(city.buildings.size(), 1)
+	print("  per building change: %.0f us" % per_us)
+	check(per_us < 200.0, "a building change costs well under a millisecond")
+	print("  full density rebuild %.1f ms; a day of growth incl. sim %.1f ms" % [full_ms, grow_ms])
 
 	# --- editing roads ----------------------------------------------------------
 	var c0 := city.center_cell()

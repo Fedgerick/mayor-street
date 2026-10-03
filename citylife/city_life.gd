@@ -8,7 +8,7 @@ extends Node3D
 ## level, the whole island from the mayor view, where people are dropped entirely and
 ## cars lose their shadows.
 
-@export var max_cars := 220
+@export var max_cars := 260
 @export var max_peds := 360
 @export var density := 1.0          # global multiplier, e.g. from a graphics setting
 @export var auto_step := true       # false in tests, which call step() themselves
@@ -70,9 +70,9 @@ func setup(c: City, cam: Camera3D = null) -> void:
 	traffic.camera = cam
 	crowd.camera = cam
 	city.cells_changed.connect(func(_r): _roads_dirty = true)
-	city.building_added.connect(func(_id, _a): _weights_dirty = true)
-	city.building_removed.connect(func(_id): _weights_dirty = true)
-	city.day_passed.connect(func(): _weights_dirty = true)
+	city.building_added.connect(func(id, _a): _add_building(id))
+	city.building_removed.connect(_remove_building)
+	city.day_passed.connect(_refresh_road_weights)
 	compute_weights()
 	_update_view()
 	_update_area()
@@ -90,8 +90,6 @@ func _process(delta: float) -> void:
 		step(minf(delta, 0.1))
 
 
-var _weights_dirty := false
-var _weights_timer := 0.0
 
 
 func step(dt: float) -> void:
@@ -102,13 +100,7 @@ func step(dt: float) -> void:
 		traffic.validate()
 		crowd.validate()
 		signals.rebuild()
-		_weights_dirty = true
-	_weights_timer -= dt
-	if _weights_dirty and _weights_timer <= 0.0:
-		# Buildings change constantly while the city grows; refresh a few times a minute.
-		_weights_dirty = false
-		_weights_timer = 4.0
-		compute_weights()
+		compute_weights()  # building contributions only land on road cells
 		_area_timer = 0.0
 	_update_view()
 	_area_timer -= dt
@@ -133,36 +125,90 @@ func step(dt: float) -> void:
 # ---------------------------------------------------------------- density ---
 
 ## How busy each road cell is, from the buildings along it and the sim's traffic.
+## Weights are kept incrementally: each building adds its share to the road cells near
+## it when it appears and takes it back when it goes, so a growing city costs a few
+## microseconds per building instead of a full rescan. Full rebuilds only follow road edits.
+var _contrib := {}             # building id -> [cells, car shares, ped shares]
+var _road_car := PackedFloat32Array()
+var _road_ped := PackedFloat32Array()
+
+
 func compute_weights() -> void:
 	var n := City.SIZE * City.SIZE
 	car_weight.resize(n)
 	ped_weight.resize(n)
 	car_weight.fill(0.0)
 	ped_weight.fill(0.0)
-	for b in city.buildings.values():
-		var cap := float(city.capacity(b))
-		var pw: float = sqrt(cap) * ZONE_PEDS[b.zone] * 0.12
-		var cw: float = sqrt(cap) * ZONE_CARS[b.zone] * 0.05
-		# Spread over road cells within two tiles of the lot.
-		for dy in range(-2, b.size + 2):
-			for dx in range(-2, b.size + 2):
-				var x: int = b.x + dx
-				var y: int = b.y + dy
-				if not city.inside(x, y):
-					continue
-				var i := city.idx(x, y)
-				if city.road[i] != 1:
-					continue
-				var near: bool = dx >= -1 and dy >= -1 and dx <= b.size and dy <= b.size
-				var f := 1.0 if near else 0.4
-				ped_weight[i] += pw * f
-				car_weight[i] += cw * f
-	for i in n:
-		if city.road[i] == 1:
-			car_weight[i] += 0.05 + minf(city.traffic[i], 2.5) * 0.45
-			ped_weight[i] += 0.03
+	_road_car.resize(n)
+	_road_ped.resize(n)
+	_road_car.fill(0.0)
+	_road_ped.fill(0.0)
+	_contrib.clear()
+	for id in city.buildings:
+		_add_building(id)
+	_refresh_road_weights()
 	traffic.weight = car_weight
 	crowd.weight = ped_weight
+
+
+func _add_building(id: int) -> void:
+	if not city.buildings.has(id) or _contrib.has(id):
+		return
+	var b: Dictionary = city.buildings[id]
+	var cap := float(city.capacity(b))
+	var pw: float = sqrt(cap) * ZONE_PEDS[b.zone] * 0.12
+	var cw: float = sqrt(cap) * ZONE_CARS[b.zone] * 0.05
+	var cells := PackedInt32Array()
+	var fs := PackedFloat32Array()
+	var size: int = b.size
+	var bx: int = b.x
+	var by: int = b.y
+	# Spread over road cells within two tiles of the lot.
+	for dy in range(-2, size + 2):
+		var y := by + dy
+		if y < 0 or y >= City.SIZE:
+			continue
+		for dx in range(-2, size + 2):
+			var x := bx + dx
+			if x < 0 or x >= City.SIZE:
+				continue
+			var i := y * City.SIZE + x
+			if city.road[i] != 1:
+				continue
+			var near := dx >= -1 and dy >= -1 and dx <= size and dy <= size
+			var f := 1.0 if near else 0.4
+			cells.append(i)
+			fs.append(f)
+			car_weight[i] += cw * f
+			ped_weight[i] += pw * f
+	_contrib[id] = [cells, fs, cw, pw]
+
+
+func _remove_building(id: int) -> void:
+	if not _contrib.has(id):
+		return
+	var c: Array = _contrib[id]
+	var cells: PackedInt32Array = c[0]
+	var fs: PackedFloat32Array = c[1]
+	for k in cells.size():
+		var i := cells[k]
+		car_weight[i] = maxf(car_weight[i] - c[2] * fs[k], 0.0)
+		ped_weight[i] = maxf(ped_weight[i] - c[3] * fs[k], 0.0)
+	_contrib.erase(id)
+
+
+## The per-road part: a base level plus the sim's commuter flow (changes once a day).
+func _refresh_road_weights() -> void:
+	for i in city.road.size():
+		var rc := 0.0
+		var rp := 0.0
+		if city.road[i] == 1:
+			rc = 0.05 + minf(city.traffic[i], 2.5) * 0.45
+			rp = 0.03
+		car_weight[i] += rc - _road_car[i]
+		ped_weight[i] += rp - _road_ped[i]
+		_road_car[i] = rc
+		_road_ped[i] = rp
 
 
 func hour_factor(table: Array) -> float:
@@ -189,7 +235,7 @@ func _update_view() -> void:
 		focus = o + Vector3(d.x, 0, d.z).normalized() * 120.0
 	focus.y = 0.0
 	# Street level: the block around you. Higher up: wider, until the whole island.
-	car_radius = clampf(cam_height * 2.2 + 170.0, 200.0, size)
+	car_radius = clampf(cam_height * 2.6 + 110.0, 150.0, size)
 	ped_radius = 150.0 if cam_height < PED_HEIGHT else 0.0
 	if cam_height < 40.0:
 		# Close to the ground the focus is far ahead; centre on the camera instead.
@@ -217,8 +263,9 @@ func _update_area() -> void:
 			pt += ped_weight[i]
 			_ped_cells.append(i)
 			_ped_cum.append(pt)
-	want_cars = mini(int(ct * hour_factor(CAR_HOURS) * density * 0.55), max_cars)
-	want_peds = mini(int(pt * hour_factor(PED_HOURS) * density * 1.4), max_peds)
+	# Cap the city's demand first, then apply the hour, so a big city is still quiet at 3am.
+	want_cars = int(minf(ct * density * 0.55, max_cars) * hour_factor(CAR_HOURS))
+	want_peds = int(minf(pt * density * 1.4, max_peds) * hour_factor(PED_HOURS))
 	if ped_radius <= 0.0:
 		want_peds = 0
 
