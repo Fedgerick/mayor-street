@@ -119,6 +119,7 @@ func step(dt: float) -> void:
 	signals.visible = cam_height < 260.0
 	traffic.render()
 	if crowd.visible:
+		crowd.update_heroes(dt)
 		crowd.render()
 
 

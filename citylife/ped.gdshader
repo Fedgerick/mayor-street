@@ -1,23 +1,17 @@
 // Pedestrians: one MultiMesh of PersonMesh. Walk cycle in the vertex shader.
 // INSTANCE_CUSTOM: x = walk phase (radians), y = stride (0 standing, 1 walking),
-// z = shirt + pants * 8, w = skin + hair * 8 (palette indices).
+// z = shirt + pants * 8, w = skin + hair * 8 + shoes * 64 (palette indices).
 shader_type spatial;
 render_mode depth_draw_opaque, cull_back;
 
 #include "res://shaders/common.gdshaderinc"
 
-const vec3 SHIRTS[8] = vec3[8](
-	vec3(0.85, 0.2, 0.18), vec3(0.15, 0.45, 0.75), vec3(0.95, 0.93, 0.88), vec3(0.2, 0.55, 0.35),
-	vec3(0.95, 0.7, 0.15), vec3(0.45, 0.25, 0.6), vec3(0.12, 0.13, 0.15), vec3(0.95, 0.5, 0.55));
-const vec3 PANTS[6] = vec3[6](
-	vec3(0.15, 0.2, 0.35), vec3(0.1, 0.1, 0.12), vec3(0.55, 0.47, 0.35), vec3(0.3, 0.32, 0.35),
-	vec3(0.25, 0.35, 0.55), vec3(0.4, 0.25, 0.18));
-const vec3 SKINS[5] = vec3[5](
-	vec3(0.98, 0.8, 0.66), vec3(0.88, 0.66, 0.5), vec3(0.7, 0.48, 0.33), vec3(0.5, 0.33, 0.22),
-	vec3(0.35, 0.22, 0.15));
-const vec3 HAIRS[5] = vec3[5](
-	vec3(0.08, 0.06, 0.05), vec3(0.3, 0.18, 0.1), vec3(0.75, 0.6, 0.35), vec3(0.55, 0.25, 0.12),
-	vec3(0.6, 0.6, 0.6));
+// Palettes come from CharacterModel (set by Crowd), so cheap and full models match.
+uniform vec3 shirts[8];
+uniform vec3 pants[5];
+uniform vec3 skins[5];
+uniform vec3 hairs[5];
+uniform vec3 shoes[4];
 
 varying vec3 alb;
 varying vec3 wpos;
@@ -56,12 +50,13 @@ void vertex() {
 	VERTEX = v;
 	NORMAL = n;
 
-	vec3 shirt = SHIRTS[look % 8];
-	vec3 pants = PANTS[(look / 8) % 6];
-	vec3 skin = SKINS[look2 % 5];
-	vec3 hair = HAIRS[(look2 / 8) % 5];
+	vec3 shirt = shirts[look % 8];
+	vec3 pant = pants[(look / 8) % 5];
+	vec3 skin = skins[look2 % 8 % 5];
+	vec3 hair = hairs[(look2 / 8) % 8 % 5];
+	vec3 shoe = shoes[(look2 / 64) % 4];
 	if (part <= 1) {
-		alb = VERTEX.y < 0.075 ? vec3(0.1, 0.09, 0.09) : pants;
+		alb = VERTEX.y < 0.075 ? shoe : pant;
 	} else if (part == 2) {
 		alb = shirt;
 	} else if (part <= 4) {

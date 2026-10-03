@@ -26,7 +26,7 @@ func _initialize() -> void:
 	main.add_child(cam)
 	var c := city.center_cell()
 	var p: Vector3 = city.cell_center(c.x + 6, c.y + 3)
-	var v := [p.x + 5.3, 1.7, p.z + 30.0, 8.0, -3.0]
+	var v := [p.x + 3.2, 2.6, p.z + 22.0, 8.0, -9.0]
 	if args.has("cam"):
 		v = Array(args["cam"].split(",")).map(func(s): return float(s))
 	cam.position = Vector3(v[0], v[1], v[2])

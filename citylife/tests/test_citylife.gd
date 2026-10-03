@@ -163,6 +163,25 @@ func _initialize() -> void:
 	for f in 90:
 		life.step(dt)
 	check(life.crowd.peds.size() > 10, "people around you at street level (%d)" % life.crowd.peds.size())
+	var hs := Time.get_ticks_usec()
+	for f in 60:
+		life.step(dt)
+	var street_ms := (Time.get_ticks_usec() - hs) / 60000.0
+	var heroes := life.crowd.hero_count()
+	print("  street level: %d full models, %.2f ms per step" % [heroes, street_ms])
+	if CharacterModel.available():
+		check(heroes > 0 and heroes <= Crowd.HERO_MAX, "nearest people use the full character (%d)" % heroes)
+		var far_hero := 0
+		for p in life.crowd.peds:
+			if p.hero != null and p.pos.distance_to(cam.global_position) > Crowd.HERO_KEEP:
+				far_hero += 1
+		check(far_hero == 0, "full characters only near the camera")
+		var keep := cam.global_position
+		cam.global_position = Vector3(480, 700, 900)
+		life.step(dt)
+		check(life.crowd.hero_count() == 0, "full characters released from the mayor view")
+		cam.global_position = keep
+		life.step(dt)
 	check(life.traffic.shadows, "car shadows at street level")
 
 	print("citylife: %s" % ("PASS" if failures == 0 else "%d FAILED" % failures))

@@ -19,6 +19,8 @@ class Ped:
 	var side := 0.0       # lateral offset, + is to the walker's right
 	var look := 0         # palette indices packed for the shader
 	var look2 := 0
+	var outfit := 0       # CharacterModel seed; `look` matches its colours
+	var hero: CharacterModel  # full rigged model while close to the camera
 	var size := 1.0
 	var crossing := false
 	var pos := Vector3.ZERO
@@ -49,7 +51,13 @@ func setup(road_net: RoadNet, seed_value := 11) -> void:
 	mm.mesh = PersonMesh.build()
 	var mat := ShaderMaterial.new()
 	mat.shader = PED_SHADER
+	mat.set_shader_parameter("shirts", _palette(CharacterModel.SHIRT))
+	mat.set_shader_parameter("pants", _palette(CharacterModel.PANTS))
+	mat.set_shader_parameter("skins", _palette(CharacterModel.SKIN))
+	mat.set_shader_parameter("hairs", _palette(CharacterModel.HAIR))
+	mat.set_shader_parameter("shoes", _palette(CharacterModel.SHOES))
 	mm.mesh.surface_set_material(0, mat)
+	_heroes_on = CharacterModel.available()
 	mm.instance_count = max_peds
 	mm.visible_instance_count = 0
 	_mmi = MultiMeshInstance3D.new()
@@ -79,14 +87,36 @@ func spawn_at(cell: int) -> Ped:
 	p.size = rng.randf_range(0.9, 1.08)
 	p.side = rng.randf_range(0.0, 0.3)
 	p.phase = rng.randf() * TAU
-	p.look = rng.randi() % 8 + (rng.randi() % 6) * 8
-	p.look2 = rng.randi() % 5 + (rng.randi() % 5) * 8
+	_set_outfit(p, rng.randi() % 100000)
 	_place(p)
 	peds.append(p)
 	return p
 
 
+## Pick the same colours CharacterModel._dress() would for this seed, so a person
+## keeps their clothes when they switch between the cheap and the full model.
+func _set_outfit(p: Ped, outfit: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = outfit
+	var skin := r.randi() % CharacterModel.SKIN.size()
+	var shirt := r.randi() % CharacterModel.SHIRT.size()
+	var pants := r.randi() % CharacterModel.PANTS.size()
+	var hair := r.randi() % CharacterModel.HAIR.size()
+	var shoes := r.randi() % CharacterModel.SHOES.size()
+	p.outfit = outfit
+	p.look = shirt + pants * 8
+	p.look2 = skin + hair * 8 + shoes * 64
+
+
+static func _palette(cols: Array) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for c in cols:
+		out.append(Vector3(c.r, c.g, c.b))
+	return out
+
+
 func remove(p: Ped) -> void:
+	_release_hero(p)
 	_leave_crossing(p)
 	peds.erase(p)
 
@@ -201,6 +231,8 @@ func render() -> void:
 	for p in peds:
 		if n >= max_peds:
 			break
+		if p.hero != null:
+			continue
 		var back := -p.fwd * p.size
 		var right := Vector3(back.z, 0, -back.x)
 		var o := n * 16
@@ -216,3 +248,90 @@ func render() -> void:
 	_mmi.multimesh.buffer = _buf
 	_mmi.multimesh.visible_instance_count = n
 	_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+# ---------------------------------------------------------------- close-up ---
+# The people nearest the camera swap to the full rigged CharacterModel (about 7.7k
+# triangles, 17 bones). A small pool is reused; everyone else stays a MultiMesh instance.
+
+const HERO_MAX := 24
+const HERO_RADIUS := 28.0
+const HERO_KEEP := 34.0        # hysteresis so people don't flicker at the edge
+const HERO_SPAWNS_PER_FRAME := 2
+
+var _heroes_on := false
+var _pool: Array[CharacterModel] = []   # idle models
+var _hero_count := 0
+
+
+func update_heroes(dt: float) -> void:
+	if not _heroes_on or camera == null or not camera.is_inside_tree():
+		for p in peds:
+			_release_hero(p)
+		return
+	var eye := camera.global_position
+	var close := eye.y < 40.0
+	# Let go of anyone who walked away (or when the camera went up).
+	for p in peds:
+		if p.hero != null and (not close or p.pos.distance_to(eye) > HERO_KEEP):
+			_release_hero(p)
+	if close:
+		var cand: Array = []
+		for p in peds:
+			if p.hero == null:
+				var d := p.pos.distance_squared_to(eye)
+				if d < HERO_RADIUS * HERO_RADIUS:
+					cand.append([d, p])
+		cand.sort_custom(func(a, b): return a[0] < b[0])
+		var made := 0
+		for c in cand:
+			if _hero_count >= HERO_MAX:
+				break
+			if _pool.is_empty():
+				if made >= HERO_SPAWNS_PER_FRAME:
+					break  # spread model creation over frames
+				made += 1
+			_take_hero(c[1])
+	for p in peds:
+		if p.hero == null:
+			continue
+		var m: CharacterModel = p.hero
+		m.global_position = p.pos
+		m.global_basis = Basis.looking_at(p.fwd, Vector3.UP).scaled(Vector3.ONE * p.size)
+		var moving := p.pause <= 0.0 and (p.arm < 0 or p.crossing)
+		m.animate(dt, CharacterModel.WALK_SPEED if moving else 0.0, true, 0.0, 0.0)
+		if moving:
+			# The walk clip is authored at 3.6 m/s; play it slower to match a stroll.
+			m.tree.set("parameters/pace/scale", clampf(p.speed / CharacterModel.WALK_SPEED * 1.7, 0.5, 1.0))
+
+
+func _take_hero(p: Ped) -> void:
+	var m: CharacterModel
+	if _pool.is_empty():
+		m = CharacterModel.new()
+		m.seed_value = p.outfit
+		add_child(m)
+	else:
+		m = _pool.pop_back()
+		m.visible = true
+		if m.seed_value != p.outfit:
+			m.seed_value = p.outfit
+			m._dress()
+		m.tree.active = true
+	p.hero = m
+	_hero_count += 1
+
+
+func _release_hero(p: Ped) -> void:
+	if p.hero == null:
+		return
+	var m: CharacterModel = p.hero
+	m.visible = false
+	m.tree.active = false
+	_pool.append(m)
+	p.hero = null
+	_hero_count -= 1
+
+
+func hero_count() -> int:
+	return _hero_count
