@@ -82,7 +82,9 @@ func _shots(dir: String) -> void:
 		if near == null or v.global_position.distance_to(street.player.global_position) < near.global_position.distance_to(street.player.global_position):
 			near = v
 	street.player.place(near.exit_point(), near.heading_yaw())
-	street.player.rig.yaw = near.heading_yaw() + 1.2
+	var d := near.global_position - street.player.global_position
+	street.player.rig.yaw = atan2(-d.x, -d.z) + 0.5
+	street.player.rig.pitch = deg_to_rad(-8.0)
 	await _wait(0.3)
 	await _snap("%s/%s_5_car_door.png" % [dir, tag])
 	street._enter_car(near)

@@ -14,7 +14,7 @@ extends Node3D
 @export var follow_sharpness := 18.0    # how tightly the boom tracks the target
 @export var recenter_speed := 0.0       # >0: swing behind the target's heading when idle (cars)
 @export var recenter_delay := 1.2
-@export var collision_mask := 1
+@export var collision_mask := 1 | 2      # world and cars (cars are layer 2)
 
 var target: Node3D
 var yaw := 0.0
@@ -87,7 +87,7 @@ func _process(delta: float) -> void:
 	_idle += delta
 	if recenter_speed > 0.0 and _idle > recenter_delay:
 		yaw = lerp_angle(yaw, heading, 1.0 - exp(-recenter_speed * delta))
-		pitch = lerpf(pitch, deg_to_rad(-10.0), 1.0 - exp(-recenter_speed * 0.5 * delta))
+		pitch = lerpf(pitch, deg_to_rad(-12.0), 1.0 - exp(-recenter_speed * 0.5 * delta))
 	if target:
 		var goal := target.global_position + Vector3.UP * height
 		global_position = global_position.lerp(goal, 1.0 - exp(-follow_sharpness * delta))

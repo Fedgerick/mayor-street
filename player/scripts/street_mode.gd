@@ -279,8 +279,8 @@ func _build_hud() -> void:
 	_hint.anchor_right = 1.0
 	_hint.anchor_top = 1.0
 	_hint.anchor_bottom = 1.0
-	_hint.offset_top = -110
-	_hint.offset_bottom = -70
+	_hint.offset_top = -70
+	_hint.offset_bottom = -36
 	_speedo = _label(44, HORIZONTAL_ALIGNMENT_RIGHT)
 	_speedo.anchor_left = 1.0
 	_speedo.anchor_right = 1.0

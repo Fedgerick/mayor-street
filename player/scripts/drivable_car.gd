@@ -9,6 +9,7 @@ extends VehicleBody3D
 
 signal driver_changed(driver: Node)
 
+const LAYER := 2    # cars live on physics layer 2
 const SAG := 0.15   # expected suspension compression at rest, so the kit wheels sit on the road
 
 const MODELS := {
@@ -43,6 +44,8 @@ var _aabb := AABB()
 func _ready() -> void:
 	StreetInput.ensure()
 	add_to_group("vehicles")
+	collision_layer = LAYER
+	collision_mask = 1 | LAYER
 	var spec: Array = MODELS.get(model, MODELS["car_sedan"])
 	mass = spec[4]
 	_engine = spec[5]
@@ -58,13 +61,13 @@ func _ready() -> void:
 	rig = OrbitRig.new()
 	rig.name = "Rig"
 	rig.target = self
-	rig.height = _aabb.size.y + 0.4
-	rig.distance = 5.5 + _aabb.size.z * 0.35
+	rig.height = _aabb.size.y + 0.9
+	rig.distance = 5.0 + _aabb.size.z * 0.45
 	rig.side_offset = 0.0
 	rig.recenter_speed = 3.0
 	rig.min_pitch = deg_to_rad(-50.0)
 	rig.max_pitch = deg_to_rad(15.0)
-	rig.pitch = deg_to_rad(-10.0)
+	rig.pitch = deg_to_rad(-12.0)
 	add_child(rig)
 	rig.exclude(self)
 

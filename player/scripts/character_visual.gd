@@ -113,30 +113,30 @@ func _build() -> void:
 	var dark := _mat("eyes", Color(0.05, 0.05, 0.07), 0.3)
 
 	hips = _pivot(self, Vector3(0, HIP_Y, 0), "Hips")
-	_capsule(hips, 0.17, 0.36, pants, Vector3(0, 0.02, 0), Vector2(1.25, 0.85))
+	_capsule(hips, 0.19, 0.38, pants, Vector3(0, 0.02, 0), Vector2(1.22, 0.85))
 	chest = _pivot(hips, Vector3(0, 0.12, 0), "Chest")
-	_capsule(chest, 0.2, 0.56, shirt, Vector3(0, 0.22, 0), Vector2(1.18, 0.82))
-	_capsule(chest, 0.07, 0.14, skin, Vector3(0, 0.5, 0))  # neck
+	_capsule(chest, 0.22, 0.58, shirt, Vector3(0, 0.22, 0), Vector2(1.2, 0.8))
+	_capsule(chest, 0.08, 0.16, skin, Vector3(0, 0.5, 0))  # neck
 	head = _pivot(chest, Vector3(0, 0.6, 0), "Head")
-	_sphere(head, 0.165, skin, Vector3(0, 0.12, 0), Vector3(1.0, 1.08, 1.0))
-	_sphere(head, 0.172, hair, Vector3(0, 0.17, 0.02), Vector3(1.03, 0.82, 1.05))
-	_sphere(head, 0.024, dark, Vector3(-0.058, 0.13, -0.152))
-	_sphere(head, 0.024, dark, Vector3(0.058, 0.13, -0.152))
-	_sphere(head, 0.03, skin, Vector3(0, 0.09, -0.165))  # nose
+	_sphere(head, 0.19, skin, Vector3(0, 0.14, 0), Vector3(1.0, 1.06, 1.0))
+	_sphere(head, 0.198, hair, Vector3(0, 0.2, 0.025), Vector3(1.03, 0.8, 1.05))
+	_sphere(head, 0.028, dark, Vector3(-0.066, 0.15, -0.172))
+	_sphere(head, 0.028, dark, Vector3(0.066, 0.15, -0.172))
+	_sphere(head, 0.034, skin, Vector3(0, 0.1, -0.19))  # nose
 
 	for side in [-1, 1]:
-		var sh := _pivot(chest, Vector3(0.27 * side, 0.4, 0), "Shoulder")
-		_sphere(sh, 0.085, shirt, Vector3.ZERO)
-		_capsule(sh, 0.07, 0.3, shirt, Vector3(0, -0.13, 0))
+		var sh := _pivot(chest, Vector3(0.285 * side, 0.4, 0), "Shoulder")
+		_sphere(sh, 0.105, shirt, Vector3.ZERO)
+		_capsule(sh, 0.088, 0.32, shirt, Vector3(0, -0.13, 0))
 		var el := _pivot(sh, Vector3(0, -0.28, 0), "Elbow")
-		_capsule(el, 0.058, 0.28, skin, Vector3(0, -0.12, 0))
-		_sphere(el, 0.065, skin, Vector3(0, -0.28, -0.01))
-		sh.rotation.z = 0.08 * side
-		var hip := _pivot(hips, Vector3(0.105 * side, -0.04, 0), "Hip")
-		_capsule(hip, 0.09, 0.46, pants, Vector3(0, -0.2, 0))
+		_capsule(el, 0.074, 0.3, skin, Vector3(0, -0.12, 0))
+		_sphere(el, 0.085, skin, Vector3(0, -0.29, -0.01))
+		sh.rotation.z = 0.04 * side
+		var hip := _pivot(hips, Vector3(0.12 * side, -0.04, 0), "Hip")
+		_capsule(hip, 0.11, 0.48, pants, Vector3(0, -0.2, 0))
 		var kn := _pivot(hip, Vector3(0, -0.43, 0), "Knee")
-		_capsule(kn, 0.075, 0.44, pants, Vector3(0, -0.2, 0))
-		_box(kn, Vector3(0.13, 0.09, 0.27), shoes, Vector3(0, -0.425, -0.04))
+		_capsule(kn, 0.095, 0.44, pants, Vector3(0, -0.2, 0))
+		_box(kn, Vector3(0.16, 0.1, 0.3), shoes, Vector3(0, -0.42, -0.05))
 		if side < 0:
 			arm_l = sh; elbow_l = el; leg_l = hip; knee_l = kn
 		else:
@@ -182,8 +182,8 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, turn: float)
 	var elbow := lerpf(0.2, 1.35, _run) * _move + 0.15
 	arm_l.rotation.x = lerpf(-s * arm_sw, 2.3, _air * 0.7)
 	arm_r.rotation.x = lerpf(s * arm_sw, 1.9, _air * 0.7)
-	arm_l.rotation.z = lerpf(-0.08 - 0.05 * _run, -0.5, _air)
-	arm_r.rotation.z = lerpf(0.08 + 0.05 * _run, 0.5, _air)
+	arm_l.rotation.z = lerpf(-0.05 - 0.05 * _run, -0.5, _air)
+	arm_r.rotation.z = lerpf(0.05 + 0.05 * _run, 0.5, _air)
 	elbow_l.rotation.x = lerpf(elbow, 0.4, _air)
 	elbow_r.rotation.x = lerpf(elbow, 0.4, _air)
 
