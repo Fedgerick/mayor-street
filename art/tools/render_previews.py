@@ -109,15 +109,15 @@ def make_mat(name, col, rough, metal, emit=None, windows=False, brick=False):
         cr = nt.nodes.new("ShaderNodeValToRGB")
         cr.color_ramp.interpolation = "CONSTANT"
         cr.color_ramp.elements[0].color = (0, 0, 0, 1)
-        cr.color_ramp.elements[1].position = 0.55
+        cr.color_ramp.elements[1].position = 0.68
         cr.color_ramp.elements[1].color = (1.0, 0.62, 0.3, 1)
-        e = cr.color_ramp.elements.new(0.88); e.color = (0.75, 0.85, 1.0, 1)
+        e = cr.color_ramp.elements.new(0.93); e.color = (0.75, 0.85, 1.0, 1)
         nt.links.new(tc.outputs["Object"], sc.inputs[0])
         nt.links.new(sc.outputs[0], fl.inputs[0])
         nt.links.new(fl.outputs[0], wn.inputs["Vector"])
         nt.links.new(wn.outputs["Value"], cr.inputs["Fac"])
         nt.links.new(cr.outputs["Color"], bsdf.inputs["Emission Color"])
-        bsdf.inputs["Emission Strength"].default_value = 4.0
+        bsdf.inputs["Emission Strength"].default_value = 1.6
     _mat_cache[key] = m
     return m
 
@@ -320,7 +320,7 @@ def shot_street(night=False, name="street"):
         if j != 0:
             road_tile(0, j, "road_straight", 0)
     road_tile(0, 0, "road_cross", 0)
-    north = {-5: "r_1_1_b", -4: "r_2_1_a", -3: "c_1_1_a", -2: "c_2_1_a", -1: "c_3_1_b",
+    north = {-5: "r_1_1_f", -4: "r_2_1_e", -3: "c_1_1_e", -2: "c_2_1_d", -1: "c_3_1_d",
              1: "c_3_1_a", 2: "c_2_1_c", 3: "c_1_1_b", 4: "c_2_1_b", 5: "r_2_1_d"}
     south = {-5: "r_1_1_c", -4: "r_1_1_a", -3: "r_2_1_b", -2: "c_1_1_c", -1: "c_2_1_b",
              1: "c_1_1_d", 2: "i_1_1_a", 3: "i_2_1_a", 4: "i_1_1_c", 5: "i_2_1_b"}
@@ -330,18 +330,24 @@ def shot_street(night=False, name="street"):
         load("buildings", n, (i * TILE, -TILE, 0), 180)
     # along the N-S road, facing it
     east = {2: "c_2_1_c", 3: "r_2_1_c", 4: "r_1_1_d", -2: "i_1_1_b", -3: "i_2_1_c", -4: "i_1_1_a"}
-    west = {2: "c_3_1_c", 3: "r_3_1_a", 4: "r_2_1_b", -2: "c_2_1_a", -3: "r_2_1_a", -4: "r_1_1_b"}
+    west = {2: "c_3_1_c", 3: "r_3_1_a", 4: "r_2_1_b", -3: "r_2_1_a", -4: "r_1_1_b"}
     for j, n in east.items():
         load("buildings", n, (TILE, j * TILE, 0), 90)
     for j, n in west.items():
         load("buildings", n, (-TILE, j * TILE, 0), -90)
     # skyline behind
-    load("buildings", "c_3_2_b", (-1.5 * TILE, 2.5 * TILE, 0), 0)
+    load("buildings", "c_3_2_c", (-1.5 * TILE, 2.5 * TILE, 0), 0)
+    load("civic", "park", (-TILE, -2 * TILE, 0), -90, zone="c")
+    load("civic", "fire_station", (TILE, -5 * TILE, 0), 90, zone="c")
+    for i in (-4, -2, 2, 4):
+        load("props", "bench", (i * TILE + 1.5, 5.3, 0.17), 180, zone="x")
+        load("props", "trash_bin", (i * TILE - 1.0, -5.2, 0.17), 0, zone="x")
+    load("props", "hydrant", (-8.0, -5.0, 0.17), 0, zone="x")
+    load("props", "bus_stop", (-2.5 * TILE, 5.6, 0.17), 180, zone="x")
     load("buildings", "c_3_2_a", (1.5 * TILE, 2.5 * TILE, 0), 0)
     load("buildings", "r_3_2_a", (3.5 * TILE, 2.5 * TILE, 0), 0)
     load("buildings", "r_3_2_b", (-3.5 * TILE, 2.5 * TILE, 0), 0)
     load("buildings", "c_3_1_c", (-5 * TILE, 2 * TILE, 0), 0)
-    load("buildings", "i_3_2_a", (3.5 * TILE, -2.5 * TILE, 0), 180)
     # street furniture: lamps on the north sidewalk of the E-W road, trees between
     for k, i in enumerate(range(-5, 6)):
         if i == 0:
@@ -349,7 +355,7 @@ def shot_street(night=False, name="street"):
         x = i * TILE
         load("props", "street_lamp", (x - 3, 5.0, 0.17), 90, zone="x")
         load("props", "street_lamp", (x + 3, -5.0, 0.17), -90, zone="x", seed=1)
-        tree = ["tree_round_a", "tree_round_b"][k % 2]
+        tree = ["tree_puffy_a", "tree_puffy_b", "tree_puffy_c"][k % 3]
         load("props", tree, (x + 3, 5.2, 0.17), k * 37, zone="x", seed=k)
         if night:
             lamp_light((x - 3 + 0, 5.0 - 1.4, 6.0))
@@ -373,7 +379,7 @@ def shot_street(night=False, name="street"):
     if night:
         camera((58, -70, 40), (0, 6, 12), lens=30)
     else:
-        camera((95, -110, 75), (0, 8, 8), lens=35)
+        camera((72, -88, 46), (-4, 12, 14), lens=30)
     render(name)
 
 

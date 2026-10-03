@@ -16,7 +16,7 @@ const TILE := 12.0
 const ROAD_COST := 25
 const ZONE_COST := 10
 const BULLDOZE_COST := 10
-const ROAD_UPKEEP := 1.2
+const ROAD_UPKEEP := 0.5
 const MINUTES_PER_SECOND := 6.0  # at 1x speed: one game hour every 10 real seconds
 
 enum Zone { NONE, RES, COM, IND }
@@ -28,7 +28,7 @@ const CAP := [[0, 0, 0, 0], [0, 6, 32, 140], [0, 6, 28, 110], [0, 10, 32, 70]]
 const CAP_BIG := [0, 640, 520, 280]
 # City population needed before a stage can appear (keeps towers for later).
 const STAGE_POP := [0, 0, 120, 1400]
-const STAGE_LV := [0.0, 0.0, 0.32, 0.52]
+const STAGE_LV := [0.0, 0.0, 0.3, 0.6]
 
 var land := PackedByteArray()      # 1 = buildable
 var height := PackedFloat32Array()  # terrain landness at tile centre (for coast logic)
@@ -405,10 +405,10 @@ func _update_demand() -> void:
 	var workers := population * 0.55
 	var jobs := float(jobs_c + jobs_i)
 	var tax_pen := (tax_rate - 0.09) * 6.0
-	demand[Zone.RES] = clampf(((jobs + 60.0) - workers) / maxf(40.0, workers * 0.25) - tax_pen, -1.0, 1.0)
-	var want_c := population * 0.2 + 12.0
+	demand[Zone.RES] = clampf(((jobs * 1.1 + 80.0) - workers) / maxf(40.0, workers * 0.2) - tax_pen, -1.0, 1.0)
+	var want_c := population * 0.24 + 15.0
 	demand[Zone.COM] = clampf((want_c - jobs_c) / maxf(25.0, want_c * 0.3) - tax_pen, -1.0, 1.0)
-	var want_i := population * 0.3 + 40.0
+	var want_i := population * 0.34 + 40.0
 	demand[Zone.IND] = clampf((want_i - jobs_i) / maxf(30.0, want_i * 0.3) - tax_pen, -1.0, 1.0)
 
 
@@ -462,7 +462,8 @@ func _try_grow(x: int, y: int) -> void:
 	if minutes - b.born < 60.0 * 30.0:  # at least 30 game hours old
 		return
 	var next: int = b.stage + 1
-	if population < STAGE_POP[next] or land_value[i] < STAGE_LV[next] or not b.connected:
+	var lv_ok: bool = z == Zone.IND or land_value[i] >= STAGE_LV[next]
+	if population < STAGE_POP[next] or not lv_ok or not b.connected:
 		return
 	if rng.randf() > 0.18 * d:
 		return
@@ -583,13 +584,36 @@ func compute_traffic() -> void:
 			res_reach[c] = 1
 			c = parent[c]
 			guard += 1
-	# Job sites are "connected" when some home reaches one of their road cells.
+	# Job sites are "connected" when their road network also reaches some home.
+	var comp := PackedInt32Array()
+	comp.resize(n)
+	comp.fill(-1)
+	var label := 0
+	for s0 in n:
+		if road[s0] == 0 or comp[s0] >= 0:
+			continue
+		var stack: Array[int] = [s0]
+		comp[s0] = label
+		while not stack.is_empty():
+			var c: int = stack.pop_back()
+			for d in DIRS:
+				var nx: int = c % SIZE + d.x
+				var ny: int = c / SIZE + d.y
+				if is_road(nx, ny) and comp[idx(nx, ny)] < 0:
+					comp[idx(nx, ny)] = label
+					stack.append(idx(nx, ny))
+		label += 1
+	var home_comps := {}
+	for b in buildings.values():
+		if b.zone == Zone.RES:
+			for c in _building_road_cells(b):
+				home_comps[comp[c]] = true
 	for b in buildings.values():
 		if b.zone == Zone.RES:
 			continue
 		var ok := population < 60
 		for c in _building_road_cells(b):
-			if res_reach[c] == 1:
+			if home_comps.has(comp[c]):
 				ok = true
 				break
 		b.connected = ok
@@ -725,7 +749,7 @@ func build_starter() -> void:
 	cells_changed.emit(Rect2i(0, 0, SIZE, SIZE))
 
 
-func build_demo(grow_hours := 24 * 40) -> void:
+func build_demo(grow_hours := 24 * 45) -> void:
 	## A pre-planned city for screenshots and showing off: a street grid of 2-deep blocks,
 	## downtown commercial in the middle, homes around it, industry on the west side.
 	var c := center_cell()
@@ -748,11 +772,11 @@ func build_demo(grow_hours := 24 * 40) -> void:
 				continue
 			var r := sqrt(dx * dx + dy * dy * 1.3)
 			var z := Zone.RES
-			if r < 9.0:
+			if r < 11.0:
 				z = Zone.COM
 			elif dx < -17:
 				z = Zone.IND
-			elif r < 13.0 and rng.randf() < 0.35:
+			elif r < 17.0 and rng.randf() < 0.3:
 				z = Zone.COM
 			zone[i] = z
 			trees[i] = 0

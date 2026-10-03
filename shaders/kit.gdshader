@@ -126,12 +126,16 @@ void fragment() {
 		float h = hash13(wid + vec3(seed * 91.7));
 		float lit = step(h, window_lit);
 		float cool = step(0.82, hash13(wid * 1.7 + 3.1));
-		vec3 warm = mix(vec3(1.0, 0.68, 0.38), vec3(0.72, 0.85, 1.0), cool);
+		vec3 warm = mix(vec3(1.0, 0.62, 0.3), vec3(0.6, 0.78, 1.0), cool) * (0.6 + 0.6 * hash13(wid * 3.7));
 		float ceiling = 0.55 + 0.45 * smoothstep(0.2, 0.95, fract(opos.y / 3.2));
-		alb = vec3(0.06, 0.09, 0.12) + vec3(0.04) * h;
-		r = 0.05;
-		m = 0.15;
-		emit += warm * lit * ceiling * smoothstep(0.05, 0.5, night) * 2.6;
+		// Fake sky reflection: darker toward the ground, bright sky blue looking up.
+		vec3 vdir = normalize(wpos - CAMERA_POSITION_WORLD);
+		vec3 rf = reflect(vdir, normalize(wnrm));
+		vec3 sky = mix(vec3(0.05, 0.08, 0.12), vec3(0.42, 0.6, 0.82), smoothstep(-0.15, 0.5, rf.y));
+		alb = sky * (0.75 + 0.5 * h) * mix(1.0, 0.25, night);
+		r = 0.08;
+		m = 0.1;
+		emit += warm * lit * ceiling * smoothstep(0.05, 0.5, night) * 1.1;
 	} else if (kind == 7) {
 		alb = vec3(0.05, 0.07, 0.09);
 		r = 0.04;

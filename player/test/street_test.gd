@@ -42,8 +42,55 @@ func _ready() -> void:
 	street.setup(city)
 	street.street_exited.connect(_on_street_exited)
 	street.street_entered.connect(func(): day_night.set_view_distance(30.0))
-	if _args.has("street"):
+	if _args.has("shots"):
+		_shots.call_deferred(_args["shots"])
+	elif _args.has("street"):
 		go_street.call_deferred()
+
+
+func _snap(path: String) -> void:
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(path)
+	print("saved ", path)
+
+
+func _wait(seconds: float) -> void:
+	await get_tree().create_timer(seconds).timeout
+
+
+func _shots(dir: String) -> void:
+	## A scripted run for screenshots: the mayor view, the dive, on foot, and driving.
+	DirAccess.make_dir_recursive_absolute(dir)
+	var tag: String = _args.get("hour", "16.5")
+	await _wait(1.0)
+	await _snap("%s/%s_1_mayor.png" % [dir, tag])
+	go_street()
+	await _wait(street.dive_seconds * 0.55)
+	await _snap("%s/%s_2_dive.png" % [dir, tag])
+	await street.street_entered
+	await _wait(0.5)
+	await _snap("%s/%s_3_street.png" % [dir, tag])
+	street.player.rig.yaw += PI * 0.75
+	Input.action_press("street_forward")
+	Input.action_press("street_sprint")
+	await _wait(1.2)
+	await _snap("%s/%s_4_running.png" % [dir, tag])
+	Input.action_release("street_sprint")
+	Input.action_release("street_forward")
+	var near: DrivableCar = null
+	for v in get_tree().get_nodes_in_group("vehicles"):
+		if near == null or v.global_position.distance_to(street.player.global_position) < near.global_position.distance_to(street.player.global_position):
+			near = v
+	street.player.place(near.exit_point(), near.heading_yaw())
+	street.player.rig.yaw = near.heading_yaw() + 1.2
+	await _wait(0.3)
+	await _snap("%s/%s_5_car_door.png" % [dir, tag])
+	street._enter_car(near)
+	Input.action_press("street_forward")
+	await _wait(2.5)
+	await _snap("%s/%s_6_driving.png" % [dir, tag])
+	Input.action_release("street_forward")
+	get_tree().quit()
 
 
 func go_street() -> void:
