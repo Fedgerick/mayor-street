@@ -14,15 +14,18 @@ void vertex() {
 void fragment() {
 	float g = fbm(wpos.xz * 0.012);
 	float g2 = fbm(wpos.xz * 0.09 + 11.0);
-	vec3 grass = mix(vec3(0.25, 0.47, 0.15), vec3(0.42, 0.58, 0.19), g);
-	grass = mix(grass, vec3(0.55, 0.56, 0.27), smoothstep(0.62, 0.8, g2) * 0.5);
-	grass *= 0.9 + 0.2 * vnoise(wpos.xz * 1.3);
-	vec3 sand = mix(vec3(0.88, 0.8, 0.6), vec3(0.8, 0.72, 0.52), vnoise(wpos.xz * 0.5));
+	vec3 grass = mix(vec3(0.12, 0.25, 0.06), vec3(0.23, 0.36, 0.1), g);
+	grass = mix(grass, vec3(0.4, 0.38, 0.16), smoothstep(0.6, 0.8, g2) * 0.55);
+	grass = mix(grass, vec3(0.06, 0.17, 0.04), smoothstep(0.62, 0.78, fbm(wpos.xz * 0.03 + 5.0)) * 0.5);
+	vec2 fw = fwidth(wpos.xz * 1.3);
+	grass *= mix(1.0, 0.88 + 0.24 * vnoise(wpos.xz * 1.3), clamp(1.0 - max(fw.x, fw.y) * 1.6, 0.0, 1.0));
+	vec3 sand = mix(vec3(0.84, 0.75, 0.55), vec3(0.76, 0.67, 0.47), vnoise(wpos.xz * 0.5));
 	vec3 wet = vec3(0.6, 0.53, 0.38);
 	vec3 seabed = vec3(0.45, 0.48, 0.36);
 	float beach = 1.0 - smoothstep(0.065, 0.1, landness + (g2 - 0.5) * 0.02);
 	vec3 alb = mix(grass, sand, beach);
-	alb = mix(alb, wet, smoothstep(-0.3, -0.9, wpos.y));
+	// Sand darkens where the swash keeps it wet, just above the waterline (-0.7).
+	alb = mix(alb, wet, smoothstep(-0.35, -0.62, wpos.y) * 0.8);
 	alb = mix(alb, seabed, smoothstep(-1.5, -5.0, wpos.y));
 
 	ivec2 c = cell_of(wpos);
