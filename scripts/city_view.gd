@@ -424,11 +424,7 @@ func _add_road(groups: Dictionary, lamps: Array[Vector3], x: int, y: int, center
 	var local := Vector3.ZERO
 	var place := false
 	if neighbours >= 3:
-		# Traffic light on one corner of big intersections.
-		if (x + y) % 2 == 0:
-			var tl := basis * Basis(Vector3.UP, PI * 0.25)
-			_push(groups, "traffic_light", Transform3D(tl, center + basis * Vector3(4.9, 0.17, 4.9)), Color.WHITE, Color(0, 0, 0, 0), true)
-		return
+		return  # junctions get live signal heads from CityLife, and no lamp
 	if piece == "road_straight" or piece == "road_end":
 		place = (x + y) % 2 == 0 or piece == "road_end"
 		local = Vector3(4.9 if (x + y) % 4 == 0 else -4.9, 0.17, 0)

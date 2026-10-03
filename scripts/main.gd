@@ -8,6 +8,7 @@ extends Node3D
 ##   --overlay=1            0 none, 1 zones, 2 traffic, 3 land value
 ##   --screenshot=path.png  render a few frames, save, quit
 ##   --quality=0|1|2
+##   --street               dive to street level right away
 
 enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE }
 
@@ -16,6 +17,8 @@ var view: CityView
 var day_night: DayNight
 var cam: MayorCamera
 var hud: Hud
+var life: CityLife  # traffic and pedestrians (citylife/), created when a game starts
+var street: StreetMode  # street-level player (player/), created when a game starts
 
 var tool := Tool.INSPECT
 var overlay := 0
@@ -26,8 +29,10 @@ var _drag_start := Vector2i(-1, -1)
 var _dragging := false
 var _hover := Vector2i(-1, -1)
 var _args := {}
+var _speed_before_street := 1
 
 const SPEED_VALUES := [0.0, 1.0, 3.0, 10.0]
+const LIFE_DENSITY := [0.55, 1.0, 1.25]  # cars and people per graphics level
 
 
 func _ready() -> void:
@@ -89,13 +94,27 @@ func _start(demo: bool) -> void:
 		var p: PackedStringArray = _args["view"].split(",")
 		cam.set_view(Vector3(float(p[0]), 0, float(p[1])), float(p[2]), deg_to_rad(float(p[3])),
 			deg_to_rad(float(p[4])) if p.size() > 4 else 0.0)
+	life = CityLife.new()
+	life.density = LIFE_DENSITY[quality]
+	life.auto_step = false  # stepped from _process so it freezes while the game is paused
+	add_child(life)
+	life.setup(city, cam)
+	street = preload("res://player/scenes/street_mode.tscn").instantiate()
+	add_child(street)
+	street.setup(city)
+	street.street_entered.connect(_on_street_entered)
+	street.street_exited.connect(_on_street_exited)
 	started = true
 	if _args.has("screenshot"):
 		_set_speed(0)
 		_shoot.call_deferred(_args["screenshot"])
+	if _args.has("street"):
+		go_street.call_deferred()
 
 
 func _shoot(path: String) -> void:
+	if _args.has("street"):
+		await street.street_entered
 	for i in 12:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
@@ -103,6 +122,50 @@ func _shoot(path: String) -> void:
 	img.save_png(path)
 	print("saved ", path)
 	get_tree().quit()
+
+
+# ------------------------------------------------------------ street level ---
+
+func in_street() -> bool:
+	return street != null and (street.active or street.busy)
+
+
+func go_street() -> void:
+	## Dive from the mayor view to a character on the sidewalk under the camera focus.
+	if not started or in_street():
+		return
+	_set_tool(Tool.INSPECT)
+	hud.show_tip(Vector2.ZERO, "")
+	hud.visible = false
+	# The design keeps the street at 1x; the mayor speed comes back on the way up.
+	_speed_before_street = speed_index
+	_set_speed(1)
+	cam.set_process(false)
+	cam.set_process_unhandled_input(false)
+	street.enter_street(cam, cam.focus)
+	life.set_camera(street.camera)
+
+
+func go_mayor() -> void:
+	if street == null or not street.active or street.busy:
+		return
+	# Frame the mayor view on where the player ended up, looking the same way.
+	cam.set_view(street.focus_point(), 140.0, street.view_yaw())
+	street.exit_street(cam.global_transform, cam.fov)
+
+
+func _on_street_entered() -> void:
+	day_night.set_view_distance(30.0)
+
+
+func _on_street_exited() -> void:
+	cam.make_current()
+	cam.set_process(true)
+	cam.set_process_unhandled_input(true)
+	day_night.set_view_distance(cam.dist)
+	life.set_camera(cam)
+	hud.visible = true
+	_set_speed(_speed_before_street)
 
 
 # ---------------------------------------------------------------- settings ---
@@ -131,11 +194,25 @@ func _set_quality(q: int) -> void:
 	quality = q
 	day_night.apply_quality(q)
 	hud.set_quality(q)
+	if life:
+		life.density = LIFE_DENSITY[q]
 
 
 # ------------------------------------------------------------------- input ---
 
 func _unhandled_input(e: InputEvent) -> void:
+	if street and not _dragging and e.is_action_pressed("street_toggle_view"):
+		if street.active:
+			go_mayor()
+		else:
+			go_street()
+		get_viewport().set_input_as_handled()
+		return
+	if in_street():
+		# The street has its own controls; only fullscreen stays shared.
+		if e is InputEventKey and e.pressed and not e.echo and (e as InputEventKey).keycode == KEY_F11:
+			_toggle_fullscreen()
+		return
 	if e is InputEventKey and e.pressed and not e.echo:
 		var k := (e as InputEventKey).keycode
 		if k >= KEY_1 and k <= KEY_6:
@@ -145,8 +222,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		elif k == KEY_N and started:
 			city.advance(10.0, 1.0)
 		elif k == KEY_F11:
-			var w := get_window()
-			w.mode = Window.MODE_WINDOWED if w.mode == Window.MODE_FULLSCREEN else Window.MODE_FULLSCREEN
+			_toggle_fullscreen()
 		elif k == KEY_ESCAPE:
 			if _dragging:
 				_dragging = false
@@ -186,6 +262,11 @@ func _unhandled_input(e: InputEvent) -> void:
 			_hover = cc
 			_update_preview()
 		_update_tip((e as InputEventMouseMotion).position)
+
+
+func _toggle_fullscreen() -> void:
+	var w := get_window()
+	w.mode = Window.MODE_WINDOWED if w.mode == Window.MODE_FULLSCREEN else Window.MODE_FULLSCREEN
 
 
 func _cell_at(screen: Vector2) -> Variant:
@@ -274,4 +355,8 @@ func _process(delta: float) -> void:
 		city.advance(delta, SPEED_VALUES[speed_index])
 		if int(city.minutes / 60.0) != hour_before:
 			view._map_dirty = true
+		# Cars and people move in real time at every sim speed, and stop when paused
+		# (screenshots pause the clock but still let traffic settle).
+		if speed_index > 0 or _args.has("screenshot"):
+			life.step(minf(delta, 0.1))
 	day_night.update_time(city.time_of_day())

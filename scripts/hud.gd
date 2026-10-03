@@ -239,7 +239,7 @@ func _build_side() -> void:
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD
 	v.add_child(info)
 	var help := Label.new()
-	help.text = "WASD pan · Q/E or right-drag rotate\nwheel zoom · middle-drag grab\nSpace pause · N skip 1 hour\nF11 fullscreen · Esc cancel"
+	help.text = "Tab  dive to the street and back\nWASD pan · Q/E or right-drag rotate\nwheel zoom · middle-drag grab\nSpace pause · N skip 1 hour\nF11 fullscreen · Esc cancel"
 	help.add_theme_font_size_override("font_size", 12)
 	help.add_theme_color_override("font_color", Color(0.55, 0.6, 0.7))
 	v.add_child(help)

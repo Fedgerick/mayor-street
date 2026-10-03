@@ -350,7 +350,7 @@ func add_building(x: int, y: int, size: int, z: int, stage: int, rot: int, anima
 	for dy in size:
 		for dx in size:
 			bld[idx(x + dx, y + dy)] = id
-	_recount()
+	_count(b, 1)
 	building_added.emit(id, animate)
 	return id
 
@@ -363,9 +363,17 @@ func remove_building(id: int) -> void:
 		for dx in b.size:
 			bld[idx(b.x + dx, b.y + dy)] = -1
 	buildings.erase(id)
-	_recount()
+	_count(b, -1)
 	building_removed.emit(id)
 	cells_changed.emit(Rect2i(b.x, b.y, b.size, b.size))
+
+
+func _count(b: Dictionary, sign: int) -> void:
+	var c := capacity(b) * sign
+	match b.zone:
+		Zone.RES: population += c
+		Zone.COM: jobs_c += c
+		Zone.IND: jobs_i += c
 
 
 func _recount() -> void:
@@ -398,6 +406,8 @@ func advance(real_seconds: float, speed: float) -> bool:
 		_hour_tick()
 		if h % 24 == 0:
 			_day_tick()
+		elif h % 24 == 12:
+			compute_land_value()
 	return after > before
 
 
@@ -519,7 +529,6 @@ func _try_merge(b: Dictionary) -> bool:
 
 func _day_tick() -> void:
 	compute_traffic()
-	compute_land_value()
 	var income := (population + (jobs_c + jobs_i) * 0.8) * tax_rate * 3.0
 	var roads := 0
 	for i in SIZE * SIZE:
@@ -531,8 +540,9 @@ func _day_tick() -> void:
 	day_passed.emit()
 
 
-## Commuter traffic: a multi-source BFS over roads from every job site, then each home
-## walks its commuters down the BFS tree, adding flow to each road cell on the way.
+## Commuter traffic: a multi-source BFS over roads from every job site gives each road
+## cell its next step toward the nearest job. Each home puts its commuters on its road
+## cell, and one pass back up the BFS order carries the flow along every route.
 func compute_traffic() -> void:
 	var n := SIZE * SIZE
 	var flow := PackedFloat32Array()
@@ -540,13 +550,14 @@ func compute_traffic() -> void:
 	var parent := PackedInt32Array()
 	parent.resize(n)
 	parent.fill(-2)
-	var q: Array[int] = []
-	var res_reach := PackedByteArray()
-	res_reach.resize(n)
+	var cells_of := {}
+	for b in buildings.values():
+		cells_of[b.id] = _building_road_cells(b)
+	var q := PackedInt32Array()
 	for b in buildings.values():
 		if b.zone == Zone.RES:
 			continue
-		for c in _building_road_cells(b):
+		for c in cells_of[b.id]:
 			if parent[c] == -2:
 				parent[c] = -1
 				q.append(c)
@@ -567,23 +578,18 @@ func compute_traffic() -> void:
 	for b in buildings.values():
 		if b.zone != Zone.RES:
 			continue
-		var cells := _building_road_cells(b)
 		var start := -1
-		for c in cells:
+		for c in cells_of[b.id]:
 			if parent[c] != -2:
 				start = c
 				break
 		b.connected = start >= 0 or population < 60
-		if start < 0:
-			continue
-		var commuters := capacity(b) * 0.55
-		var c := start
-		var guard := 0
-		while c >= 0 and guard < 400:
-			flow[c] += commuters
-			res_reach[c] = 1
-			c = parent[c]
-			guard += 1
+		if start >= 0:
+			flow[start] += capacity(b) * 0.55
+	for k in range(q.size() - 1, -1, -1):
+		var c: int = q[k]
+		if parent[c] >= 0:
+			flow[parent[c]] += flow[c]
 	# Job sites are "connected" when their road network also reaches some home.
 	var comp := PackedInt32Array()
 	comp.resize(n)
@@ -592,27 +598,32 @@ func compute_traffic() -> void:
 	for s0 in n:
 		if road[s0] == 0 or comp[s0] >= 0:
 			continue
-		var stack: Array[int] = [s0]
+		var stack := PackedInt32Array([s0])
 		comp[s0] = label
 		while not stack.is_empty():
-			var c: int = stack.pop_back()
+			var c: int = stack[stack.size() - 1]
+			stack.resize(stack.size() - 1)
+			var cx := c % SIZE
+			var cy := c / SIZE
 			for d in DIRS:
-				var nx: int = c % SIZE + d.x
-				var ny: int = c / SIZE + d.y
-				if is_road(nx, ny) and comp[idx(nx, ny)] < 0:
-					comp[idx(nx, ny)] = label
-					stack.append(idx(nx, ny))
+				var nx: int = cx + d.x
+				var ny: int = cy + d.y
+				if is_road(nx, ny):
+					var j := idx(nx, ny)
+					if comp[j] < 0:
+						comp[j] = label
+						stack.append(j)
 		label += 1
 	var home_comps := {}
 	for b in buildings.values():
 		if b.zone == Zone.RES:
-			for c in _building_road_cells(b):
+			for c in cells_of[b.id]:
 				home_comps[comp[c]] = true
 	for b in buildings.values():
 		if b.zone == Zone.RES:
 			continue
 		var ok := population < 60
-		for c in _building_road_cells(b):
+		for c in cells_of[b.id]:
 			if home_comps.has(comp[c]):
 				ok = true
 				break
@@ -621,18 +632,18 @@ func compute_traffic() -> void:
 		traffic[i] = flow[i] / 900.0 if road[i] == 1 else 0.0
 
 
-func _building_road_cells(b: Dictionary) -> Array[int]:
-	var out: Array[int] = []
-	for dy in range(-2, b.size + 2):
-		for dx in range(-2, b.size + 2):
-			var inside_x: bool = dx >= 0 and dx < b.size
-			var inside_y: bool = dy >= 0 and dy < b.size
-			if inside_x == inside_y:
-				continue  # only straight-out cells, not corners or the lot itself
-			var x: int = b.x + dx
-			var y: int = b.y + dy
-			if is_road(x, y):
-				out.append(idx(x, y))
+func _building_road_cells(b: Dictionary) -> PackedInt32Array:
+	## Road cells 1 or 2 tiles straight out from each side of the lot.
+	var out := PackedInt32Array()
+	var s: int = b.size
+	var bx: int = b.x
+	var by: int = b.y
+	for dist in [1, 2]:
+		for k in s:
+			for p in [Vector2i(bx + k, by - dist), Vector2i(bx + k, by + s - 1 + dist),
+					Vector2i(bx - dist, by + k), Vector2i(bx + s - 1 + dist, by + k)]:
+				if p.x >= 0 and p.y >= 0 and p.x < SIZE and p.y < SIZE and road[p.y * SIZE + p.x] == 1:
+					out.append(p.y * SIZE + p.x)
 	return out
 
 
@@ -715,8 +726,11 @@ func simulate_hours(hours: int) -> void:
 	for h in hours:
 		minutes += 60.0
 		_hour_tick()
-		if int(minutes / 60.0) % 24 == 0:
+		var hh := int(minutes / 60.0) % 24
+		if hh == 0:
 			_day_tick()
+		elif hh == 12:
+			compute_land_value()
 
 
 # ------------------------------------------------------------------ starters ---
@@ -798,6 +812,8 @@ func build_demo(grow_hours := 24 * 45) -> void:
 			_try_grow(bx, by)
 		if h % 24 == 0:
 			_day_tick()
+		elif h % 24 == 12:
+			compute_land_value()
 	animate_growth = was
 	minutes = float(game_day()) * 1440.0 + 17.5 * 60.0
 	cells_changed.emit(Rect2i(0, 0, SIZE, SIZE))

@@ -25,6 +25,23 @@ SimCity meets GTA, built in Godot 4.5 (Forward+). Design doc: `../design/core-lo
 | Graphics | Low / Med / High buttons on the left (start on Med for a Ryzen 5700U) |
 | F11 | Toggle fullscreen |
 
+## Street level
+
+Press **Tab** in the mayor view to dive down to a character on the sidewalk under the camera, and Tab again to fly
+back up. Time runs at 1x while you're on the street.
+
+| | |
+|---|---|
+| Move / sprint / jump | WASD, Shift, Space |
+| Look | Mouse (Esc frees the cursor, click to grab it again) |
+| Get in / out of a car | E or F near a car |
+| Drive | W/S throttle and brake, A/D steer, Space handbrake, H horn, L lights, R reset |
+| Gamepad | Left stick move, A jump, Y car, Back switches view |
+
+Cars, trucks and pedestrians fill the streets around the camera (`citylife/`), with working signals at junctions.
+
+## How the city grows
+
 Zones grow when a road is within 2 tiles and there is demand (the R C I bars). Homes need jobs, shops need shoppers,
 industry needs workers. Buildings upgrade through 3 stages as the city grows and land value rises; downtown blocks
 can merge into 2x2 skyscrapers.

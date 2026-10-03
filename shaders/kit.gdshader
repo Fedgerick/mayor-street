@@ -141,7 +141,7 @@ void fragment() {
 		r = 0.04;
 		m = 0.3;
 	} else if (kind == 2) {
-		emit += alb * (0.25 + 2.6 * smoothstep(0.1, 0.6, night));
+		emit += alb * (0.2 + 1.4 * smoothstep(0.1, 0.6, night));
 	} else if (kind == 3) {
 		emit += vec3(1.0, 0.82, 0.55) * smoothstep(0.1, 0.5, night) * 9.0;
 	} else if (kind == 5) {
