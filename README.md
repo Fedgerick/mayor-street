@@ -4,7 +4,8 @@ SimCity meets GTA, built in Godot 4.5 (Forward+). Design doc: `../design/core-lo
 
 ## Play it
 
-**Windows installer:** download `builds/MayorStreet-Setup.exe` from the project files and run it. It installs for
+**Windows installer:** download `builds/MayorStreet-Setup.zip` from the project files (the app won't download a bare
+.exe), right-click it, choose Extract All, and run `MayorStreet-Setup.exe`. It installs for
 your account only (no admin rights) into `%LOCALAPPDATA%\Programs\MayorStreet`, adds a Mayor Street icon to the
 desktop and Start menu, and can be removed from Apps & features. It isn't code-signed, so Windows SmartScreen
 warns the first time: click More info, then Run anyway.

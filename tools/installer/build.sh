@@ -14,3 +14,9 @@ size_kb=$(( $(wc -c < "$exe") / 1024 ))
 makensis -V2 -DEXE="$exe" -DVERSION="${version:-0.0.0}" -DSIZE_KB="$size_kb" \
 	-DOUTFILE="$out/MayorStreet-Setup.exe" "$here/mayor_street.nsi"
 echo "wrote $out/MayorStreet-Setup.exe"
+# The project app won't download a bare .exe, so ship the installer zipped too.
+if command -v zip > /dev/null; then
+	rm -f "$out/MayorStreet-Setup.zip"
+	(cd "$out" && zip -q -9 MayorStreet-Setup.zip MayorStreet-Setup.exe)
+	echo "wrote $out/MayorStreet-Setup.zip"
+fi
