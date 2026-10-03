@@ -1,0 +1,93 @@
+; Engine configuration file.
+; Godot 4.5, Forward+ renderer.
+
+config_version=5
+
+[application]
+
+config/name="Mayor Street: City Sandbox"
+config/description="SimCity meets GTA. Thread 2: the city sandbox."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.5", "Forward Plus")
+boot_splash/bg_color=Color(0.07, 0.08, 0.1, 1)
+boot_splash/show_image=false
+
+[autoload]
+
+Kit="*res://scripts/kit.gd"
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/mode=3
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/vsync/vsync_mode=1
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=false
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+anti_aliasing/quality/screen_space_aa=1
+scaling_3d/mode=1
+scaling_3d/scale=0.8
+lights_and_shadows/directional_shadow/size=4096
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=1
+lights_and_shadows/positional_shadow/atlas_size=1024
+environment/ssao/quality=1
+environment/ssao/half_size=true
+environment/glow/upscale_mode=0
+environment/defaults/default_clear_color=Color(0.5, 0.65, 0.8, 1)
+mesh_lod/lod_change/threshold_pixels=2.0
+textures/default_filters/anisotropic_filtering_level=2
+
+[shader_globals]
+
+night={
+"type": "float",
+"value": 0.0
+}
+window_lit={
+"type": "float",
+"value": 0.0
+}
+sun_dir={
+"type": "vec3",
+"value": Vector3(0, 1, 0)
+}
+city_map={
+"type": "sampler2D",
+"value": ""
+}
+lamp_map={
+"type": "sampler2D",
+"value": ""
+}
+preview_map={
+"type": "sampler2D",
+"value": ""
+}
+preview_color={
+"type": "color",
+"value": Color(0.3, 0.8, 1, 1)
+}
+overlay_mode={
+"type": "int",
+"value": 0
+}
+map_cells={
+"type": "float",
+"value": 80.0
+}
+grid_alpha={
+"type": "float",
+"value": 0.0
+}
+tile_size={
+"type": "float",
+"value": 12.0
+}
