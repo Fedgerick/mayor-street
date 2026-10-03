@@ -218,10 +218,16 @@ func set_driver(d: Node) -> void:
 	driver_changed.emit(d)
 
 
+func seat_point() -> Vector3:
+	## Where the driver's feet go when seated (left seat), in world space.
+	var left := global_basis.x
+	return global_position + left * 0.38 + forward() * (0.15 if model != "car_truck" else 2.2) + Vector3.UP * 0.25
+
+
 func exit_point() -> Vector3:
 	## Beside the driver's door (left side), on the ground.
 	var left := global_basis.x
-	return global_position + left * (_aabb.size.x * 0.5 + 0.7) + forward() * 0.3 + Vector3.UP * 0.2
+	return global_position + left * (_aabb.size.x * 0.5 + 0.7) + forward() * (0.3 if model != "car_truck" else 2.2) + Vector3.UP * 0.2
 
 
 func _physics_process(delta: float) -> void:

@@ -119,7 +119,7 @@ func _run() -> void:
 	p.place(car.exit_point(), 0.0)
 	await frames(5)
 	await tap("street_interact")
-	await frames(50)
+	await frames(110)
 	check(street.car == car and p.in_vehicle and not p.visible, "gets into the car")
 	check(street.camera.rig == car.rig, "camera follows the car")
 	var c0 := car.global_position
@@ -148,7 +148,7 @@ func _run() -> void:
 	await frames(30)
 	check(car.global_basis.y.y > 0.9, "car stays upright")
 	await tap("street_interact")
-	await frames(50)
+	await frames(110)
 	check(street.car == null and not p.in_vehicle and p.visible, "gets out of the car")
 	check(p.global_position.distance_to(car.global_position) < 4.0, "player is beside the car")
 	check(street.camera.rig == p.rig, "camera back on the character")

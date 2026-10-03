@@ -34,6 +34,7 @@ var collision: CityCollision
 var car: DrivableCar = null         # the car being driven, if any
 var active := false                 # player has control at street level
 var busy := false                   # a zoom is playing
+var switching := false              # getting into or out of a car
 
 var _hud: CanvasLayer
 var _hint: Label
@@ -125,7 +126,7 @@ func view_yaw() -> float:
 # ----------------------------------------------------------------------- cars ---
 
 func _on_interact() -> void:
-	if not active:
+	if not active or switching:
 		return
 	var best: DrivableCar = null
 	var best_d := enter_radius
@@ -139,7 +140,7 @@ func _on_interact() -> void:
 
 
 func _unhandled_input(e: InputEvent) -> void:
-	if active and car and e.is_action_pressed("street_interact"):
+	if active and car and not switching and e.is_action_pressed("street_interact"):
 		get_viewport().set_input_as_handled()
 		if absf(car.speed()) < 6.0:
 			_leave_car()
@@ -150,14 +151,49 @@ func _unhandled_input(e: InputEvent) -> void:
 
 
 func _enter_car(c: DrivableCar) -> void:
+	## Step to the driver's door, duck into the seat, then take the wheel.
+	if switching:
+		return
+	switching = true
 	car = c
-	player.set_in_vehicle(true)
-	c.set_driver(player)
-	camera.blend_to(c.rig, 0.7)
+	c.set_driver(player)        # the car is ours now; input is ignored until we're seated
+	c.set_physics_process(false)
 	vehicle_changed.emit(c)
+	player.set_puppet(true)
+	player.rig.spring.add_excluded_object(c.get_rid())   # don't let the car squash the camera
+	var door := c.exit_point() - Vector3.UP * 0.2
+	var seat := c.seat_point()
+	var yaw := c.heading_yaw()
+	# A quick turn-and-step to the door if we're not already there.
+	var start := player.global_position
+	var steps := maxi(int(start.distance_to(door) / 3.0 * 60.0), 4)
+	for i in steps:
+		var k := float(i + 1) / steps
+		player.global_position = start.lerp(door, k)
+		player.face(lerp_angle(player.facing_yaw(), yaw, k))
+		player.visual.animate(1.0 / 60.0, 2.5, true, 0.0, 0.0)
+		await get_tree().physics_frame
+	player.visual.set_sitting(true)
+	player.visual.play_enter_car()
+	var dur := player.visual.clip_length("EnterCar")
+	var t := 0.0
+	while t < dur:
+		t += get_physics_process_delta_time()
+		var k := clampf(t / dur, 0.0, 1.0)
+		player.global_position = door.lerp(c.seat_point(), k * k * (3.0 - 2.0 * k))
+		player.face(c.heading_yaw())
+		await get_tree().physics_frame
+	camera.blend_to(c.rig, 0.8)
+	player.rig.spring.remove_excluded_object(c.get_rid())
+	player.set_in_vehicle(true)
+	c.set_physics_process(true)
+	switching = false
 
 
 func _leave_car() -> void:
+	if switching:
+		return
+	switching = true
 	var c := car
 	car = null
 	var p := c.exit_point()
@@ -169,20 +205,41 @@ func _leave_car() -> void:
 	cap.height = 1.7
 	q.shape = cap
 	q.exclude = [c.get_rid()]
+	var door_side := true
 	for cand in [p, p - c.global_basis.x * (c._aabb.size.x + 1.4), c.global_position + Vector3.UP * (c._aabb.size.y + 1.0)]:
 		q.transform = Transform3D(Basis.IDENTITY, cand + Vector3.UP * 0.9)
 		if space.intersect_shape(q, 1).is_empty():
 			p = cand
 			break
+		door_side = false
 	c.set_driver(null)
 	player.set_in_vehicle(false)
-	player.place(p, c.heading_yaw())
+	player.set_puppet(true)
+	player.rig.spring.add_excluded_object(c.get_rid())
 	player.rig.yaw = c.rig.yaw
 	player.rig.pitch = clampf(c.rig.pitch, player.rig.min_pitch, player.rig.max_pitch)
-	player.rig.snap()
-	player.set_controls(active or busy)
-	camera.blend_to(player.rig, 0.6)
+	camera.blend_to(player.rig, 0.9)
 	vehicle_changed.emit(null)
+	player.face(c.heading_yaw())
+	if door_side:
+		player.visual.set_sitting(false)
+		player.visual.play_exit_car()
+		var seat := c.seat_point()
+		var dur := player.visual.clip_length("ExitCar")
+		var t := 0.0
+		while t < dur:
+			t += get_physics_process_delta_time()
+			var k := clampf(t / dur, 0.0, 1.0)
+			player.global_position = seat.lerp(p - Vector3.UP * 0.2, k * k * (3.0 - 2.0 * k))
+			player.face(c.heading_yaw())
+			await get_tree().physics_frame
+	else:
+		player.visual.set_sitting(false)
+	player.place(p, c.heading_yaw())
+	player.set_puppet(false)
+	player.rig.spring.remove_excluded_object(c.get_rid())
+	player.set_controls(active or busy)
+	switching = false
 
 
 func spawn_car(model: String, pos: Vector3, yaw: float, color: Color) -> DrivableCar:
@@ -311,7 +368,7 @@ func _process(_delta: float) -> void:
 	if car:
 		var kmh := absf(car.speed()) * 3.6
 		_speedo.text = "%d km/h" % roundi(kmh)
-		_hint.text = "E  get out" if absf(car.speed()) < 6.0 else ""
+		_hint.text = "E  get out" if absf(car.speed()) < 6.0 and not switching else ""
 		camera.fov_boost = clampf(absf(car.speed()) / 35.0, 0.0, 1.0)
 	else:
 		_speedo.text = ""

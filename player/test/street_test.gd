@@ -79,15 +79,21 @@ func _shots(dir: String) -> void:
 	Input.action_release("street_forward")
 	var near: DrivableCar = null
 	for v in get_tree().get_nodes_in_group("vehicles"):
+		if v.model == "car_truck":
+			continue
 		if near == null or v.global_position.distance_to(street.player.global_position) < near.global_position.distance_to(street.player.global_position):
 			near = v
 	street.player.place(near.exit_point(), near.heading_yaw())
 	var d := near.global_position - street.player.global_position
-	street.player.rig.yaw = atan2(-d.x, -d.z) + 0.5
+	street.player.rig.yaw = near.heading_yaw() - 1.1
 	street.player.rig.pitch = deg_to_rad(-8.0)
 	await _wait(0.3)
 	await _snap("%s/%s_5_car_door.png" % [dir, tag])
+	street.player.rig.pitch = deg_to_rad(-22.0)
 	street._enter_car(near)
+	await _wait(0.22)
+	await _snap("%s/%s_5b_getting_in.png" % [dir, tag])
+	await _wait(0.6)
 	Input.action_press("street_forward")
 	await _wait(2.5)
 	await _snap("%s/%s_6_driving.png" % [dir, tag])

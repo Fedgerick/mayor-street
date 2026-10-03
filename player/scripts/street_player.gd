@@ -20,7 +20,8 @@ const JUMP_BUFFER := 0.14
 var controls_enabled := false
 var in_vehicle := false
 var rig: OrbitRig
-var visual: CharacterVisual
+var visual: CharacterModel
+var puppet := false   # visible but driven by StreetMode (getting in or out of a car)
 
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
 var _since_floor := 0.0
@@ -48,7 +49,7 @@ func _ready() -> void:
 		cs.shape = cap
 		cs.position.y = 0.88
 		add_child(cs)
-	visual = CharacterVisual.new()
+	visual = CharacterModel.new()
 	visual.name = "Visual"
 	visual.seed_value = look_seed
 	add_child(visual)
@@ -76,8 +77,26 @@ func place(pos: Vector3, face_yaw: float) -> void:
 	rig.snap()
 
 
+func set_puppet(on: bool) -> void:
+	## Visible, no physics, no input: StreetMode moves the character into or out of a car.
+	puppet = on
+	visible = true
+	$Shape.disabled = on
+	set_physics_process(not on)
+	rig.input_enabled = controls_enabled and not on
+	velocity = Vector3.ZERO
+	if on:
+		visual.animate(0.016, 0.0, true, 0.0, 0.0)
+
+
+func face(yaw: float) -> void:
+	_facing = yaw
+	visual.rotation.y = yaw
+
+
 func set_in_vehicle(on: bool) -> void:
 	in_vehicle = on
+	puppet = false
 	visible = not on
 	$Shape.disabled = on
 	set_physics_process(not on)
@@ -86,7 +105,7 @@ func set_in_vehicle(on: bool) -> void:
 
 
 func _unhandled_input(e: InputEvent) -> void:
-	if not controls_enabled or in_vehicle:
+	if not controls_enabled or in_vehicle or puppet:
 		return
 	if e.is_action_pressed("street_interact"):
 		interact_requested.emit()
