@@ -46,6 +46,10 @@ class Mesh:
 
     def __init__(self):
         self.bm = bmesh.new()
+        # Glass faces carry their own coordinates for the shader's fake room interiors:
+        # UVMap = metres across the pane from its bottom-left corner, UV2 = the pane's size.
+        self.uv = self.bm.loops.layers.uv.new("UVMap")
+        self.uv2 = self.bm.loops.layers.uv.new("UV2")
 
     def face(self, pts, mat, normal=None, smooth=False):
         pts = [Vector(p) for p in pts]
@@ -59,7 +63,25 @@ class Mesh:
         f = self.bm.faces.new(verts)
         f.material_index = MAT_NAMES.index(mat)
         f.smooth = smooth
+        if mat == "Glass":
+            self._pane_uv(f, Vector(normal) if normal is not None else None)
         return f
+
+    def _pane_uv(self, f, normal):
+        f.normal_update()
+        n = (normal if normal is not None else f.normal).normalized()
+        if abs(n.z) > 0.99:
+            t, b = Vector((1, 0, 0)), Vector((0, 1, 0))
+        else:
+            t = (-n).cross(UP).normalized()   # right, seen from outside
+            b = n.cross(t).normalized()       # up the pane
+        us = [lp.vert.co.dot(t) for lp in f.loops]
+        vs = [lp.vert.co.dot(b) for lp in f.loops]
+        u0, v0 = min(us), min(vs)
+        size = (max(us) - u0, max(vs) - v0)
+        for lp, u, v in zip(f.loops, us, vs):
+            lp[self.uv].uv = (u - u0, v - v0)
+            lp[self.uv2].uv = size
 
     def quad(self, o, u, v, mat, normal=None):
         o, u, v = Vector(o), Vector(u), Vector(v)

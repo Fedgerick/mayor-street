@@ -10,6 +10,8 @@ const GROW_TIME := 1.4
 
 const TERRAIN_SHADER := preload("res://shaders/terrain.gdshader")
 const WATER_SHADER := preload("res://shaders/water.gdshader")
+const BEACON_SHADER := preload("res://shaders/beacon.gdshader")
+const BEACON_HEIGHT := 40.0  # towers taller than this get red aircraft warning lights
 
 const N := 1
 const E := 2
@@ -31,6 +33,8 @@ var preview_img: Image
 var preview_tex: ImageTexture
 var lamp_positions := {}  # Vector2i chunk -> Array[Vector3] (lamp heads, used by real lights)
 var _map_dirty := false
+var _tops := {}  # mesh name -> its highest vertex
+var _beacon_mesh: SphereMesh
 
 
 func setup(c: City) -> void:
@@ -311,7 +315,13 @@ func _building_xform(b: Dictionary) -> Transform3D:
 
 func _wall_tint(b: Dictionary) -> Color:
 	var pal: Array = Kit.WALLS[b.zone]
-	return pal[b.tint % pal.size()]
+	var c: Color = pal[b.tint % pal.size()]
+	# Each building gets its own shade of the palette colour: a little lighter or darker,
+	# warmer or cooler, so a street of the same model never looks copy-pasted.
+	var s: float = b.seed
+	var v := 0.9 + 0.2 * fposmod(s * 7.31, 1.0)
+	var warm := (fposmod(s * 13.7, 1.0) - 0.5) * 0.08
+	return Color(c.r * v * (1.0 + warm), c.g * v, c.b * v * (1.0 - warm))
 
 
 func _accent(b: Dictionary) -> Color:
@@ -334,6 +344,7 @@ func _rebuild_chunk(key: Vector2i) -> void:
 	chunks[key] = node
 	var groups := {}  # mesh name -> [xforms, colors, customs, shadow]
 	var lamps: Array[Vector3] = []
+	var beacons: Array[Vector3] = []
 	var x0 := key.x * CHUNK
 	var y0 := key.y * CHUNK
 	for y in range(y0, mini(y0 + CHUNK, City.SIZE)):
@@ -351,6 +362,9 @@ func _rebuild_chunk(key: Vector2i) -> void:
 					var nm := _building_mesh(b)
 					if nm != "":
 						_push(groups, nm, _building_xform(b), _wall_tint(b), _accent(b), true)
+						var top := _top_of(nm)
+						if top.y > BEACON_HEIGHT:
+							beacons.append(_building_xform(b) * (top + Vector3(0, 0.35, 0)))
 					if b.zone == City.Zone.RES and b.stage == 1:
 						var back := Basis(Vector3.UP, b.rot * PI * 0.5) * Vector3(_cell_hash(x, y, 9) * 6.0 - 3.0, 0, -4.4)
 						_add_tree(groups, center + back, x, y, 5, false)
@@ -389,7 +403,46 @@ func _rebuild_chunk(key: Vector2i) -> void:
 		mmi.multimesh = mm
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g[3] else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.add_child(mmi)
+	if not beacons.is_empty():
+		node.add_child(_make_beacons(beacons))
 	lamp_positions[key] = lamps
+
+
+func _top_of(nm: String) -> Vector3:
+	## The highest point of a kit mesh (spire, antenna or roof corner), in mesh space.
+	if _tops.has(nm):
+		return _tops[nm]
+	var top := Vector3(0, -1, 0)
+	var mesh := Kit.mesh(nm)
+	if mesh != null and mesh.get_aabb().end.y > BEACON_HEIGHT and mesh is ArrayMesh:
+		for s in mesh.get_surface_count():
+			for v: Vector3 in mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]:
+				if v.y > top.y:
+					top = v
+	_tops[nm] = top
+	return top
+
+
+func _make_beacons(points: Array[Vector3]) -> MultiMeshInstance3D:
+	if _beacon_mesh == null:
+		_beacon_mesh = SphereMesh.new()
+		_beacon_mesh.radius = 0.35
+		_beacon_mesh.height = 0.7
+		_beacon_mesh.radial_segments = 8
+		_beacon_mesh.rings = 4
+		var mat := ShaderMaterial.new()
+		mat.shader = BEACON_SHADER
+		_beacon_mesh.material = mat
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _beacon_mesh
+	mm.instance_count = points.size()
+	for k in points.size():
+		mm.set_instance_transform(k, Transform3D(Basis.IDENTITY, points[k]))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mmi
 
 
 func _push(groups: Dictionary, nm: String, xf: Transform3D, col: Color, custom: Color, shadow: bool) -> void:

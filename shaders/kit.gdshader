@@ -11,7 +11,7 @@ uniform float tint_amount = 1.0;
 // 0 plain, 1 stucco, 2 brick, 3 concrete panels, 4 corrugated metal, 5 roof tiles,
 // 6 paving, 7 grass, 8 asphalt, 9 awning stripes, 10 sidewalk, 11 gravel roof
 uniform int pattern = 0;
-// 0 solid, 1 lit glass, 2 sign, 3 lamp, 4 foliage, 5 headlight, 6 taillight, 7 plain glass
+// 0 solid, 1 window glass, 2 sign, 3 lamp, 4 foliage, 5 headlight, 6 taillight, 7 plain glass
 uniform int kind = 0;
 uniform float rough = 0.85;
 uniform float metal = 0.0;
@@ -26,13 +26,18 @@ varying vec3 wnrm;
 varying vec4 icolor;
 varying vec4 icustom;
 varying vec3 origin;
+varying vec3 oview;  // camera -> vertex in object space (window glass only)
 
 void vertex() {
 	opos = VERTEX;
 	onrm = NORMAL;
 	icolor = COLOR;
 	icustom = INSTANCE_CUSTOM;
-	origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	origin = MODEL_MATRIX[3].xyz;
+	oview = vec3(0.0);
+	if (kind == 1) {
+		oview = VERTEX - inverse(mat3(MODEL_MATRIX)) * (CAMERA_POSITION_WORLD - origin);
+	}
 	if (wind) {
 		float h = max(VERTEX.y - 1.2, 0.0);
 		float t = TIME * 1.4 + origin.x * 0.05 + origin.z * 0.07;
@@ -44,6 +49,7 @@ void vertex() {
 }
 
 float aa_fade(vec2 uv) {
+	// 1 when a pattern of this frequency is well resolved, 0 when it would alias.
 	vec2 w = fwidth(uv);
 	return clamp(1.0 - max(w.x, w.y) * 1.6, 0.0, 1.0);
 }
@@ -55,19 +61,185 @@ float grid_line(vec2 uv, vec2 width) {
 	return max(l.x, l.y);
 }
 
+float in_box(vec2 p, vec2 a, vec2 b) {
+	return step(a.x, p.x) * step(p.x, b.x) * step(a.y, p.y) * step(p.y, b.y);
+}
+
+// ------------------------------------------------------------ window rooms ---
+// Interior mapping: each pane looks into a room box behind it. pane = metres from the
+// pane's bottom-left and size = the pane's size (both from the kit's UVs); d = view ray in
+// pane space (x right, y up, z into the building).
+
+const vec3 ROOM_WALLS[8] = vec3[8](
+	vec3(0.78, 0.72, 0.6), vec3(0.82, 0.82, 0.8), vec3(0.52, 0.62, 0.74), vec3(0.56, 0.66, 0.5),
+	vec3(0.86, 0.6, 0.5), vec3(0.6, 0.58, 0.6), vec3(0.86, 0.76, 0.46), vec3(0.75, 0.78, 0.8));
+const vec3 ROOM_FLOORS[5] = vec3[5](
+	vec3(0.42, 0.26, 0.14), vec3(0.22, 0.13, 0.07), vec3(0.32, 0.32, 0.35), vec3(0.2, 0.24, 0.38),
+	vec3(0.68, 0.66, 0.62));
+const vec3 FURNITURE[6] = vec3[6](
+	vec3(0.55, 0.2, 0.16), vec3(0.2, 0.32, 0.5), vec3(0.3, 0.3, 0.32), vec3(0.62, 0.5, 0.36),
+	vec3(0.18, 0.4, 0.3), vec3(0.75, 0.72, 0.68));
+
+vec2 bay_size(vec2 size) {
+	// Curtain walls (panes taller than a storey) split into storeys and bays.
+	return size / max(vec2(1.0), floor(size / vec2(3.8, 3.4) + 0.5));
+}
+
+vec3 room(vec2 pane, vec2 size, vec3 d, float rid, bool shop, float detail, out float depth_k) {
+	vec3 p = vec3(pane, 0.0);
+	vec3 bmin = vec3(0.0);
+	vec3 bmax;
+	float deep = 3.2 + 2.4 * hash12(vec2(rid, 3.1));
+	if (size.y < 4.5) {
+		float w = max(size.x + 1.4, 2.8);
+		bmin = vec3(-(w - size.x) * 0.5, shop ? -0.15 : -0.9, 0.0);
+		bmax = vec3(bmin.x + w, size.y + (shop ? 0.7 : 0.45), deep + (shop ? 3.0 : 0.0));
+	} else {
+		vec2 c = bay_size(size);
+		p.xy = pane - floor(pane / c) * c;
+		bmax = vec3(c, deep + 2.0);
+	}
+	float h1 = hash12(vec2(rid, 1.7));
+	float h2 = hash12(vec2(rid, 5.3));
+	vec3 wall = ROOM_WALLS[int(h1 * 7.99)];
+	vec3 flr = ROOM_FLOORS[int(h2 * 4.99)] * 0.85;
+	// Seen from far away the room is just its average colour.
+	vec3 avg = wall * 0.7 + flr * 0.15 + vec3(0.13);
+	depth_k = 0.5;
+	if (detail <= 0.0) {
+		return avg;
+	}
+	d = vec3(abs(d.x) < 1e-4 ? 1e-4 : d.x, abs(d.y) < 1e-4 ? 1e-4 : d.y, max(d.z, 1e-4));
+	vec3 tp = (mix(bmin, bmax, step(vec3(0.0), d)) - p) / d;
+	float t = min(tp.x, min(tp.y, tp.z));
+	vec3 hit = p + d * t;
+	vec3 col;
+	if (t == tp.z) {
+		// Back wall, with a piece of furniture and sometimes a picture.
+		col = wall * 0.9;
+		if (shop) {
+			// Shelves of goods behind the counter.
+			float sy = hit.y - bmin.y;
+			vec2 cell = vec2(floor(hit.x / 0.4), floor(sy / 0.45));
+			float goods = step(0.3, sy) * step(sy, 2.1) * step(0.18, fract(sy / 0.45));
+			col = mix(col, FURNITURE[int(hash12(cell + vec2(rid * 13.0)) * 5.99)] * 1.15, goods * 0.9);
+		}
+		float fx0 = mix(bmin.x, bmax.x, 0.1 + 0.3 * h2);
+		float fx1 = fx0 + (bmax.x - bmin.x) * (0.3 + 0.3 * h1);
+		float fh = shop ? 1.3 : 0.55 + 0.5 * h2;
+		col = mix(col, FURNITURE[int(h2 * 5.99)], in_box(hit.xy, vec2(fx0, bmin.y), vec2(fx1, bmin.y + fh)) * 0.85);
+		vec2 pc = vec2(mix(bmin.x, bmax.x, 0.3 + 0.4 * h1), bmin.y + 1.6);
+		col = mix(col, FURNITURE[int(h1 * 5.99)] * 1.2, in_box(hit.xy, pc - vec2(0.35, 0.25), pc + vec2(0.35, 0.25)) * step(0.4, h2) * 0.8);
+	} else if (t == tp.y) {
+		col = d.y < 0.0 ? flr : vec3(0.86, 0.85, 0.82);
+	} else {
+		col = wall * 0.78;
+		// A tall cupboard against a side wall in some rooms.
+		col = mix(col, FURNITURE[int(h1 * 5.99)] * 0.8, step(0.6, h1) * step(hit.y, bmin.y + 1.9) * step(hit.z, bmax.z * 0.45) * 0.85);
+	}
+	depth_k = clamp(hit.z / bmax.z, 0.0, 1.0);
+	return mix(avg, col, detail);
+}
+
+float pane_id(vec2 pane, vec3 p_obj, vec3 t, vec3 b, float seed) {
+	// Stable per pane: where its corner sits in the building, plus the building's seed. Both
+	// are snapped to whole numbers first. Interpolation leaves the last bits of a float
+	// wobbling from pixel to pixel, and hashing that would pick a new room on every pixel.
+	vec3 corner = p_obj - t * pane.x - b * pane.y;
+	return hash13(floor(corner * 2.0 + 0.371) + floor(fract(seed) * 4096.0));
+}
+
+vec3 window_glass(vec2 uv, vec2 uv2, vec3 n, vec3 p_obj, vec3 view, float seed, out vec3 emit_out, out float tall_k, out float clear_k) {
+	vec2 pane = vec2(uv.x, 1.0 - uv.y);
+	vec2 size = vec2(uv2.x, 1.0 - uv2.y);
+	vec3 t = abs(n.y) > 0.99 ? vec3(1.0, 0.0, 0.0) : normalize(cross(-n, vec3(0.0, 1.0, 0.0)));
+	vec3 b = normalize(cross(n, t));
+	vec3 v = normalize(view);
+	vec3 d = vec3(dot(v, t), dot(v, b), dot(v, -n));
+	float rid = pane_id(pane, p_obj, t, b, seed);
+	bool tall = size.y >= 4.5;
+	if (tall) {
+		rid = hash12(floor(pane / bay_size(size)) + vec2(rid * 31.0));
+	}
+	// Wide panes at street level are shop windows.
+	bool shop = !tall && size.x > 2.6 && (p_obj.y - pane.y) < 1.5;
+	// Metres per pixel across the pane: interiors fade to a flat colour before they alias.
+	vec2 fw = fwidth(pane);
+	float detail = clamp(1.6 - max(fw.x, fw.y) * 9.0, 0.0, 1.0);
+	float depth_k;
+	vec3 col = room(pane, size, d, rid, shop, detail, depth_k);
+	// Lit at night; shops stay lit through the evening.
+	float lit = step(hash12(vec2(rid, 9.1)), window_lit);
+	if (shop) {
+		lit = max(lit, step(0.3, night) * step(0.24, window_lit));
+	}
+	float cool = step(0.8, hash12(vec2(rid, 4.4)));
+	vec3 lamp = mix(vec3(1.0, 0.7, 0.42), vec3(0.72, 0.84, 1.0), cool) * (0.75 + 0.5 * hash12(vec2(rid, 6.6)));
+	// Blinds or curtains on some panes, in front of the room.
+	float kind_h = hash12(vec2(rid, 2.2));
+	float cover = 0.0;
+	vec3 cloth = vec3(0.0);
+	float px = max(fw.x, fw.y);
+	if (!shop) {
+		if (kind_h < 0.3) {
+			// Slats 7 cm apart: only drawn while they span a few pixels.
+			float lvl = size.y * (0.25 + 0.6 * hash12(vec2(rid, 8.8)));
+			cover = step(size.y - lvl, pane.y);
+			float slats = clamp(1.0 - px / 0.07 * 2.5, 0.0, 1.0);
+			cloth = vec3(0.86, 0.83, 0.76) * (1.0 - 0.14 * slats * (0.5 + 0.5 * sin(pane.y / 0.07 * 6.2832)));
+		} else if (kind_h < 0.5 && !tall) {
+			float cw = size.x * (0.18 + 0.12 * hash12(vec2(rid, 7.7)));
+			cover = 1.0 - step(cw, pane.x) * step(pane.x, size.x - cw);
+			float folds = clamp(1.0 - px / 0.35 * 2.5, 0.0, 1.0);
+			cloth = FURNITURE[int(hash12(vec2(rid, 5.5)) * 5.99)] * (1.0 - 0.15 * folds * (0.5 + 0.5 * sin(pane.x * 18.0)));
+		}
+	}
+	float day = 1.0 - night;
+	// By day rooms are darker than the street outside; lit shops less so.
+	vec3 inside = col * day * (0.13 * mix(1.0, 0.4, depth_k) + (shop ? 0.15 : 0.0));
+	inside += col * lamp * lit * night * mix(1.0, 0.6, depth_k) * (shop ? 1.5 : 1.0);
+	vec3 front = cloth * (0.3 * day + lamp * lit * night * 0.6);
+	emit_out = mix(inside, front, cover);
+	tall_k = tall ? 1.0 : 0.0;
+	clear_k = 1.0 - cover;
+	return mix(vec3(0.02), cloth * 0.3, cover);
+}
+
+vec3 window_flat(vec2 uv, vec2 uv2, vec3 n, vec3 p_obj, float seed, out vec3 emit_out) {
+	// Low graphics level: one flat colour per pane, lit or not.
+	vec2 pane = vec2(uv.x, 1.0 - uv.y);
+	vec3 t = abs(n.y) > 0.99 ? vec3(1.0, 0.0, 0.0) : normalize(cross(-n, vec3(0.0, 1.0, 0.0)));
+	vec3 b = normalize(cross(n, t));
+	float rid = pane_id(pane, p_obj, t, b, seed);
+	float lit = step(hash12(vec2(rid, 9.1)), window_lit);
+	vec3 lamp = vec3(1.0, 0.72, 0.45) * (0.75 + 0.5 * hash12(vec2(rid, 6.6)));
+	float ceiling = 0.6 + 0.4 * smoothstep(0.2, 1.0, pane.y / max(1.0 - uv2.y, 0.5));
+	emit_out = lamp * lit * night * ceiling + vec3(0.03, 0.04, 0.05) * (1.0 - night);
+	return vec3(0.03);
+}
+
 void fragment() {
 	vec3 n = normalize(onrm);
 	vec3 tint = tint_src == 1 ? icolor.rgb : (tint_src == 2 ? icustom.rgb : vec3(1.0));
 	vec3 alb = base_color * mix(vec3(1.0), tint, tint_amount);
 	float r = rough;
 	float m = metal;
+	float sp = spec;
 	float seed = icustom.a;
 	vec2 wuv = abs(n.x) > abs(n.z) ? vec2(opos.z, opos.y) : vec2(opos.x, opos.y);
 	vec3 emit = vec3(0.0);
+	bool wall = abs(n.y) < 0.5 && !ground_level && kind == 0;
 
 	if (pattern == 1 || pattern == 11) {
-		alb *= 0.92 + 0.12 * fbm(wuv * 1.1 + opos.xz * 0.7 + seed * 40.0);
-		if (pattern == 11) alb *= 0.9 + 0.2 * vnoise(opos.xz * 3.0);
+		// Render or gravel: broad blotches, fine grain only up close.
+		alb *= 0.93 + 0.12 * fbm(wuv * 0.35 + opos.xz * 0.2 + seed * 40.0);
+		if (pattern == 11) {
+			alb *= 0.88 + 0.22 * fbm(opos.xz * 0.25 + seed * 9.0);
+			alb *= mix(1.0, 0.92 + 0.16 * vnoise(opos.xz * 3.0), aa_fade(opos.xz * 3.0));
+			// From tar-dark to pale membrane roofs, some warmer, some cooler.
+			alb *= 0.5 + 0.62 * fract(seed * 5.31);
+			alb *= mix(vec3(1.07, 1.0, 0.9), vec3(0.94, 0.98, 1.05), fract(seed * 3.77));
+		}
 	} else if (pattern == 2) {
 		vec2 uv = wuv / vec2(0.55, 0.24);
 		float row = floor(uv.y);
@@ -77,77 +249,102 @@ void fragment() {
 		float mortar = grid_line(uv, vec2(0.08, 0.14)) * fade;
 		float bh = hash12(cell + seed * 13.0);
 		alb *= mix(1.0, 0.82 + 0.3 * bh, fade);
-		alb = mix(alb, vec3(0.78, 0.75, 0.7), mortar * 0.75);
+		alb *= 0.92 + 0.14 * fbm(wuv * 0.3 + seed * 7.0);
+		alb = mix(alb, vec3(0.62, 0.6, 0.56), mortar * 0.6);
 	} else if (pattern == 3) {
 		vec2 uv = wuv / vec2(3.0, 1.55);
 		float fade = aa_fade(uv * 4.0);
 		alb *= 1.0 - grid_line(uv, vec2(0.012, 0.025)) * 0.3 * fade;
 		alb *= 0.94 + 0.1 * hash12(floor(uv) + seed * 7.0) * fade;
-		alb *= 0.95 + 0.08 * fbm(wuv * 0.8);
+		alb *= 0.95 + 0.08 * fbm(wuv * 0.5);
 	} else if (pattern == 4) {
 		float c = wuv.x / 0.22;
 		float fade = aa_fade(vec2(c));
 		alb *= 1.0 + sin(c * 6.2832) * 0.09 * fade;
-		r = mix(r, r * 0.7, 0.5 + 0.5 * sin(c * 6.2832));
+		r = mix(r, r * 0.7, (0.5 + 0.5 * sin(c * 6.2832)) * fade);
+		// Rust and grime on old sheds.
+		float rust = smoothstep(0.55, 0.8, fbm(wuv * 0.4 + seed * 17.0));
+		alb = mix(alb, vec3(0.42, 0.24, 0.14), rust * 0.45);
 	} else if (pattern == 5) {
 		vec2 uv = vec2(wuv.x + opos.x + opos.z, opos.y) / vec2(0.45, 0.3);
 		uv.x += mod(floor(uv.y), 2.0) * 0.5;
 		float fade = aa_fade(uv);
 		alb *= 1.0 - grid_line(uv, vec2(0.04, 0.2)) * 0.35 * fade;
 		alb *= mix(1.0, 0.85 + 0.25 * hash12(floor(uv) + seed), fade);
+		alb *= 0.9 + 0.15 * fbm(opos.xz * 0.4 + seed * 5.0);
 	} else if (pattern == 6 || pattern == 10) {
 		vec2 uv = (pattern == 10 ? wpos.xz : opos.xz) / (pattern == 10 ? 1.5 : 1.0);
 		float fade = aa_fade(uv);
 		alb *= 1.0 - grid_line(uv, vec2(0.04)) * 0.22 * fade;
 		alb *= mix(1.0, 0.93 + 0.12 * hash12(floor(uv)), fade);
-		alb *= 0.94 + 0.1 * fbm(wpos.xz * 0.3);
+		alb *= 0.9 + 0.14 * fbm(wpos.xz * 0.25);
+		// Gum spots and stains.
+		alb *= 1.0 - smoothstep(0.62, 0.72, fbm(wpos.xz * 0.9 + 4.0)) * 0.12 * aa_fade(wpos.xz * 0.9);
 	} else if (pattern == 7) {
-		float g = fbm(wpos.xz * 0.08);
-		alb = mix(vec3(0.27, 0.48, 0.16), vec3(0.42, 0.58, 0.2), g);
-		alb *= 0.9 + 0.2 * vnoise(wpos.xz * 1.7);
+		// Lawn: rich greens with mowing stripes.
+		float g = fbm(wpos.xz * 0.06);
+		alb = mix(vec3(0.1, 0.25, 0.045), vec3(0.2, 0.36, 0.07), g);
+		float stripe = step(0.5, fract(opos.x / 1.4));
+		alb *= mix(1.0, 0.88 + 0.2 * stripe, aa_fade(opos.xz / 1.4));
+		alb *= mix(1.0, 0.9 + 0.2 * vnoise(wpos.xz * 2.0), aa_fade(wpos.xz * 2.0));
+		alb = mix(alb, vec3(0.32, 0.3, 0.12), smoothstep(0.66, 0.8, fbm(wpos.xz * 0.15 + 9.0)) * 0.4);
 	} else if (pattern == 8) {
-		alb *= 0.85 + 0.25 * fbm(wpos.xz * 0.6);
-		alb *= 0.92 + 0.12 * vnoise(wpos.xz * 9.0);
+		alb *= 0.86 + 0.22 * fbm(wpos.xz * 0.4);
+		alb *= mix(1.0, 0.92 + 0.12 * vnoise(wpos.xz * 9.0), aa_fade(wpos.xz * 9.0));
 		float patch = smoothstep(0.62, 0.66, fbm(wpos.xz * 0.12 + 3.0));
-		alb *= 1.0 - patch * 0.18;
+		alb *= 1.0 - patch * 0.16;
+		// Faint cracks in a few worn stretches.
+		float worn = smoothstep(0.58, 0.7, fbm(wpos.xz * 0.04 + 7.0));
+		float crack = 1.0 - smoothstep(0.0, 0.012, abs(fbm(wpos.xz * 0.7 + 11.0) - 0.5));
+		alb *= 1.0 - crack * worn * 0.2 * aa_fade(wpos.xz * 5.6);
+		r = mix(r, 0.6, patch * 0.5);
 	} else if (pattern == 9) {
 		float s = step(0.5, fract((opos.x + opos.z) / 0.9));
 		alb = mix(vec3(0.95, 0.94, 0.9), alb, s);
 	}
 
-	// Ground contact shadow and a gentle bottom-to-top gradient on walls.
-	if (abs(n.y) < 0.5 && !ground_level && kind == 0) {
-		alb *= mix(0.68, 1.0, smoothstep(0.0, 1.8, opos.y));
-		alb *= 1.0 + clamp(opos.y / 120.0, 0.0, 0.12);
+	if (wall) {
+		// Weathering: grime near the ground, rain streaks, broad stains, paler toward the top.
+		float base = smoothstep(0.0, 2.4 + vnoise(vec2(wuv.x * 0.8 + seed * 9.0, seed)) * 1.2, opos.y);
+		alb *= mix(0.6, 1.0, base);
+		float streak = vnoise(vec2(wuv.x * 2.2 + seed * 31.0, opos.y * 0.12));
+		alb *= 1.0 - smoothstep(0.5, 0.95, streak) * 0.14 * aa_fade(vec2(wuv.x * 2.2));
+		alb *= 0.94 + 0.1 * fbm(wuv * 0.12 + seed * 3.0);
+		alb *= 1.0 + clamp(opos.y / 120.0, 0.0, 0.1);
 	}
 
 	if (kind == 1) {
-		vec3 wid = floor(vec3(opos.x / 2.0, opos.y / 3.2, opos.z / 2.0) + n * 0.5);
-		float h = hash13(wid + vec3(seed * 91.7));
-		float lit = step(h, window_lit);
-		float cool = step(0.82, hash13(wid * 1.7 + 3.1));
-		vec3 warm = mix(vec3(1.0, 0.62, 0.3), vec3(0.6, 0.78, 1.0), cool) * (0.6 + 0.6 * hash13(wid * 3.7));
-		float ceiling = 0.55 + 0.45 * smoothstep(0.2, 0.95, fract(opos.y / 3.2));
-		// Fake sky reflection: darker toward the ground, bright sky blue looking up.
-		vec3 vdir = normalize(wpos - CAMERA_POSITION_WORLD);
-		vec3 rf = reflect(vdir, normalize(wnrm));
-		vec3 sky = mix(vec3(0.05, 0.08, 0.12), vec3(0.42, 0.6, 0.82), smoothstep(-0.15, 0.5, rf.y));
-		alb = sky * (0.75 + 0.5 * h) * mix(1.0, 0.25, night);
-		r = 0.08;
-		m = 0.1;
-		emit += warm * lit * ceiling * smoothstep(0.05, 0.5, night) * 1.1;
+		vec3 e;
+		float tall_k = 0.0;
+		float clear_k = 0.0;
+		// Glass is flat shaded, so n is the same all over a pane and so is the room picked
+		// from it (a normal from screen derivatives is too noisy for that).
+		if (gfx_quality == 0) {
+			alb = window_flat(UV, UV2, n, opos, seed, e);
+		} else {
+			alb = window_glass(UV, UV2, n, opos, oview, seed, e, tall_k, clear_k);
+		}
+		emit += e;
+		r = 0.06;
+		sp = 0.5;
+		// Office curtain walls: tinted, more mirror-like glass.
+		m = tall_k * 0.55;
+		// Glass is nearly black, so metallic barely changes its look, but it keeps Godot's specular
+		// occlusion (driven by SSAO) from blotting out the sky reflection in the recessed panes.
+		m = max(m, 0.5 * clear_k);
+		alb = mix(alb, vec3(0.16, 0.26, 0.3), tall_k * 0.5);
 	} else if (kind == 7) {
 		alb = vec3(0.05, 0.07, 0.09);
 		r = 0.04;
 		m = 0.3;
 	} else if (kind == 2) {
-		emit += alb * (0.2 + 1.4 * smoothstep(0.1, 0.6, night));
+		emit += alb * (0.25 + 1.2 * smoothstep(0.1, 0.6, night));
 	} else if (kind == 3) {
-		emit += vec3(1.0, 0.82, 0.55) * smoothstep(0.1, 0.5, night) * 9.0;
+		emit += vec3(1.0, 0.8, 0.55) * smoothstep(0.1, 0.5, night) * 5.0;
 	} else if (kind == 5) {
-		emit += vec3(1.0, 0.95, 0.8) * (0.2 + smoothstep(0.1, 0.5, night) * 5.0);
+		emit += vec3(1.0, 0.95, 0.82) * (0.15 + smoothstep(0.1, 0.5, night) * 4.0);
 	} else if (kind == 6) {
-		emit += vec3(1.0, 0.05, 0.03) * (0.4 + smoothstep(0.1, 0.5, night) * 2.5);
+		emit += vec3(1.0, 0.05, 0.03) * (0.35 + smoothstep(0.1, 0.5, night) * 2.2);
 	}
 
 	// Map overlays.
@@ -164,12 +361,13 @@ void fragment() {
 		} else if (overlay_mode == 3) {
 			alb = cm.r > 0.5 ? grey : mix(grey, heat(1.0 - cm.a), 0.65);
 		}
+		emit *= 0.3;
 	}
 
 	ALBEDO = alb;
 	ROUGHNESS = r;
 	METALLIC = m;
-	SPECULAR = spec;
+	SPECULAR = sp;
 	if (kind == 4) {
 		BACKLIGHT = alb * 0.45;
 	}
