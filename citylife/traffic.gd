@@ -52,6 +52,7 @@ var _buf: Array[PackedFloat32Array] = []
 # Stats for tests.
 var red_runs := 0
 var despawned_stuck := 0
+var wait_reason := {}  # debug: why stopped cars are stopped
 
 
 func setup(road_net: RoadNet, seed_value := 7) -> void:
@@ -295,6 +296,11 @@ func _drive(c: Car, dt: float) -> void:
 	if gap < 0.3:
 		c.v = 0.0
 	c.stuck = c.stuck + dt if c.v < 0.3 else 0.0
+	if c.v < 0.3 and OS.is_debug_build():
+		var why := "follow" if lead_v > 0.0 or gap == INF else "stopline"
+		if net.junction[c.cell] == 1:
+			why = "in_junction"
+		wait_reason[why] = wait_reason.get(why, 0) + 1
 
 
 func _try_grant(c: Car, j: int, to_end: float) -> bool:

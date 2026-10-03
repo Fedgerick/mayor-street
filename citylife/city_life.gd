@@ -91,6 +91,7 @@ func _process(delta: float) -> void:
 
 
 var _weights_dirty := false
+var _weights_timer := 0.0
 
 
 func step(dt: float) -> void:
@@ -102,8 +103,11 @@ func step(dt: float) -> void:
 		crowd.validate()
 		signals.rebuild()
 		_weights_dirty = true
-	if _weights_dirty:
+	_weights_timer -= dt
+	if _weights_dirty and _weights_timer <= 0.0:
+		# Buildings change constantly while the city grows; refresh a few times a minute.
 		_weights_dirty = false
+		_weights_timer = 4.0
 		compute_weights()
 		_area_timer = 0.0
 	_update_view()
