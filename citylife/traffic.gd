@@ -62,7 +62,8 @@ func setup(road_net: RoadNet, seed_value := 7) -> void:
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
 		mm.use_custom_data = true
-		var mesh: Mesh = Kit.mesh(MODELS[k])
+		var kit := _kit()
+		var mesh: Mesh = kit.mesh(MODELS[k]) if kit else null
 		mm.mesh = mesh if mesh else _fallback_mesh(LENGTHS[k])
 		mm.instance_count = max_cars
 		mm.visible_instance_count = 0
@@ -110,13 +111,19 @@ func spawn_at(cell: int, rand_pos := true) -> Car:
 		c.model = 3 if r < 0.45 else (2 if r < 0.75 else 0)
 	else:
 		c.model = 0 if r < 0.45 else (1 if r < 0.8 else (2 if r < 0.95 else 3))
-	c.tint = Kit.CAR_TINTS[rng.randi() % Kit.CAR_TINTS.size()]
+	var tints: Array = _kit().CAR_TINTS if _kit() else [Color(0.8, 0.2, 0.2), Color(0.9, 0.9, 0.9)]
+	c.tint = tints[rng.randi() % tints.size()]
 	c.aggr = rng.randf_range(0.85, 1.12)
 	c.v = V_STRAIGHT * 0.6
 	_place(c)
 	cars.append(c)
 	_lane(cell * 4 + c.din).append(c)
 	return c
+
+
+func _kit() -> Node:
+	# The Kit autoload, looked up at runtime so this also runs in --script test mode.
+	return Engine.get_main_loop().root.get_node_or_null("Kit")
 
 
 func _zone_near(cell: int) -> int:
@@ -178,7 +185,7 @@ func _lane(key: int) -> Array:
 ## Drop cars whose road was bulldozed or rerouted. Call after RoadNet.rebuild().
 func validate() -> void:
 	for c in cars.duplicate():
-		var ok := net.is_road(c.cell) and (net.has_arm(c.cell, c.dout) or c.dout == RoadNet.opp(c.din))
+		var ok: bool = net.is_road(c.cell) and (net.has_arm(c.cell, c.dout) or c.dout == RoadNet.opp(c.din))
 		var nxt := net.neighbor(c.cell, c.dout)
 		ok = ok and net.is_road(nxt)
 		if ok and not (net.has_arm(nxt, c.nd) or net.exits(nxt, c.dout).has(c.nd)):

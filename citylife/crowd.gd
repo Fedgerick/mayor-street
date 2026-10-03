@@ -165,7 +165,7 @@ func step(dt: float) -> void:
 		p.t += p.speed * dt
 		p.phase = fmod(p.phase + p.speed * dt * 4.2, TAU)
 		if p.t >= p.length:
-			var came := p.a
+			var came: int = p.a
 			_leave_crossing(p)
 			p.a = p.b
 			if not _choose_next(p, came):

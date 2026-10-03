@@ -16,6 +16,10 @@ func check(ok: bool, what: String) -> void:
 func _initialize() -> void:
 	# Autoloads (Kit) are ready after the first frame.
 	await process_frame
+	if not root.has_node("Kit"):
+		var kit: Node = load("res://scripts/kit.gd").new()
+		kit.name = "Kit"
+		root.add_child(kit)
 	print("citylife tests")
 	var city := City.new(1337)
 	var t0 := Time.get_ticks_msec()
@@ -39,7 +43,9 @@ func _initialize() -> void:
 	check(net.conflict[0 * 16 + 0] == 0, "same-approach movements don't conflict")
 	check(net.conflict[(2 * 4 + 2) * 16 + (1 * 4 + 1)] == 1, "crossing straights conflict")
 	check(net.conflict[(2 * 4 + 2) * 16 + (0 * 4 + 0)] == 0, "opposing straights don't conflict")
-	check(net.conflict[(2 * 4 + 3) * 16 + (0 * 4 + 0)] == 1, "left turn conflicts with oncoming straight")
+	# Heading S the driver's left is E.
+	check(net.conflict[(2 * 4 + 1) * 16 + (0 * 4 + 0)] == 1, "left turn conflicts with oncoming straight")
+	check(net.conflict[(2 * 4 + 3) * 16 + (0 * 4 + 0)] == 0, "right turn clears oncoming straight")
 	var lane_ok := true
 	for m in 16:
 		var a: Vector3 = net.sample(m, 0.0)[0]
@@ -131,13 +137,16 @@ func _initialize() -> void:
 func _overlaps(tr: Traffic) -> int:
 	var n := 0
 	for key in tr._lanes:
-		var lane: Array = tr._lanes[key]
+		var lane: Array = tr._lanes[key].duplicate()
+		lane.sort_custom(func(x, y): return x.s < y.s)
 		for k in lane.size() - 1:
 			var a = lane[k]
 			var b = lane[k + 1]
 			var need: float = (Traffic.LENGTHS[a.model] + Traffic.LENGTHS[b.model]) * 0.5 - 0.5
-			if b.s - a.s < need and a.s != b.s:
+			if b.s - a.s < need:
 				n += 1
+				if OS.has_environment("CITYLIFE_DEBUG"):
+					print("    overlap cell %d j=%d a(%d>%d s%.1f v%.1f) b(%d>%d s%.1f v%.1f)" % [a.cell, tr.net.junction[a.cell], a.din, a.dout, a.s, a.v, b.din, b.dout, b.s, b.v])
 	return n
 
 

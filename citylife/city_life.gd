@@ -149,7 +149,7 @@ func compute_weights() -> void:
 				var i := city.idx(x, y)
 				if city.road[i] != 1:
 					continue
-				var near := dx >= -1 and dy >= -1 and dx <= b.size and dy <= b.size
+				var near: bool = dx >= -1 and dy >= -1 and dx <= b.size and dy <= b.size
 				var f := 1.0 if near else 0.4
 				ped_weight[i] += pw * f
 				car_weight[i] += cw * f
@@ -170,10 +170,11 @@ func hour_factor(table: Array) -> float:
 func _update_view() -> void:
 	var size := City.SIZE * City.TILE
 	if camera == null or not camera.is_inside_tree():
+		# No camera (tests, tools): populate the whole island, people included.
 		focus = Vector3(size * 0.5, 0, size * 0.5)
-		cam_height = 400.0 if camera == null else camera.position.y
+		cam_height = 100.0
 		car_radius = size
-		ped_radius = 160.0 if cam_height < PED_HEIGHT else 0.0
+		ped_radius = size
 		return
 	var o := camera.global_position
 	var d := -camera.global_transform.basis.z
@@ -265,8 +266,8 @@ func _cull() -> void:
 	var cr := car_radius * 1.15
 	var removed := 0
 	for c in traffic.cars.duplicate():
-		var far := Vector2(c.pos.x - focus.x, c.pos.z - focus.z).length() > cr
-		var extra := traffic.cars.size() > want_cars * 1.2 + 4 and removed < 2 and not _in_view(c.pos)
+		var far: bool = Vector2(c.pos.x - focus.x, c.pos.z - focus.z).length() > cr
+		var extra: bool = traffic.cars.size() > want_cars * 1.2 + 4 and removed < 2 and not _in_view(c.pos)
 		if far or extra:
 			traffic.remove(c)
 			removed += 1 if extra else 0
@@ -277,8 +278,8 @@ func _cull() -> void:
 	var pr := ped_radius * 1.2
 	removed = 0
 	for p in crowd.peds.duplicate():
-		var far := Vector2(p.pos.x - focus.x, p.pos.z - focus.z).length() > pr
-		var extra := crowd.peds.size() > want_peds * 1.2 + 4 and removed < 3 and not _in_view(p.pos) and not p.crossing
+		var far: bool = Vector2(p.pos.x - focus.x, p.pos.z - focus.z).length() > pr
+		var extra: bool = crowd.peds.size() > want_peds * 1.2 + 4 and removed < 3 and not _in_view(p.pos) and not p.crossing
 		if far or extra:
 			crowd.remove(p)
 			removed += 1 if extra else 0
