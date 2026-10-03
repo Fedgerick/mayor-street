@@ -141,6 +141,14 @@ vec3 room(vec2 pane, vec2 size, vec3 d, float rid, bool shop, float detail, out 
 	return mix(avg, col, detail);
 }
 
+// Balcony rails and the thin edges of glass slabs have no room behind them. Drawn dark like a
+// window they turned every balcony into a black blot; frosted glass catches the light instead.
+const vec3 RAIL_GLASS = vec3(0.46, 0.53, 0.55);
+
+bool is_rail(vec2 size) {
+	return size.y < 1.06 || size.x < 0.2;
+}
+
 float pane_id(vec2 pane, vec3 p_obj, vec3 t, vec3 b, float seed) {
 	// Stable per pane: where its corner sits in the building, plus the building's seed. Both
 	// are snapped to whole numbers first. Interpolation leaves the last bits of a float
@@ -152,6 +160,12 @@ float pane_id(vec2 pane, vec3 p_obj, vec3 t, vec3 b, float seed) {
 vec3 window_glass(vec2 uv, vec2 uv2, vec3 n, vec3 p_obj, vec3 view, float seed, out vec3 emit_out, out float tall_k, out float clear_k) {
 	vec2 pane = vec2(uv.x, 1.0 - uv.y);
 	vec2 size = vec2(uv2.x, 1.0 - uv2.y);
+	tall_k = 0.0;
+	clear_k = 0.0;
+	if (is_rail(size)) {
+		emit_out = vec3(0.0);
+		return RAIL_GLASS;
+	}
 	vec3 t = abs(n.y) > 0.99 ? vec3(1.0, 0.0, 0.0) : normalize(cross(-n, vec3(0.0, 1.0, 0.0)));
 	vec3 b = normalize(cross(n, t));
 	vec3 v = normalize(view);
@@ -208,6 +222,10 @@ vec3 window_glass(vec2 uv, vec2 uv2, vec3 n, vec3 p_obj, vec3 view, float seed, 
 vec3 window_flat(vec2 uv, vec2 uv2, vec3 n, vec3 p_obj, float seed, out vec3 emit_out) {
 	// Low graphics level: one flat colour per pane, lit or not.
 	vec2 pane = vec2(uv.x, 1.0 - uv.y);
+	if (is_rail(vec2(uv2.x, 1.0 - uv2.y))) {
+		emit_out = vec3(0.0);
+		return RAIL_GLASS;
+	}
 	vec3 t = abs(n.y) > 0.99 ? vec3(1.0, 0.0, 0.0) : normalize(cross(-n, vec3(0.0, 1.0, 0.0)));
 	vec3 b = normalize(cross(n, t));
 	float rid = pane_id(pane, p_obj, t, b, seed);
