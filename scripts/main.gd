@@ -9,6 +9,8 @@ extends Node3D
 ##   --screenshot=path.png  render a few frames, save, quit
 ##   --quality=0|1|2
 ##   --street               dive to street level right away
+##   --shots=dir            render the LOOK_SHOTS set into dir and quit (--only=day,night picks some)
+##   --nohud                hide the HUD
 
 enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE }
 
@@ -32,6 +34,21 @@ var _args := {}
 var _speed_before_street := 1
 
 const SPEED_VALUES := [0.0, 1.0, 3.0, 10.0]
+# Standard views for judging the look: name, hour, focus x, focus z, distance, yaw, tilt (degrees).
+# Shots named street* are taken at street level from that focus, so they go last.
+const LOOK_SHOTS := [
+	["day", 10.5, 400.0, 610.0, 230.0, -35.0, 0.0],
+	["close", 11.0, 430.0, 650.0, 75.0, -35.0, -8.0],
+	["golden", 18.4, 486.0, 640.0, 300.0, -35.0, -32.0],
+	["sunset", 18.7, 560.0, 470.0, 300.0, 125.0, -32.0],
+	["island", 13.5, 480.0, 480.0, 850.0, -30.0, 0.0],
+	["coast", 15.0, 480.0, 880.0, 200.0, 160.0, -4.0],
+	["night", 21.5, 400.0, 610.0, 230.0, -35.0, 0.0],
+	["night_close", 22.0, 430.0, 650.0, 75.0, -35.0, -8.0],
+	["street", 11.0, 562.0, 612.0, 80.0, 0.0, 0.0],
+	["street_dusk", 19.2, 562.0, 612.0, 80.0, 0.0, 0.0],
+	["street_night", 22.0, 562.0, 612.0, 80.0, 0.0, 0.0],
+]
 const LIFE_DENSITY := [0.55, 1.0, 1.25]  # cars and people per graphics level
 
 
@@ -74,7 +91,7 @@ func _ready() -> void:
 		cam.set_view(c, 620.0, deg_to_rad(-30.0))
 		cam.auto_orbit = 0.05
 		hud.show_start()
-	day_night.update_time(city.time_of_day())
+	day_night.update_time(city.time_of_day(), city.game_day())
 
 
 func _start(demo: bool) -> void:
@@ -108,6 +125,11 @@ func _start(demo: bool) -> void:
 	if _args.has("screenshot"):
 		_set_speed(0)
 		_shoot.call_deferred(_args["screenshot"])
+	if _args.has("shots"):
+		_set_speed(0)
+		_lookdev.call_deferred(_args["shots"])
+	if _args.has("nohud"):
+		hud.visible = false
 	if _args.has("street"):
 		go_street.call_deferred()
 
@@ -121,6 +143,36 @@ func _shoot(path: String) -> void:
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(path)
 	print("saved ", path)
+	get_tree().quit()
+
+
+func _lookdev(dir: String) -> void:
+	## Renders LOOK_SHOTS in one run, so before/after sets match exactly.
+	DirAccess.make_dir_recursive_absolute(dir)
+	var only := String(_args.get("only", "")).split(",", false)
+	for s in LOOK_SHOTS:
+		var nm: String = s[0]
+		if not only.is_empty() and not only.has(nm):
+			continue
+		if not nm.begins_with("street"):
+			cam.set_view(Vector3(s[2], 0, s[3]), s[4], deg_to_rad(s[5]), deg_to_rad(s[6]))
+		elif not in_street():
+			cam.set_view(Vector3(s[2], 0, s[3]), s[4], deg_to_rad(s[5]))
+			go_street()
+			await street.street_entered
+			_set_speed(0)
+		city.minutes = float(city.game_day()) * 1440.0 + float(s[1]) * 60.0
+		for i in 14:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(dir.path_join(nm + ".png"))
+		# What the GPU was asked to draw, which is what matters on a laptop iGPU.
+		var rs := RenderingServer
+		print("saved %s: %d draw calls, %dk triangles, %d objects, %d cars, %d people (%s rigged)" % [nm,
+			rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
+			rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME) / 1000,
+			rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),
+			life.traffic.cars.size(), life.crowd.peds.size(), str(life.crowd.get("_hero_count"))])
 	get_tree().quit()
 
 
@@ -357,6 +409,6 @@ func _process(delta: float) -> void:
 			view._map_dirty = true
 		# Cars and people move in real time at every sim speed, and stop when paused
 		# (screenshots pause the clock but still let traffic settle).
-		if speed_index > 0 or _args.has("screenshot"):
+		if speed_index > 0 or _args.has("screenshot") or _args.has("shots"):
 			life.step(minf(delta, 0.1))
-	day_night.update_time(city.time_of_day())
+	day_night.update_time(city.time_of_day(), city.game_day())

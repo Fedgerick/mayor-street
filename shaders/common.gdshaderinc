@@ -10,6 +10,7 @@ global uniform int overlay_mode;     // 0 none, 1 zones, 2 traffic, 3 land value
 global uniform float map_cells;
 global uniform float tile_size;
 global uniform float grid_alpha;     // tile grid lines while a build tool is active
+global uniform int gfx_quality;      // 0 low, 1 medium, 2 high
 
 const vec3 LAMP_COLOR = vec3(1.0, 0.72, 0.42);
 
