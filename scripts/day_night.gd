@@ -25,8 +25,8 @@ const SUN_KEYS := [
 ]
 # Sun elevation -> [zenith, horizon, dusk tint, ambient energy, exposure]
 const SKY_KEYS := [
-	[-20.0, Color(0.004, 0.007, 0.022), Color(0.016, 0.022, 0.05), Color(0.05, 0.04, 0.07), 1.9, 1.35],
-	[-9.0, Color(0.007, 0.013, 0.04), Color(0.035, 0.04, 0.085), Color(0.12, 0.07, 0.11), 1.9, 1.3],
+	[-20.0, Color(0.006, 0.009, 0.022), Color(0.022, 0.026, 0.045), Color(0.05, 0.04, 0.07), 1.8, 1.55],
+	[-9.0, Color(0.009, 0.015, 0.038), Color(0.04, 0.043, 0.08), Color(0.12, 0.07, 0.11), 1.8, 1.45],
 	[-4.0, Color(0.02, 0.035, 0.1), Color(0.15, 0.11, 0.16), Color(0.55, 0.2, 0.14), 1.6, 1.1],
 	[0.0, Color(0.05, 0.09, 0.22), Color(0.48, 0.34, 0.3), Color(1.0, 0.4, 0.15), 1.3, 0.85],
 	[5.0, Color(0.08, 0.17, 0.4), Color(0.7, 0.58, 0.5), Color(1.0, 0.52, 0.24), 1.1, 0.68],
@@ -34,7 +34,7 @@ const SKY_KEYS := [
 	[30.0, Color(0.07, 0.27, 0.72), Color(0.5, 0.68, 0.9), Color(1.0, 0.84, 0.68), 1.0, 0.56],
 	[60.0, Color(0.06, 0.26, 0.74), Color(0.48, 0.67, 0.9), Color(1.0, 0.86, 0.72), 1.0, 0.55],
 ]
-const MOON_COLOR := Color(0.55, 0.66, 1.0)
+const MOON_COLOR := Color(0.62, 0.7, 0.95)
 const MOON_ENERGY := 0.16
 
 var env: Environment
@@ -43,6 +43,10 @@ var light: DirectionalLight3D
 var world_env: WorldEnvironment
 var vignette: ColorRect
 var quality := 1
+# Street level turns both up: down in a street canyon most of the view is shade, lit by
+# light bounced off the sunlit walls across the street.
+var exposure_scale := 1.0
+var ambient_scale := 1.0
 var _glow_night := 0.22
 
 
@@ -57,12 +61,12 @@ func _ready() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_sky_contribution = 0.65
+	env.ambient_light_sky_contribution = 0.45
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.tonemap_white = 6.0
-	env.ssao_radius = 1.6
-	env.ssao_intensity = 2.2
+	env.ssao_radius = 1.2
+	env.ssao_intensity = 2.0
 	env.ssao_power = 1.5
 	env.ssao_detail = 0.5
 	env.ssao_horizon = 0.06
@@ -72,6 +76,10 @@ func _ready() -> void:
 	env.ssil_intensity = 1.0
 	env.ssil_sharpness = 0.98
 	env.ssil_normal_rejection = 1.0
+	env.ssr_max_steps = 48
+	env.ssr_fade_in = 0.15
+	env.ssr_fade_out = 2.0
+	env.ssr_depth_tolerance = 0.6
 	# Bloom mixed in before tonemapping, so it doesn't wash out the dark parts of the frame.
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_MIX
 	env.glow_normalized = true
@@ -188,14 +196,14 @@ func update_time(hour: float, day := 0) -> void:
 	var cover := lerpf(_cloud_cover(day), _cloud_cover(day + 1), hour / 24.0)
 	sky_mat.set_shader_parameter("cloud_cover", cover)
 
-	env.ambient_light_energy = k[3]
-	# Part of the ambient is a neutral, slightly warm version of the sky (light bounced off
-	# the city), so shade reads blue-grey rather than saturated blue.
+	env.ambient_light_energy = k[3] * ambient_scale
+	# Over half the ambient is a neutral, warm version of the sky (light bounced off the
+	# sunlit city), so shade reads blue-grey rather than saturated blue.
 	var grey := horizon.get_luminance() * 0.6 + zenith.get_luminance() * 0.4
-	env.ambient_light_color = Color(grey * 1.05, grey, grey * 0.92)
+	env.ambient_light_color = Color(grey * 1.1, grey, grey * 0.85)
 	var glow := lerpf(0.05, _glow_night, night) if env.glow_enabled else 0.0
 	env.glow_intensity = glow
-	env.tonemap_exposure = k[4] / (1.0 - glow)
+	env.tonemap_exposure = k[4] / (1.0 - glow) * exposure_scale
 	env.fog_light_color = horizon.lerp(dusk, sunset * 0.35)
 	env.fog_sun_scatter = 0.06 + 0.2 * sunset
 	RenderingServer.global_shader_parameter_set("night", night)
@@ -270,6 +278,8 @@ func apply_quality(level: int) -> void:
 	var vp := get_viewport()
 	env.ssao_enabled = level >= 1
 	env.ssil_enabled = level >= 2
+	# The city reflected in the sea and in glass towers.
+	env.ssr_enabled = level >= 2
 	env.glow_enabled = level >= 1
 	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL if level == 0 else (
 		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if level == 1 else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS)

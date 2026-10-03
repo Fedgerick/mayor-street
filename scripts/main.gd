@@ -11,6 +11,7 @@ extends Node3D
 ##   --street               dive to street level right away
 ##   --shots=dir            render the LOOK_SHOTS set into dir and quit (--only=day,night picks some)
 ##   --nohud                hide the HUD
+##   --perf                 show the frame rate readout (F3)
 
 enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE }
 
@@ -32,6 +33,8 @@ var _dragging := false
 var _hover := Vector2i(-1, -1)
 var _args := {}
 var _speed_before_street := 1
+var _perf: Label  # F3 frame rate readout, for judging graphics levels on real hardware
+var _perf_t := 0.0
 
 const SPEED_VALUES := [0.0, 1.0, 3.0, 10.0]
 # Standard views for judging the look: name, hour, focus x, focus z, distance, yaw, tilt (degrees).
@@ -130,6 +133,8 @@ func _start(demo: bool) -> void:
 		_lookdev.call_deferred(_args["shots"])
 	if _args.has("nohud"):
 		hud.visible = false
+	if _args.has("perf"):
+		_toggle_perf()
 	if _args.has("street"):
 		go_street.call_deferred()
 
@@ -162,16 +167,22 @@ func _lookdev(dir: String) -> void:
 			await street.street_entered
 			_set_speed(0)
 		city.minutes = float(city.game_day()) * 1440.0 + float(s[1]) * 60.0
-		for i in 14:
+		# The sky's light is refiltered a layer per frame, so after a jump in the time of day the
+		# ambient lags the sky for up to two passes. Wait those out before taking the picture.
+		for i in 24:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(dir.path_join(nm + ".png"))
-		# What the GPU was asked to draw, which is what matters on a laptop iGPU.
+		# What the GPU was asked to draw, which is what matters on a laptop iGPU, and the time
+		# per frame here (a software renderer, so only the ratios between levels mean much).
 		var rs := RenderingServer
-		print("saved %s: %d draw calls, %dk triangles, %d objects, %d cars, %d people (%s rigged)" % [nm,
-			rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
-			rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME) / 1000,
-			rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),
+		var draws := rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
+		var tris := rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
+		var t0 := Time.get_ticks_usec()
+		for i in 4:
+			await RenderingServer.frame_post_draw
+		print("saved %s: %d draw calls, %dk triangles, %.0f ms/frame, %d cars, %d people (%s rigged)" % [nm,
+			draws, tris / 1000, (Time.get_ticks_usec() - t0) / 4000.0,
 			life.traffic.cars.size(), life.crowd.peds.size(), str(life.crowd.get("_hero_count"))])
 	get_tree().quit()
 
@@ -208,6 +219,8 @@ func go_mayor() -> void:
 
 func _on_street_entered() -> void:
 	day_night.set_view_distance(30.0)
+	day_night.exposure_scale = 1.25
+	day_night.ambient_scale = 1.4
 
 
 func _on_street_exited() -> void:
@@ -215,6 +228,8 @@ func _on_street_exited() -> void:
 	cam.set_process(true)
 	cam.set_process_unhandled_input(true)
 	day_night.set_view_distance(cam.dist)
+	day_night.exposure_scale = 1.0
+	day_night.ambient_scale = 1.0
 	life.set_camera(cam)
 	hud.visible = true
 	_set_speed(_speed_before_street)
@@ -264,6 +279,8 @@ func _unhandled_input(e: InputEvent) -> void:
 		# The street has its own controls; only fullscreen stays shared.
 		if e is InputEventKey and e.pressed and not e.echo and (e as InputEventKey).keycode == KEY_F11:
 			_toggle_fullscreen()
+		elif e is InputEventKey and e.pressed and not e.echo and (e as InputEventKey).keycode == KEY_F3:
+			_toggle_perf()
 		return
 	if e is InputEventKey and e.pressed and not e.echo:
 		var k := (e as InputEventKey).keycode
@@ -275,6 +292,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			city.advance(10.0, 1.0)
 		elif k == KEY_F11:
 			_toggle_fullscreen()
+		elif k == KEY_F3:
+			_toggle_perf()
 		elif k == KEY_ESCAPE:
 			if _dragging:
 				_dragging = false
@@ -412,3 +431,33 @@ func _process(delta: float) -> void:
 		if speed_index > 0 or _args.has("screenshot") or _args.has("shots"):
 			life.step(minf(delta, 0.1))
 	day_night.update_time(city.time_of_day(), city.game_day())
+	if _perf != null and _perf.visible:
+		_perf_t -= delta
+		if _perf_t <= 0.0:
+			_perf_t = 0.25
+			var rs := RenderingServer
+			_perf.text = "%d fps  %.1f ms  %s\n%d draw calls  %dk triangles" % [
+				Engine.get_frames_per_second(), 1000.0 / maxf(Engine.get_frames_per_second(), 1.0),
+				["Low", "Med", "High"][quality],
+				rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
+				rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME) / 1000]
+
+
+func _toggle_perf() -> void:
+	if _perf == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 50
+		add_child(layer)
+		_perf = Label.new()
+		_perf.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		_perf.position = Vector2(-250, 64)
+		_perf.custom_minimum_size = Vector2(236, 0)
+		_perf.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_perf.add_theme_font_size_override("font_size", 15)
+		_perf.add_theme_constant_override("outline_size", 5)
+		_perf.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+		_perf.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(_perf)
+		_perf.visible = false
+	_perf.visible = not _perf.visible
+	_perf_t = 0.0
