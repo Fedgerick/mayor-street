@@ -45,6 +45,19 @@ func _initialize() -> void:
 		v = Array(args["cam"].split(",")).map(func(s): return float(s))
 	cam.position = Vector3(v[0], v[1], v[2])
 	cam.rotation_degrees = Vector3(v[4], v[3], 0)
+	if args.has("spot"):
+		# Look at the bench or bus stop nearest the middle from across the street.
+		var kind := StreetSpots.Kind.STOP if args["spot"] == "stop" else StreetSpots.Kind.BENCH
+		var best: StreetSpots.Spot = null
+		var mid := city.cell_center(c.x, c.y)
+		for s in life.spots.spots:
+			if s.kind == kind and (best == null or s.xform.origin.distance_to(mid) < best.xform.origin.distance_to(mid)):
+				best = s
+		var o := best.xform.origin
+		var face := best.xform.basis.z
+		var along := best.xform.basis.x
+		cam.position = o + face * float(args.get("dist", "8")) - along * 5.0 + Vector3(0, 1.8, 0)
+		cam.look_at(o + Vector3(0, 0.9, 0))
 	cam.make_current()
 	life.set_camera(cam)
 	if args.has("stars"):

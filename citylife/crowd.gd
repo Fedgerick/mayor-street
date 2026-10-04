@@ -4,8 +4,17 @@ extends Node3D
 ## right of the walkway, stop now and then, and use zebra crossings only on the walk
 ## phase. Everyone is one MultiMesh of a procedural low-poly person; walking is animated
 ## in the vertex shader from a per-instance phase, so the CPU only moves points.
+##
+## People also stop for things: they sit on benches, wait at bus stops and get on the
+## bus, stand in small groups chatting, look at their phones, walk dogs and stop to stare
+## at crashes. How many do which follows the hour (see `hour`).
 
 const PED_SHADER := preload("res://citylife/ped.gdshader")
+const DOG_SHADER := preload("res://citylife/dog.gdshader")
+const UMBRELLA_SHADER := preload("res://citylife/umbrella.gdshader")
+
+enum Act { WALK, SIT, WAIT, CHAT, BOARD }
+enum Pose { NONE, SIT, PHONE, CHAT, UMBRELLA, LEAD }
 
 class Ped:
 	var a := 0            # node walked from
@@ -27,6 +36,25 @@ class Ped:
 	var crossing := false
 	var pos := Vector3.ZERO
 	var fwd := Vector3.FORWARD
+	# What they are doing besides walking (see Act). While act != WALK the person has
+	# stepped off the walking line at t to `at`, by `go` (0 on the line .. 1 there).
+	var act := 0
+	var act_t := 0.0      # seconds left at the spot
+	var go := 0.0
+	var leaving := false
+	var from := Vector3.ZERO
+	var at := Vector3.ZERO
+	var face := Vector3.FORWARD
+	var spot: StreetSpots.Spot = null
+	var slot := -1
+	var spot_t := -1.0    # metres along the current edge where they step off to the spot
+	var group: Array = [] # chat group obstacle [strip key, u, members left], shared
+	var phone := false    # walks along looking at a phone
+	var dog := false      # walks a dog
+	var coat := 0
+	var gawk := false     # stopped to stare at something
+	var film := false     # ... and films it
+	var umbrella := false # has an umbrella up
 
 var net: RoadNet
 var peds: Array[Ped] = []
@@ -35,9 +63,22 @@ var rng := RandomNumberGenerator.new()
 var weight := PackedFloat32Array()  # spawn weight per road cell (set by CityLife)
 var shadows := true
 var camera: Camera3D
+var spots: StreetSpots           # benches and bus stops (set by CityLife)
+var hour := 12.0                 # time of day, set by CityLife; shapes what people do
+var buses_running := true
+var max_dogs := 48
+var rain := 0.0                  # 0..1 from Weather: people hurry, put umbrellas up
+var wet := 0.0                   # 0..1 how wet the streets (and benches) are
+var umbrella_share := 0.0
 
 var _mmi: MultiMeshInstance3D
 var _buf := PackedFloat32Array()
+var _dog_mmi: MultiMeshInstance3D
+var _dog_buf := PackedFloat32Array()
+var _brolly_mmi: MultiMeshInstance3D
+var _brolly_buf := PackedFloat32Array()
+var _brolly_timer := 0.0
+var _groups := {}                # strip key -> Array of chat groups standing there
 
 # Stats for tests.
 var jaywalks := 0
@@ -66,6 +107,32 @@ func setup(road_net: RoadNet, seed_value := 11) -> void:
 	_mmi.multimesh = mm
 	_mmi.name = "People"
 	add_child(_mmi)
+	var dm := MultiMesh.new()
+	dm.transform_format = MultiMesh.TRANSFORM_3D
+	dm.use_custom_data = true
+	dm.mesh = DogMesh.build()
+	var dmat := ShaderMaterial.new()
+	dmat.shader = DOG_SHADER
+	dm.mesh.surface_set_material(0, dmat)
+	dm.instance_count = max_dogs
+	dm.visible_instance_count = 0
+	_dog_mmi = MultiMeshInstance3D.new()
+	_dog_mmi.multimesh = dm
+	_dog_mmi.name = "Dogs"
+	add_child(_dog_mmi)
+	var um := MultiMesh.new()
+	um.transform_format = MultiMesh.TRANSFORM_3D
+	um.use_custom_data = true
+	um.mesh = UmbrellaMesh.build()
+	var umat := ShaderMaterial.new()
+	umat.shader = UMBRELLA_SHADER
+	um.mesh.surface_set_material(0, umat)
+	um.instance_count = max_peds
+	um.visible_instance_count = 0
+	_brolly_mmi = MultiMeshInstance3D.new()
+	_brolly_mmi.multimesh = um
+	_brolly_mmi.name = "Umbrellas"
+	add_child(_brolly_mmi)
 
 
 # ------------------------------------------------------------------ spawn ---
@@ -83,16 +150,350 @@ func spawn_at(cell: int) -> Ped:
 			ok = true
 			break
 	if not ok:
+		_drop_spot(p)
 		return null  # never spawn on a crossing
 	p.t = rng.randf() * p.length
-	p.speed = rng.randf_range(1.1, 1.6)
+	if p.spot_t >= 0.0 and p.t > p.spot_t:
+		_drop_spot(p)  # spawned past their seat
+	p.speed = rng.randf_range(1.1, 1.6) * _pace()
 	p.size = rng.randf_range(0.9, 1.08)
 	p.side = rng.randf_range(0.0, 0.3)
 	p.phase = rng.randf() * TAU
 	_set_outfit(p, rng.randi() % 100000)
+	p.phone = rng.randf() < phone_share()
+	if rng.randf() < dog_share() and dog_count() < max_dogs:
+		p.dog = true
+		p.coat = rng.randi() % 5
+		p.speed = rng.randf_range(0.95, 1.2)
+		p.phone = false
 	_place(p)
 	peds.append(p)
 	return p
+
+
+# ---------------------------------------------------------------- the hour ---
+# Morning and evening commuters hurry and rarely sit; lunch fills the benches; late at
+# night the few people out stand around talking or stare at their phones.
+
+## Up go the umbrellas as the rain starts (each person decides from their own seed, so
+## the same people carry one), and down when it stops.
+func _update_umbrellas() -> void:
+	for p in peds:
+		p.umbrella = (p.outfit % 997) / 997.0 < umbrella_share
+
+
+func _commute() -> bool:
+	return hour >= 7.0 and hour < 9.5 or hour >= 16.5 and hour < 18.5
+
+
+func _late() -> bool:
+	return hour >= 21.0 or hour < 5.0
+
+
+func _pace() -> float:
+	return 1.15 if _commute() else 1.0
+
+
+func sit_share() -> float:
+	var dry := 1.0 - 0.9 * wet  # nobody sits on a soaked bench
+	if _commute():
+		return 0.12 * dry
+	if hour >= 11.5 and hour < 14.0:
+		return 0.55 * dry
+	if _late():
+		return 0.08 * dry
+	return 0.3 * dry
+
+
+func phone_share() -> float:
+	return 0.24 if _late() else 0.15
+
+
+func dog_share() -> float:
+	if hour >= 6.0 and hour < 9.0 or hour >= 17.0 and hour < 21.0:
+		return 0.08
+	return 0.01 if _late() else 0.03
+
+
+## Share of new people who appear as a group standing and talking.
+func chat_share() -> float:
+	var dry := 1.0 - 0.7 * rain
+	if hour >= 11.5 and hour < 14.0:
+		return 0.09 * dry
+	if _late():
+		return 0.12 * dry
+	return (0.05 if not _commute() else 0.02) * dry
+
+
+func dog_count() -> int:
+	var n := 0
+	for p in peds:
+		if p.dog:
+			n += 1
+	return n
+
+
+func count_act(a: int) -> int:
+	var n := 0
+	for p in peds:
+		if p.act == a:
+			n += 1
+	return n
+
+
+# ------------------------------------------------------------- chat groups ---
+
+## Two or three people standing on the sidewalk talking. Returns how many were made.
+func spawn_group(cell: int) -> int:
+	var sides: Array[int] = []
+	for d in 4:
+		if net.is_road(cell) and not net.has_arm(cell, d) and net.has_walk_edge(cell * 4 + d, cell * 4 + (d + 1) % 4):
+			if spots == null or not spots.by_strip.has(cell * 4 + d):
+				sides.append(d)
+	if sides.is_empty() or net.junction[cell] == 1:
+		return 0
+	var d: int = sides[rng.randi() % sides.size()]
+	var key := cell * 4 + d
+	var u := rng.randf_range(-3.6, 3.6)
+	for g in _groups.get(key, []):
+		if absf(g[1] - u) < 2.6:
+			return 0
+	var out: Vector3 = RoadNet.DV[d]
+	var along := Vector3.UP.cross(-out)
+	var mid := net.center(cell) + out * 5.45 + along * u + Vector3(0, 0.17, 0)
+	var n := 2 + (1 if rng.randf() < 0.4 else 0)
+	var group := [key, u, n]
+	if not _groups.has(key):
+		_groups[key] = []
+	_groups[key].append(group)
+	var stay := rng.randf_range(30.0, 110.0)
+	var a0 := rng.randf() * TAU
+	for k in n:
+		var p := Ped.new()
+		var fwd_dir := rng.randf() < 0.5
+		p.a = cell * 4 + (d if fwd_dir else (d + 1) % 4)
+		p.b = cell * 4 + ((d + 1) % 4 if fwd_dir else d)
+		p.arm = -1
+		p.length = maxf(net.node_pos(p.a).distance_to(net.node_pos(p.b)), 0.01)
+		p.t = clampf(p.length * 0.5 + (u if fwd_dir else -u), 0.0, p.length)
+		p.speed = rng.randf_range(1.1, 1.5)
+		p.size = rng.randf_range(0.9, 1.08)
+		p.side = rng.randf_range(0.0, 0.3)
+		_set_outfit(p, rng.randi() % 100000)
+		var ang := a0 + TAU * float(k) / n + rng.randf_range(-0.3, 0.3)
+		p.at = mid + Vector3(cos(ang), 0, sin(ang)) * 0.5
+		p.face = (mid - p.at).normalized()
+		p.act = Act.CHAT
+		p.go = 1.0
+		p.act_t = stay + rng.randf_range(-4.0, 6.0)
+		p.group = group
+		p.from = _path_pos(p)
+		p.pos = p.at
+		p.fwd = p.face
+		peds.append(p)
+	return n
+
+
+func _leave_group(p: Ped) -> void:
+	if p.group.is_empty():
+		return
+	var g: Array = p.group
+	p.group = []
+	g[2] -= 1
+	if g[2] <= 0:
+		var list: Array = _groups.get(g[0], [])
+		list.erase(g)
+		if list.is_empty():
+			_groups.erase(g[0])
+
+
+# ------------------------------------------------------------------ spots ---
+
+## Maybe plan to stop at the bench or bus stop on the edge just chosen.
+func _plan_spot(p: Ped) -> void:
+	if spots == null or p.arm >= 0 or p.a / 4 != p.b / 4 or p.flee > 0.0:
+		return
+	var cell: int = p.a / 4
+	var ka: int = p.a % 4
+	var kb: int = p.b % 4
+	var side := ka if kb == (ka + 1) % 4 else kb
+	var s: StreetSpots.Spot = spots.by_strip.get(cell * 4 + side)
+	if s == null:
+		return
+	var chance := sit_share() * 0.6
+	if s.kind == StreetSpots.Kind.STOP:
+		chance = (0.18 if not _commute() else 0.35) * (1.0 + rain) if buses_running else 0.0
+	if p.dog:
+		chance *= 0.4
+	if rng.randf() >= chance:
+		return
+	var k := -1
+	if s.kind == StreetSpots.Kind.BENCH:
+		k = s.free_slot()
+	else:
+		# Seats first for the tired, the rest stand.
+		var order := range(s.taken.size())
+		if rng.randf() < 0.5:
+			order.reverse()
+		for j in order:
+			if s.taken[j] == null:
+				k = j
+				break
+	if k < 0:
+		return
+	var axis := s.xform.basis.x
+	var u := (s.slot_pos(k) - net.center(cell)).dot(axis)
+	var fwd := kb == (ka + 1) % 4
+	p.spot_t = clampf(p.length * 0.5 + (u if fwd else -u), 0.3, p.length - 0.3)
+	p.spot = s
+	p.slot = k
+	s.taken[k] = p
+
+
+func _drop_spot(p: Ped) -> void:
+	if p.spot != null and p.slot >= 0 and p.slot < p.spot.taken.size() and p.spot.taken[p.slot] == p:
+		p.spot.taken[p.slot] = null
+		if p.act == Act.WAIT:
+			p.spot.waiting = maxi(p.spot.waiting - 1, 0)
+	p.spot = null
+	p.slot = -1
+	p.spot_t = -1.0
+
+
+func _arrive(p: Ped) -> void:
+	var s := p.spot
+	p.t = p.spot_t
+	p.from = _path_pos(p)
+	p.at = s.slot_pos(p.slot)
+	p.face = s.face()
+	p.go = 0.0
+	p.leaving = false
+	if s.kind == StreetSpots.Kind.BENCH:
+		p.act = Act.SIT
+		p.act_t = rng.randf_range(15.0, 70.0) * (1.6 if hour >= 11.5 and hour < 14.0 else 1.0)
+	else:
+		p.act = Act.WAIT
+		p.act_t = rng.randf_range(60.0, 120.0)  # give up on the bus after this
+		s.waiting += 1
+
+
+## Step toward the spot, stay, then step back onto the walking line and carry on.
+func _station(p: Ped, dt: float) -> void:
+	if p.act == Act.BOARD:
+		var dist := maxf(p.from.distance_to(p.at), 0.3)
+		p.go += dt * 1.4 / dist
+		p.pos = p.from.lerp(p.at, minf(p.go, 1.0))
+		p.fwd = (p.at - p.from).normalized() if dist > 0.31 else p.fwd
+		p.phase = fmod(p.phase + 1.4 * dt * 4.2, TAU)
+		if p.go >= 1.0:
+			remove(p)
+		return
+	if p.leaving:
+		p.go -= dt / 1.1
+		if p.go <= 0.0:
+			p.go = 0.0
+			_end_station(p)
+			_place(p)
+			return
+	elif p.go < 1.0:
+		p.go = minf(p.go + dt / 1.1, 1.0)
+	else:
+		p.act_t -= dt
+		if p.act_t <= 0.0:
+			p.leaving = true
+	var f := smoothstep(0.0, 1.0, p.go)
+	p.pos = p.from.lerp(p.at, f)
+	var moving := p.go > 0.0 and p.go < 1.0
+	if moving:
+		p.phase = fmod(p.phase + p.speed * dt * 4.2, TAU)
+		var d := (p.at - p.from) * (-1.0 if p.leaving else 1.0)
+		if d.length_squared() > 0.01:
+			p.fwd = d.normalized()
+	else:
+		p.phase = 0.0
+		p.fwd = p.face
+
+
+func _end_station(p: Ped) -> void:
+	_leave_group(p)
+	_drop_spot(p)
+	p.act = Act.WALK
+	p.leaving = false
+
+
+## The bus is in: everyone waiting at this stop walks to the door and gets on.
+func board(s: StreetSpots.Spot, door: Vector3) -> int:
+	var n := 0
+	for p in peds.duplicate():
+		if p.spot == s and p.act == Act.WAIT and p.go >= 0.9 and not p.leaving:
+			_drop_spot(p)
+			p.act = Act.BOARD
+			p.from = p.pos
+			p.at = door
+			p.go = 0.0
+			n += 1
+	return n
+
+
+## People getting off the bus at stop `s`: they step off at the door and walk away.
+func alight(s: StreetSpots.Spot, door: Vector3, count: int) -> int:
+	var made := 0
+	for k in count:
+		if peds.size() >= max_peds:
+			break
+		var p := Ped.new()
+		var fwd_dir := rng.randf() < 0.5
+		var d := s.side
+		p.a = s.cell * 4 + (d if fwd_dir else (d + 1) % 4)
+		p.b = s.cell * 4 + ((d + 1) % 4 if fwd_dir else d)
+		if not net.has_walk_edge(p.a, p.b):
+			break
+		p.arm = -1
+		p.length = maxf(net.node_pos(p.a).distance_to(net.node_pos(p.b)), 0.01)
+		p.t = clampf(p.length * 0.5 + (s.u if fwd_dir else -s.u) + rng.randf_range(-1.0, 1.0), 0.0, p.length)
+		p.speed = rng.randf_range(1.1, 1.6) * _pace()
+		p.size = rng.randf_range(0.9, 1.08)
+		p.side = rng.randf_range(0.0, 0.3)
+		_set_outfit(p, rng.randi() % 100000)
+		p.phone = rng.randf() < phone_share()
+		# Start at the door, already "leaving" the spot back to the walking line.
+		p.act = Act.WAIT
+		p.at = door + s.xform.basis.x * rng.randf_range(-0.5, 0.5)
+		p.from = _path_pos(p)
+		p.go = 1.0
+		p.leaving = true
+		p.pos = p.at
+		peds.append(p)
+		made += 1
+	return made
+
+
+## Something happened at pos (a crash): people nearby stop and stare for a while, some
+## get their phones out. Returns how many stopped.
+func gawk(pos: Vector3, radius: float) -> int:
+	var n := 0
+	var r2 := radius * radius
+	for p in peds:
+		if p.flee > 0.0 or p.act == Act.BOARD:
+			continue
+		var d2 := p.pos.distance_squared_to(pos)
+		if d2 > r2 or d2 < 0.01:
+			continue
+		n += 1
+		var to := pos - p.pos
+		to.y = 0.0
+		if p.act == Act.WALK:
+			if p.arm >= 0 and p.crossing:
+				continue  # keep going over the road
+			p.pause = rng.randf_range(3.0, 8.0)
+			p.gawk = true
+			p.film = rng.randf() < 0.35
+			p.fwd = to.normalized()
+		elif p.act == Act.SIT or p.act == Act.WAIT or p.act == Act.CHAT:
+			if p.go >= 1.0:
+				p.face = to.normalized()
+				p.fwd = p.face
+	return n
 
 
 ## Pick the same colours CharacterModel._dress() would for this seed, so a person
@@ -108,6 +509,7 @@ func _set_outfit(p: Ped, outfit: int) -> void:
 	p.outfit = outfit
 	p.look = shirt + pants * 8
 	p.look2 = skin + hair * 8 + shoes * 64
+	p.umbrella = (outfit % 997) / 997.0 < umbrella_share
 
 
 static func _palette(cols: Array) -> PackedVector3Array:
@@ -120,6 +522,8 @@ static func _palette(cols: Array) -> PackedVector3Array:
 func remove(p: Ped) -> void:
 	_release_hero(p)
 	_leave_crossing(p)
+	_leave_group(p)
+	_drop_spot(p)
 	peds.erase(p)
 
 
@@ -163,6 +567,8 @@ func _choose_next(p: Ped, came_from: int) -> bool:
 	p.length = maxf(net.node_pos(p.a).distance_to(net.node_pos(p.b)), 0.01)
 	p.t = 0.0
 	p.crossing = false
+	_drop_spot(p)
+	_plan_spot(p)
 	return true
 
 
@@ -192,6 +598,12 @@ func panic(pos: Vector3, radius: float, seconds := 8.0) -> int:
 			continue
 		n += 1
 		p.pause = 0.0
+		p.gawk = false
+		if p.act == Act.BOARD:
+			continue
+		if p.act != Act.WALK:
+			_end_station(p)
+		_drop_spot(p)
 		# Closer people run longer.
 		p.flee = maxf(p.flee, seconds * (1.2 - 0.6 * sqrt(d2) / radius))
 		p.flee_from = pos
@@ -270,13 +682,23 @@ func _choose_flee(p: Ped, came_from: int) -> bool:
 
 
 func step(dt: float) -> void:
+	_brolly_timer -= dt
+	if _brolly_timer <= 0.0:
+		_brolly_timer = 1.0
+		_update_umbrellas()
 	for p in peds.duplicate():
 		if p.flee > 0.0:
 			_run(p, dt)
 			continue
+		if p.act != Act.WALK:
+			_station(p, dt)
+			continue
 		if p.pause > 0.0:
 			p.pause -= dt
 			p.phase = 0.0
+			if p.pause <= 0.0:
+				p.gawk = false
+				p.film = false
 			continue
 		if p.arm >= 0 and not p.crossing:
 			# Waiting at the kerb for the walk signal.
@@ -287,8 +709,13 @@ func step(dt: float) -> void:
 				p.phase = 0.0
 				_place(p)
 				continue
-		p.t += p.speed * dt
-		p.phase = fmod(p.phase + p.speed * dt * 4.2, TAU)
+		var pace: float = p.speed * (1.0 + 0.2 * rain)
+		p.t += pace * dt
+		p.phase = fmod(p.phase + pace * dt * 4.2, TAU)
+		if p.spot != null and p.spot_t >= 0.0 and p.t >= p.spot_t:
+			_arrive(p)
+			_station(p, 0.0)
+			continue
 		if p.t >= p.length:
 			var came: int = p.a
 			_leave_crossing(p)
@@ -296,8 +723,10 @@ func step(dt: float) -> void:
 			if not _choose_next(p, came):
 				remove(p)
 				continue
-			if p.arm < 0 and rng.randf() < 0.06:
-				p.pause = rng.randf_range(2.0, 7.0)  # window shopping, phone, chat
+			# Window shopping, a call, a dog sniffing a lamp post.
+			if p.arm < 0 and p.spot == null and rng.randf() < (0.15 if p.dog else 0.06):
+				p.pause = rng.randf_range(2.0, 7.0)
+				p.film = not p.dog and rng.randf() < 0.4
 		_place(p)
 
 
@@ -318,6 +747,17 @@ func _run(p: Ped, dt: float) -> void:
 
 
 func _place(p: Ped) -> void:
+	p.pos = _path_pos(p)
+	p.fwd = _dir
+
+
+var _dir := Vector3.FORWARD
+
+
+## Where on the walking line someone at t on their edge stands (sets _dir to the heading).
+## On a sidewalk strip with a bench, bus shelter or group of people, walkers step toward
+## the kerb to pass it.
+func _path_pos(p: Ped) -> Vector3:
 	var pa := net.node_pos(p.a)
 	var pb := net.node_pos(p.b)
 	var dir := (pb - pa) / p.length
@@ -328,9 +768,38 @@ func _place(p: Ped) -> void:
 	var pos := pa.lerp(pb, f) + right * p.side
 	if p.arm >= 0:
 		pos.y = 0.06 if p.crossing and f > 0.08 and f < 0.92 else 0.17
-	# Waiting at a crossing: stand at the kerb, facing the road.
-	p.pos = pos
-	p.fwd = dir
+	elif p.a / 4 == p.b / 4:
+		var cell: int = p.a / 4
+		var ka: int = p.a % 4
+		var kb: int = p.b % 4
+		var side := ka if kb == (ka + 1) % 4 else kb
+		var key := cell * 4 + side
+		var lim := 9.0
+		var u := 0.0
+		if (spots != null and spots.by_strip.has(key)) or _groups.has(key):
+			u = p.t - p.length * 0.5 if side == ka else p.length * 0.5 - p.t
+			if spots != null and spots.by_strip.has(key):
+				var w := spots.swerve_window(spots.by_strip[key])
+				lim = minf(lim, _swerve(u, w.x, w.y))
+			for g in _groups.get(key, []):
+				lim = minf(lim, _swerve(u, g[1] - 1.0, g[1] + 1.0))
+		if lim < 9.0:
+			var out: Vector3 = RoadNet.DV[side]
+			var o := (pos - net.center(cell)).dot(out)
+			if o > lim:
+				pos -= out * (o - lim)
+	_dir = dir
+	return pos
+
+
+## Outward limit at u for an obstacle spanning u0..u1, easing in and out over a metre.
+static func _swerve(u: float, u0: float, u1: float) -> float:
+	var w := 0.0
+	if u > u0 - 1.2 and u < u1 + 1.2:
+		w = minf(smoothstep(u0 - 1.2, u0, u), 1.0 - smoothstep(u1, u1 + 1.2, u))
+	if w <= 0.0:
+		return 9.0
+	return lerpf(RoadNet.WALK + 0.35, StreetSpots.SWERVE_OUT, w)
 
 
 # ---------------------------------------------------------------- render ---
@@ -338,27 +807,109 @@ func _place(p: Ped) -> void:
 func render() -> void:
 	if _buf.size() != max_peds * 16:
 		_buf.resize(max_peds * 16)
+	if _dog_buf.size() != max_dogs * 16:
+		_dog_buf.resize(max_dogs * 16)
+	if _brolly_buf.size() != max_peds * 16:
+		_brolly_buf.resize(max_peds * 16)
 	var n := 0
+	var nd := 0
+	var nu := 0
 	for p in peds:
 		if n >= max_peds:
 			break
-		if p.hero != null:
-			continue
+		var st := _stance(p)
+		if p.dog and nd < max_dogs:
+			_put_dog(p, nd, st.x > 0.0)
+			nd += 1
 		var back := -p.fwd * p.size
 		var right := Vector3(back.z, 0, -back.x)
+		if st.y == Pose.UMBRELLA:
+			var ou := nu * 16
+			var up := p.pos
+			if p.hero != null:
+				up.y += 0.05
+			_brolly_buf[ou] = right.x; _brolly_buf[ou + 1] = 0.0; _brolly_buf[ou + 2] = back.x; _brolly_buf[ou + 3] = up.x
+			_brolly_buf[ou + 4] = 0.0; _brolly_buf[ou + 5] = p.size; _brolly_buf[ou + 6] = 0.0; _brolly_buf[ou + 7] = up.y
+			_brolly_buf[ou + 8] = right.z; _brolly_buf[ou + 9] = 0.0; _brolly_buf[ou + 10] = back.z; _brolly_buf[ou + 11] = up.z
+			_brolly_buf[ou + 12] = float(p.outfit % 6)
+			_brolly_buf[ou + 13] = p.phase
+			_brolly_buf[ou + 14] = st.x
+			_brolly_buf[ou + 15] = 0.0
+			nu += 1
+		if p.hero != null:
+			continue
 		var o := n * 16
 		_buf[o] = right.x; _buf[o + 1] = 0.0; _buf[o + 2] = back.x; _buf[o + 3] = p.pos.x
 		_buf[o + 4] = 0.0; _buf[o + 5] = p.size; _buf[o + 6] = 0.0; _buf[o + 7] = p.pos.y
 		_buf[o + 8] = right.z; _buf[o + 9] = 0.0; _buf[o + 10] = back.z; _buf[o + 11] = p.pos.z
-		var moving := p.pause <= 0.0 and (p.arm < 0 or p.crossing) or p.flee > 0.0
 		_buf[o + 12] = p.phase
-		_buf[o + 13] = (1.5 if p.flee > 0.0 else 1.0) if moving else 0.0
+		_buf[o + 13] = st.x + 4.0 * st.y
 		_buf[o + 14] = float(p.look)
 		_buf[o + 15] = float(p.look2)
 		n += 1
 	_mmi.multimesh.buffer = _buf
 	_mmi.multimesh.visible_instance_count = n
 	_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_dog_mmi.multimesh.buffer = _dog_buf
+	_dog_mmi.multimesh.visible_instance_count = nd
+	_dog_mmi.cast_shadow = _mmi.cast_shadow
+	_brolly_mmi.multimesh.buffer = _brolly_buf
+	_brolly_mmi.multimesh.visible_instance_count = nu
+	_brolly_mmi.cast_shadow = _mmi.cast_shadow
+
+
+func umbrella_count() -> int:
+	var n := 0
+	for p in peds:
+		if _stance(p).y == Pose.UMBRELLA:
+			n += 1
+	return n
+
+
+## (stride, pose) for the shader: how fast the legs go and what the arms do.
+func _stance(p: Ped) -> Vector2:
+	if p.flee > 0.0:
+		return Vector2(1.5, Pose.NONE)
+	if p.act != Act.WALK:
+		if p.act == Act.BOARD or p.go < 1.0:
+			return Vector2(1.0, Pose.NONE)
+		if p.act == Act.SIT or p.act == Act.WAIT and p.spot != null and p.spot.is_seat(p.slot):
+			return Vector2(0.0, Pose.SIT)
+		if p.umbrella and not _sheltered(p):
+			return Vector2(0.0, Pose.UMBRELLA)
+		if p.act == Act.CHAT:
+			return Vector2(0.0, Pose.CHAT)
+		return Vector2(0.0, Pose.PHONE if p.phone else Pose.NONE)
+	var moving := p.pause <= 0.0 and (p.arm < 0 or p.crossing)
+	var pose := Pose.NONE
+	if p.umbrella:
+		pose = Pose.UMBRELLA
+	elif p.dog:
+		pose = Pose.LEAD
+	elif p.film or p.phone:
+		pose = Pose.PHONE
+	return Vector2(1.0 if moving else 0.0, pose)
+
+
+## Standing in the bus shelter: no umbrella needed.
+func _sheltered(p: Ped) -> bool:
+	return p.spot != null and p.spot.kind == StreetSpots.Kind.STOP and p.spot.is_seat(p.slot)
+
+
+func _put_dog(p: Ped, k: int, moving: bool) -> void:
+	var right := Vector3(-p.fwd.z, 0, p.fwd.x)
+	var pos := p.pos + right * 0.35 + p.fwd * (1.05 if moving else 0.45)
+	pos.y = p.pos.y if p.act == Act.WALK else 0.17
+	var back := -p.fwd
+	var r := Vector3(back.z, 0, -back.x)
+	var o := k * 16
+	_dog_buf[o] = r.x; _dog_buf[o + 1] = 0.0; _dog_buf[o + 2] = back.x; _dog_buf[o + 3] = pos.x
+	_dog_buf[o + 4] = 0.0; _dog_buf[o + 5] = 1.0; _dog_buf[o + 6] = 0.0; _dog_buf[o + 7] = pos.y
+	_dog_buf[o + 8] = r.z; _dog_buf[o + 9] = 0.0; _dog_buf[o + 10] = back.z; _dog_buf[o + 11] = pos.z
+	_dog_buf[o + 12] = p.phase * 1.6
+	_dog_buf[o + 13] = (1.6 if p.flee > 0.0 else 1.0) if moving else 0.0
+	_dog_buf[o + 14] = float(p.coat)
+	_dog_buf[o + 15] = 0.0
 
 
 # ---------------------------------------------------------------- close-up ---
@@ -410,9 +961,12 @@ func update_heroes(dt: float) -> void:
 		m.global_position = p.pos
 		m.global_basis = Basis.looking_at(p.fwd, Vector3.UP).scaled(Vector3.ONE * p.size)
 		if p.flee > 0.0:
+			m.set_sitting(false)
 			m.animate(dt, RUN, true, 0.0, 0.0)
 			continue
-		var moving := p.pause <= 0.0 and (p.arm < 0 or p.crossing)
+		var st := _stance(p)
+		m.set_sitting(st.y == Pose.SIT)
+		var moving := st.x > 0.0
 		m.animate(dt, CharacterModel.WALK_SPEED if moving else 0.0, true, 0.0, 0.0)
 		if moving:
 			# The walk clip is authored at 3.6 m/s; play it slower to match a stroll.

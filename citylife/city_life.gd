@@ -20,6 +20,8 @@ const PED_HOURS := [0.08, 0.05, 0.04, 0.04, 0.05, 0.1, 0.25, 0.55, 0.75, 0.7, 0.
 	1.0, 0.95, 0.85, 0.85, 0.9, 1.0, 0.95, 0.8, 0.6, 0.4, 0.25, 0.14]
 const ZONE_PEDS := [0.0, 1.0, 1.7, 0.35]   # by City.Zone
 const ZONE_CARS := [0.0, 0.8, 1.2, 1.1]
+const ZONE_PEDS_NIGHT := [0.0, 0.3, 1.0, 0.08]  # who is out late, by zone
+const NIGHTLIFE := 6.0             # extra night draw of clubs, casinos and the like
 const PED_HEIGHT := 200.0          # camera height above which people are not simulated
 const STREET_FILL := 90.0          # no pop-in spawning closer than this when in view
 
@@ -30,11 +32,18 @@ var traffic: Traffic
 var crowd: Crowd
 var signals: Signals
 var police: Police
+var spots: StreetSpots
+var weather: Object = null         # Weather (weather/weather.gd), optional
 var want_garbage := 0
+var want_buses := 0
 var _garbage_timer := 0.0
+var _bus_timer := 0.0
+var boarded := 0                   # stats: people who got on a bus
 
 var car_weight := PackedFloat32Array()
 var ped_weight := PackedFloat32Array()
+var ped_night := PackedFloat32Array()   # where people are late at night
+var nightlife := PackedFloat32Array()   # the part of ped_night from nightlife spots
 var focus := Vector3.ZERO
 var cam_height := 300.0
 var car_radius := 600.0
@@ -74,7 +83,14 @@ func setup(c: City, cam: Camera3D = null) -> void:
 	police.name = "Police"
 	add_child(police)
 	police.setup(city, net, traffic, crowd)
+	spots = StreetSpots.new()
+	spots.name = "StreetSpots"
+	add_child(spots)
+	spots.setup(net)
+	crowd.spots = spots
+	traffic.stops = spots.stop_at
 	traffic.car_taken.connect(_on_car_taken)
+	traffic.bus_stopped.connect(_on_bus_stopped)
 	traffic.camera = cam
 	crowd.camera = cam
 	police.camera = cam
@@ -82,6 +98,7 @@ func setup(c: City, cam: Camera3D = null) -> void:
 	city.building_added.connect(func(id, _a): _add_building(id))
 	city.building_removed.connect(_remove_building)
 	city.day_passed.connect(_refresh_road_weights)
+	city.day_passed.connect(spots.rebuild)  # new shops and parks bring benches
 	compute_weights()
 	_update_view()
 	_update_area()
@@ -103,6 +120,33 @@ func set_suspect(s: Object) -> void:
 ## Something violent happened at pos (1 punch .. 3 gunfire): nearby people run.
 func report_crime(pos: Vector3, severity := 1) -> int:
 	return crowd.panic(pos, 12.0 + 12.0 * clampi(severity, 1, 3), 6.0 + 3.0 * severity)
+
+
+## Hand over the Weather: rain thins the crowd, brings out umbrellas, keeps people off
+## wet benches and makes drivers more careful.
+func set_weather(w: Object) -> void:
+	weather = w
+
+
+## A crash at pos: people right there jump clear, everyone else nearby stops to stare.
+func report_crash(pos: Vector3, severity := 1) -> int:
+	crowd.panic(pos, 4.0 + 2.0 * severity, 3.0)
+	return crowd.gawk(pos, 22.0 + 8.0 * clampi(severity, 1, 3))
+
+
+func _on_bus_stopped(bus: Traffic.Car, stop: Object) -> void:
+	var s := stop as StreetSpots.Spot
+	if s == null:
+		return
+	# The front door, on the kerb beside it (the bus may still be easing over).
+	var door := bus.pos + bus.fwd * (Traffic.LENGTHS[Traffic.BUS] * 0.5 - 1.3)
+	var out: Vector3 = RoadNet.DV[s.side]
+	door += out * (3.95 - (door - net.center(s.cell)).dot(out))
+	door.y = 0.17
+	boarded += crowd.board(s, door)
+	if cam_height < PED_HEIGHT and crowd.peds.size() < want_peds + 6:
+		var n := rng.randi_range(0, 2) + (1 if crowd._commute() else 0)
+		crowd.alight(s, door, n)
 
 
 func _on_car_taken(pos: Vector3, fwd: Vector3) -> void:
@@ -137,6 +181,13 @@ func step(dt: float) -> void:
 	_cull()
 	_fill(false)
 	_garbage(dt)
+	_buses(dt)
+	crowd.hour = city.time_of_day()
+	if weather != null:
+		crowd.rain = weather.rain
+		crowd.wet = weather.wet
+		crowd.umbrella_share = weather.umbrella_share()
+		traffic.wet = weather.wet
 	police.step(dt)
 	traffic.step(dt)
 	if cam_height < PED_HEIGHT:
@@ -146,6 +197,7 @@ func step(dt: float) -> void:
 	crowd.shadows = cam_height < 70.0
 	crowd.visible = cam_height < PED_HEIGHT
 	signals.visible = cam_height < 260.0
+	spots.update_view(cam_height)
 	traffic.render()
 	police.render()
 	if crowd.visible:
@@ -180,6 +232,33 @@ func _garbage(dt: float) -> void:
 			return
 	if cell >= 0:
 		traffic.spawn_garbage(cell)
+
+
+# ------------------------------------------------------------------ buses ---
+
+## Buses run from early morning to midnight, about one for every five stops around you.
+func _buses(dt: float) -> void:
+	_bus_timer -= dt
+	if _bus_timer > 0.0:
+		return
+	_bus_timer = 2.0
+	var h := city.time_of_day()
+	want_buses = 0
+	if h >= 5.5 and _car_cells.size() > 0:
+		var near := 0
+		var r2 := car_radius * car_radius
+		for s in spots.spots:
+			if s.kind == StreetSpots.Kind.STOP and s.xform.origin.distance_squared_to(focus) < r2:
+				near += 1
+		if near > 0:
+			want_buses = clampi(near / 5 + 1, 1, 6)
+	crowd.buses_running = want_buses > 0
+	if traffic.bus_count() >= want_buses:
+		return
+	for attempt in 6:
+		var cell := _pick(_car_cells, _car_cum)
+		if cell >= 0 and not _in_view(net.center(cell)) and traffic.spawn_bus(cell):
+			return
 
 
 func _service_cells(kind: String) -> Array:
@@ -220,8 +299,12 @@ func compute_weights() -> void:
 	var n := City.SIZE * City.SIZE
 	car_weight.resize(n)
 	ped_weight.resize(n)
+	ped_night.resize(n)
+	nightlife.resize(n)
 	car_weight.fill(0.0)
 	ped_weight.fill(0.0)
+	ped_night.fill(0.0)
+	nightlife.fill(0.0)
 	_road_car.resize(n)
 	_road_ped.resize(n)
 	_road_car.fill(0.0)
@@ -241,6 +324,13 @@ func _add_building(id: int) -> void:
 	var cap := float(city.capacity(b))
 	var pw: float = sqrt(cap) * ZONE_PEDS[b.zone] * 0.12
 	var cw: float = sqrt(cap) * ZONE_CARS[b.zone] * 0.05
+	var nw: float = sqrt(cap) * ZONE_PEDS_NIGHT[b.zone] * 0.12
+	var lw := 0.0
+	var tags: Array = b.get("tags", [])
+	if tags.has("nightlife"):
+		lw = NIGHTLIFE * maxf(sqrt(cap), 4.0) * 0.12
+	elif tags.has("park"):
+		nw *= 0.3
 	var cells := PackedInt32Array()
 	var fs := PackedFloat32Array()
 	var size: int = b.size
@@ -264,7 +354,9 @@ func _add_building(id: int) -> void:
 			fs.append(f)
 			car_weight[i] += cw * f
 			ped_weight[i] += pw * f
-	_contrib[id] = [cells, fs, cw, pw]
+			ped_night[i] += (nw + lw) * f
+			nightlife[i] += lw * f
+	_contrib[id] = [cells, fs, cw, pw, nw + lw, lw]
 
 
 func _remove_building(id: int) -> void:
@@ -277,6 +369,8 @@ func _remove_building(id: int) -> void:
 		var i := cells[k]
 		car_weight[i] = maxf(car_weight[i] - c[2] * fs[k], 0.0)
 		ped_weight[i] = maxf(ped_weight[i] - c[3] * fs[k], 0.0)
+		ped_night[i] = maxf(ped_night[i] - c[4] * fs[k], 0.0)
+		nightlife[i] = maxf(nightlife[i] - c[5] * fs[k], 0.0)
 	_contrib.erase(id)
 
 
@@ -290,8 +384,19 @@ func _refresh_road_weights() -> void:
 			rp = 0.03
 		car_weight[i] += rc - _road_car[i]
 		ped_weight[i] += rp - _road_ped[i]
+		ped_night[i] += rp - _road_ped[i]
 		_road_car[i] = rc
 		_road_ped[i] = rp
+
+
+## 0 by day .. 1 late at night: how much people gather where the nightlife is.
+func night_mix() -> float:
+	var h := city.time_of_day()
+	if h >= 18.0:
+		return clampf((h - 18.0) / 3.0, 0.0, 1.0)
+	if h < 6.0:
+		return clampf((6.0 - h) / 3.0, 0.0, 1.0)
+	return 0.0
 
 
 func hour_factor(table: Array) -> float:
@@ -334,6 +439,8 @@ func _update_area() -> void:
 	_ped_cum.clear()
 	var ct := 0.0
 	var pt := 0.0
+	var lt := 0.0
+	var nm := night_mix()
 	for i in city.road.size():
 		if city.road[i] != 1:
 			continue
@@ -343,12 +450,17 @@ func _update_area() -> void:
 			_car_cells.append(i)
 			_car_cum.append(ct)
 		if d2 < p2:
-			pt += ped_weight[i]
+			pt += lerpf(ped_weight[i], ped_night[i], nm)
+			lt += nightlife[i]
 			_ped_cells.append(i)
 			_ped_cum.append(pt)
 	# Cap the city's demand first, then apply the hour, so a big city is still quiet at 3am.
 	want_cars = int(minf(ct * density * 0.55, max_cars) * hour_factor(CAR_HOURS))
 	want_peds = int(minf(pt * density * 1.4, max_peds) * hour_factor(PED_HOURS))
+	if weather != null:
+		want_peds = int(want_peds * (1.0 - 0.4 * weather.rain))  # rain keeps people in
+	# Clubs and the casino keep their blocks busy late.
+	want_peds = mini(want_peds + int(minf(lt * density * 1.4, max_peds * 0.35) * nm), max_peds)
 	if ped_radius <= 0.0:
 		want_peds = 0
 
@@ -392,6 +504,10 @@ func _fill(initial: bool) -> void:
 		var hidden_ok := initial or crowd.peds.size() < want_peds / 2
 		if not hidden_ok and _in_view(net.center(cell)):
 			continue
+		if rng.randf() < crowd.chat_share() and crowd.peds.size() + 2 <= want_peds:
+			if crowd.spawn_group(cell) > 0:
+				budget -= 1
+				continue
 		if crowd.spawn_at(cell):
 			budget -= 1
 
@@ -401,7 +517,7 @@ func _cull() -> void:
 	var removed := 0
 	for c in traffic.cars.duplicate():
 		var far: bool = Vector2(c.pos.x - focus.x, c.pos.z - focus.z).length() > cr
-		var extra: bool = traffic.cars.size() > want_cars * 1.2 + 4 and removed < 2 and not _in_view(c.pos) and not c.garbage
+		var extra: bool = traffic.cars.size() > want_cars * 1.2 + 4 and removed < 2 and not _in_view(c.pos) and not c.garbage and not c.bus
 		if far or extra:
 			traffic.remove(c)
 			removed += 1 if extra else 0

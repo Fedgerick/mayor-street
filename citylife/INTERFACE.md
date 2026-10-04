@@ -52,3 +52,16 @@ Crowd and traffic:
 - Garbage trucks (green, `car_truck`) run 6:00 to 15:00, 1 to 4 per city, starting at `CityServices.garbage_depots()` (else buildings tagged `garbage_depot`) when they exist, and stop along blocks to collect.
 
 Tests: `res://citylife/tests/test_police.gd`.
+
+## Round 3: people with lives, buses, weather
+
+Nothing new is needed to get street life: CityLife makes it all in `setup()`.
+
+- `life.spots` (StreetSpots): benches and bus shelters on the sidewalks, worked out from the city (straight road tiles, more by shops, parks and nightlife) and stable between runs. Rebuilt after road edits and once a game day. Each `Spot` has `kind` (`StreetSpots.Kind.BENCH` or `STOP`), `cell`, `side`, `xform` (the prop's transform, local +Z toward the road) and `seats` / `stands`. The props are drawn here from `assets/kit/props/bench.glb` and `bus_stop.glb` (two draw calls, hidden above 120 m). **For the street dresser:** read `life.spots.spots` to know where they stand, and set `life.spots.show_props = false` if you draw them yourself.
+- People (Crowd): sit on benches, wait at stops (seated in the shelter or standing beside it) and get on the bus, stand in groups of 2 or 3 chatting, walk along on their phones, walk dogs, and step around benches, shelters and groups. Shares follow the hour: commuters at 7:00-9:30 and 16:30-18:30 hurry and rarely sit, lunch fills the benches, late at night people gather near clubs, the casino and other `nightlife` buildings.
+- `life.report_crash(pos, severity := 1) -> int`: a crash at pos. People within 6-10 m jump clear, people within 30-46 m stop and stare for a few seconds, some filming on their phones. Returns how many stopped. **For the player and car threads:** call it when the player's car hits something hard.
+- `crowd.gawk(pos, radius)`, `crowd.board(spot, door)`, `crowd.alight(spot, door, n)`, `crowd.spawn_group(cell)` are the pieces behind the above.
+- Buses (Traffic): `traffic.spawn_bus(cell)`, `traffic.bus_count()`, `signal bus_stopped(car, stop)`. They run 5:30 to midnight, about one for every five stops in view, pull in to the kerb at stops for 9 s, and people get on and off. They use the Kit mesh `car_bus` when the car kit has one, else a built-in 10.5 m bus. `nearest_car()` skips buses (there's no drivable bus).
+- `life.set_weather(weather)`: hand over the Weather (weather/weather.gd). Rain thins the crowd by up to 40 %, puts umbrellas up (`crowd.umbrella_count()`), keeps people off wet benches, sends more to the bus shelters, and makes drivers slow down 15 % and leave longer gaps on wet roads.
+
+Poses in the cheap crowd's shader (`ped.gdshader`, INSTANCE_CUSTOM.y = stride + 4 * pose): 1 sitting, 2 phone, 3 chatting, 4 umbrella, 5 dog lead. The full CharacterModel heroes sit with `set_sitting(true)`; the rebuilt people from the Street-level player thread can take over phone, talking and umbrella poses when their animations exist.

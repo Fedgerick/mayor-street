@@ -5,8 +5,9 @@ extends Node3D
 ## crosswalks. Drawn with one MultiMesh per car model, rebuilt from a flat buffer each
 ## frame, so a few hundred cars cost a handful of draw calls.
 
-const MODELS := ["car_sedan", "car_hatch", "car_van", "car_truck"]
-const LENGTHS := [4.4, 3.8, 4.8, 6.8]
+const MODELS := ["car_sedan", "car_hatch", "car_van", "car_truck", "car_bus"]
+const LENGTHS := [4.4, 3.8, 4.8, 6.8, 10.5]
+const BUS := 4
 const ROAD_Y := 0.05
 
 # Intelligent Driver Model.
@@ -37,8 +38,11 @@ class Car:
 	var pull := 0.0      # 0 in lane .. 1 pulled over to the kerb for a siren
 	var garbage := false # a garbage truck: stops along the block to collect
 	var halt := 0.0      # seconds left standing at a pickup
+	var bus := false     # a city bus: stops at the bus stops it passes
+	var served := -1     # cell of the last bus stop served
 
 signal car_taken(pos: Vector3, fwd: Vector3)  # a driver was pulled out at pos
+signal bus_stopped(car: Car, stop: Object)    # a bus pulled in at a stop (StreetSpots.Spot)
 
 const GARBAGE_TINT := Color(0.22, 0.5, 0.3)
 const SIREN_RANGE := 45.0
@@ -63,6 +67,9 @@ var despawned_stuck := 0
 var wait_reason := {}  # debug: why stopped cars are stopped
 var sirens: Array = []  # [pos, fwd] of emergency vehicles running sirens (set by Police)
 var garbage_cells := PackedInt32Array()  # depot road cells where garbage trucks start
+var stops := {}        # cell * 4 + heading -> bus stop (StreetSpots.stop_at)
+var wet := 0.0         # 0..1 from Weather: drivers slow down and leave longer gaps
+const BUS_DWELL := 9.0
 
 
 func setup(road_net: RoadNet, seed_value := 7) -> void:
@@ -75,6 +82,8 @@ func setup(road_net: RoadNet, seed_value := 7) -> void:
 		mm.use_custom_data = true
 		var kit := _kit()
 		var mesh: Mesh = kit.mesh(MODELS[k]) if kit else null
+		if mesh == null and k == BUS:
+			mesh = BusMesh.build()
 		mm.mesh = mesh if mesh else _fallback_mesh(LENGTHS[k])
 		mm.instance_count = max_cars
 		mm.visible_instance_count = 0
@@ -104,6 +113,24 @@ func spawn_garbage(cell: int) -> Car:
 	return c
 
 
+func spawn_bus(cell: int) -> Car:
+	var c := spawn_at(cell, false)
+	if c:
+		c.bus = true
+		c.model = BUS
+		c.tint = Color.WHITE
+		c.aggr = 0.8
+	return c
+
+
+func bus_count() -> int:
+	var n := 0
+	for c in cars:
+		if c.bus:
+			n += 1
+	return n
+
+
 func garbage_count() -> int:
 	var n := 0
 	for c in cars:
@@ -117,6 +144,8 @@ func nearest_car(pos: Vector3, radius: float) -> Car:
 	var best: Car = null
 	var bd := radius * radius
 	for c in cars:
+		if c.bus:
+			continue  # no drivable bus yet
 		var d := c.pos.distance_squared_to(pos)
 		if d < bd:
 			bd = d
@@ -336,7 +365,7 @@ func _drive(c: Car, dt: float) -> void:
 			if stop < gap:
 				gap = stop
 				lead_v = 0.0
-	var v0 := _desired_speed(c)
+	var v0 := _desired_speed(c) * (1.0 - 0.15 * wet)
 	# Emergency vehicle close by: ease to the kerb and stop until it has passed.
 	var yield_now := false
 	for sr in sirens:
@@ -354,10 +383,29 @@ func _drive(c: Car, dt: float) -> void:
 		elif net.junction[c.cell] == 0 and c.v > 2.0 and rng.randf() < dt * 0.08 \
 				and _zone_near(c.cell) != 0:
 			c.halt = rng.randf_range(4.0, 8.0)  # stop to empty the bins
+	if c.bus:
+		if c.halt > 0.0:
+			c.halt -= dt
+			v0 = 0.0
+		elif c.served != c.cell and c.dout == c.din and stops.has(c.cell * 4 + c.din):
+			# Pull in with the front door at the shelter.
+			var stop_s := len_here * 0.5 - StreetSpots.STOP_U + 2.6
+			if c.s < stop_s + 0.5:
+				var g := stop_s + MIN_GAP - c.s
+				if g < gap:
+					gap = g
+					lead_v = 0.0
+				if c.s > stop_s - 0.6 and c.v < 0.6:
+					c.halt = BUS_DWELL
+					c.served = c.cell
+					bus_stopped.emit(c, stops[c.cell * 4 + c.din])
+			else:
+				c.served = c.cell  # rolled past (spawned beyond it)
+		c.pull = move_toward(c.pull, 1.0 if c.halt > 0.0 or yield_now else 0.0, dt * 0.8)
 	var acc := ACCEL * (1.0 - pow(c.v / maxf(v0, 0.1), 4.0)) if v0 > 0.0 else -BRAKE * 1.2
 	if gap < INF:
 		var dv := c.v - lead_v
-		var s_star := MIN_GAP + maxf(0.0, c.v * HEADWAY + c.v * dv / (2.0 * sqrt(ACCEL * BRAKE)))
+		var s_star := MIN_GAP + maxf(0.0, c.v * HEADWAY * (1.0 + 0.35 * wet) + c.v * dv / (2.0 * sqrt(ACCEL * BRAKE)))
 		acc -= ACCEL * pow(s_star / maxf(gap, 0.1), 2.0)
 	acc = clampf(acc, -9.0, ACCEL)
 	c.v = maxf(0.0, c.v + acc * dt)
@@ -452,13 +500,15 @@ func _place(c: Car) -> void:
 	c.fwd = smp[1]
 	c.pos = net.center(c.cell) + smp[0] + Vector3(0, ROAD_Y, 0)
 	if c.pull > 0.0:
-		c.pos += Vector3(-c.fwd.z, 0, c.fwd.x) * (c.pull * 1.3)
+		c.pos += Vector3(-c.fwd.z, 0, c.fwd.x) * (c.pull * (0.5 if c.bus else 1.3))
 
 
 # ---------------------------------------------------------------- render ---
 
 func render() -> void:
-	var counts := [0, 0, 0, 0]
+	var counts := []
+	counts.resize(MODELS.size())
+	counts.fill(0)
 	for k in MODELS.size():
 		if _buf[k].size() != max_cars * 20:
 			_buf[k].resize(max_cars * 20)
