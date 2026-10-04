@@ -33,8 +33,10 @@ const SFX := [
 	"gun_pistol", "gun_shotgun", "gun_cop", "punch_swing", "punch_hit_1", "punch_hit_2", "body_hit",
 	"bullet_impact", "ricochet", "bullet_metal", "explosion", "car_alarm_loop", "bank_alarm_loop",
 	"siren_yelp_loop", "weapon_switch", "pickup", "carjack", "wasted", "busted",
+	"thunder_1", "thunder_2", "radio_tune",
 ]
-const AMBIENCE := ["amb_city_day", "amb_city_night", "amb_birds", "amb_crickets", "amb_wind", "amb_crowd", "amb_sea", "amb_panic", "amb_room"]
+const AMBIENCE := ["amb_city_day", "amb_city_night", "amb_birds", "amb_crickets", "amb_wind", "amb_crowd", "amb_sea", "amb_panic", "amb_room",
+	"amb_rain_light", "amb_rain_heavy", "amb_rain_roof", "amb_gusts"]
 const MUSIC := ["music_mayor", "music_street", "music_drive", "music_action"]
 
 # Default bus levels in dB.
@@ -69,7 +71,12 @@ var music_weights := Vector4(1, 0, 0, 0)   # mayor, street, drive, action (linea
 var action := 0.0                # 0..1 mission / chase music wanted (set by ActionAudio)
 var panic := 0.0                 # 0..1 people running nearby (set by ActionAudio)
 var indoors := false             # inside an interior (set by ActionAudio)
+var rain := 0.0                  # 0..1 (set by WeatherAudio from the game's weather)
+var wind := 0.0                  # 0..1
+var canyon := 0.0                # 0..1 how hemmed in by tall buildings the street listener is
 var action_audio: ActionAudio
+var weather_audio: WeatherAudio
+var radio: CarRadio
 var amb_gains := {}
 var played := {}                 # sound name -> times started (for tests)
 
@@ -119,6 +126,7 @@ var _rng := RandomNumberGenerator.new()
 var _amb_lp: AudioEffectLowPassFilter
 var _music_lp: AudioEffectLowPassFilter
 var _sfx_reverb: AudioEffectReverb
+var _sfx_echo: AudioEffectDelay
 
 
 func _ready() -> void:
@@ -132,6 +140,14 @@ func _ready() -> void:
 	action_audio.name = "Action"
 	action_audio.director = self
 	add_child(action_audio)
+	weather_audio = WeatherAudio.new()
+	weather_audio.name = "Weather"
+	weather_audio.director = self
+	add_child(weather_audio)
+	radio = CarRadio.new()
+	radio.name = "Radio"
+	radio.director = self
+	add_child(radio)
 
 
 # ------------------------------------------------------------------- public ---
@@ -225,6 +241,18 @@ func _setup_buses() -> void:
 	var si := AudioServer.get_bus_index("SFX")
 	AudioServer.add_bus_effect(si, _sfx_reverb)
 	AudioServer.set_bus_effect_enabled(si, 0, false)
+	# Slap-back echo off tall walls; levels follow `canyon`.
+	_sfx_echo = AudioEffectDelay.new()
+	_sfx_echo.dry = 1.0
+	_sfx_echo.tap1_active = true
+	_sfx_echo.tap1_delay_ms = 140.0
+	_sfx_echo.tap1_pan = -0.4
+	_sfx_echo.tap2_active = true
+	_sfx_echo.tap2_delay_ms = 255.0
+	_sfx_echo.tap2_pan = 0.45
+	_sfx_echo.feedback_active = false
+	AudioServer.add_bus_effect(si, _sfx_echo)
+	AudioServer.set_bus_effect_enabled(si, 1, false)
 
 
 func _load_streams() -> void:
@@ -466,7 +494,7 @@ func _process(delta: float) -> void:
 	_follow_traffic()
 	_ambient_horns(delta, focus)
 
-	AudioServer.set_bus_effect_enabled(AudioServer.get_bus_index("SFX"), 0, active)
+	_update_street_space(active)
 
 
 func _physics_process(delta: float) -> void:
@@ -497,6 +525,27 @@ func _physics_process(delta: float) -> void:
 	else:
 		_air_time += delta
 	_was_floor = on_floor
+
+
+func _update_street_space(active: bool) -> void:
+	## Street reverb, wider and wetter between tall buildings, plus echo off the walls.
+	## Indoors it's a plain room: some reverb, no echo.
+	var si := AudioServer.get_bus_index("SFX")
+	var c := canyon if active and not indoors else 0.0
+	AudioServer.set_bus_effect_enabled(si, 0, active)
+	AudioServer.set_bus_effect_enabled(si, 1, c > 0.05)
+	if indoors:
+		_sfx_reverb.room_size = 0.5
+		_sfx_reverb.wet = 0.16
+		_sfx_reverb.damping = 0.5
+		_sfx_reverb.predelay_msec = 12.0
+	else:
+		_sfx_reverb.room_size = lerpf(0.35, 0.72, c)
+		_sfx_reverb.wet = lerpf(0.09, 0.2, c)
+		_sfx_reverb.damping = lerpf(0.6, 0.35, c)
+		_sfx_reverb.predelay_msec = lerpf(25.0, 60.0, c)
+	_sfx_echo.tap1_level_db = lerpf(-24.0, -10.0, c)
+	_sfx_echo.tap2_level_db = lerpf(-28.0, -14.0, c)
 
 
 func _night(hr: float) -> float:
@@ -542,6 +591,7 @@ func _sample_area(focus: Vector3, listener: Vector3, street: bool) -> void:
 	density = clampf(built / (cells * 1.4), 0.0, 1.0)
 	commerce = com / built if built > 0.0 else 0.0
 	water = float(sea) / cells
+	canyon = _canyon(c, street, land, bld, size)
 	peds_near = 0
 	if street and main and main.get("life"):
 		var crowd = main.life.crowd
@@ -549,6 +599,25 @@ func _sample_area(focus: Vector3, listener: Vector3, street: bool) -> void:
 			for ped in crowd.peds:
 				if ped.pos.distance_squared_to(listener) < 900.0:
 					peds_near += 1
+
+
+func _canyon(c: Vector2i, street: bool, land: PackedByteArray, bld: PackedInt32Array, size: int) -> float:
+	## How walled in the street listener is: tall buildings in the cells within about 36 m.
+	if not street:
+		return 0.0
+	var tall := 0.0
+	var cells := 0
+	for y in range(c.y - 3, c.y + 4):
+		for x in range(c.x - 3, c.x + 4):
+			cells += 1
+			if x < 0 or y < 0 or x >= size or y >= size:
+				continue
+			var i := y * size + x
+			if land[i] != 0 and bld[i] >= 0:
+				var b: Dictionary = _city.buildings.get(bld[i], {})
+				var h := float(b.get("stage", 1)) * (2.0 if b.get("size", 1) == 2 else 1.0)
+				tall += clampf((h - 1.0) / 3.0, 0.0, 1.0)
+	return clampf(tall / (cells * 0.45), 0.0, 1.0)
 
 
 func _smooth01(a: float, b: float, x: float) -> float:
@@ -575,6 +644,17 @@ func _update_ambience(delta: float, street: bool, started: bool) -> void:
 	_amb_target["amb_panic"] = panic if street else 0.0
 	_amb_target["amb_crowd"] *= 1.0 - panic
 	_amb_target["amb_room"] = 0.8 if indoors else 0.0
+	# Weather. Rain is heard from anywhere, softer up high; in a car it drums on the roof.
+	var in_car := street and _car != null
+	var heavy := smoothstep(0.35, 0.85, rain)
+	var outside := sqrt(rain) * (0.45 + 0.55 * ground) * (0.35 if in_car else 1.0) if started else 0.0
+	_amb_target["amb_rain_light"] = outside * (1.0 - heavy)
+	_amb_target["amb_rain_heavy"] = outside * heavy
+	_amb_target["amb_rain_roof"] = sqrt(rain) * 0.9 if in_car else 0.0
+	# Gusts at street level, funnelled and whistling between tall buildings.
+	var gust := clampf(wind * (0.5 + 0.5 * low) * (1.0 + 0.6 * canyon) + (0.12 * canyon if street else 0.0), 0.0, 1.0)
+	_amb_target["amb_gusts"] = gust * (0.3 if in_car else 1.0) if started else 0.0
+	_amb_target["amb_wind"] += 0.4 * wind
 	if indoors:
 		for k in _amb_target:
 			if k != "amb_room":
@@ -599,6 +679,11 @@ func _update_music(delta: float, street: bool, started: bool) -> void:
 			drive = clampf((absf(_car.speed()) - 3.0) / 15.0, 0.0, 1.0)
 		# Missions and chases swap the street groove for the action stem.
 		target = Vector4(0.0, 1.0 - action, drive * (1.0 - action), action)
+		# The car radio replaces the street groove; mission music still plays under it.
+		if radio and radio.gain > 0.0:
+			target.y *= 1.0 - radio.gain
+			target.z *= 1.0 - radio.gain
+			target.w *= 1.0 - 0.4 * radio.gain
 	# The whole crossfade takes about as long as the camera dive.
 	var rate := delta / 2.8
 	music_weights.x = move_toward(music_weights.x, target.x, rate)

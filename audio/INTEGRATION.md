@@ -39,6 +39,21 @@ Suggested README line for the mayor controls table: `| Music | M toggles music o
 `StreetMode.hit_landed` (eec246f) and `Police.officer_fired` (75e9db0) are live; impact sounds are
 capped at three per frame because a shotgun reports every pellet.
 
+## Round 3: weather and the radio
+
+Nothing to wire. Weather audio looks for `main.weather`, or else the first node in the `"weather"`
+group, and reads:
+
+| Property / signal | Meaning |
+|---|---|
+| `rain: float` | 0 dry, 1 downpour |
+| `wind: float` | 0 calm, 1 gale |
+| `signal lightning(pos: Vector3)` (optional) | thunder follows after distance / 343 m/s |
+
+Until a weather node exists the game stays dry. The car radio registers its own input action
+`audio_radio_next` (C, D-pad up) and reads `City.specials_of("radio_tower")` to put KMAY on air.
+Suggested README line for the street controls table: `| Radio | C switches station (in a car) |`.
+
 ## What the director reads (please keep these names, or tell the audio thread)
 
 | From | Read |
