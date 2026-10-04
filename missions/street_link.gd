@@ -20,7 +20,11 @@ var interiors: Node = null  # InteriorManager (interiors/), when main.gd has one
 var fake_pos := Vector3.ZERO
 var fake_car: Object = null
 var fake_active := true
+var fake_damage := 0.0
 var _stub_wanted := 0
+var _damage := 0.0
+var _hooked: Object = null  # the StreetPlayer whose damage is being counted
+var _cars := {}             # cars whose damage is hooked up
 var _stub_fade := 0.0
 
 
@@ -28,9 +32,37 @@ func _init(s: Node = null) -> void:
 	street = s
 	if s == null:
 		return
-	for sig in ["wanted_changed", "wasted", "busted", "crime", "goodness_action"]:
+	for sig in ["wanted_changed", "wasted", "busted", "crime", "goodness_action", "vehicle_changed"]:
 		if s.has_signal(sig):
 			s.connect(sig, Callable(self, "_relay_" + sig))
+
+
+func _relay_vehicle_changed(c: Object) -> void:
+	if c and c.has_signal("damaged") and not _cars.has(c):
+		_cars[c] = true
+		c.damaged.connect(_on_car_damaged.bind(c))
+
+
+func _on_car_damaged(amount: float, c: Object) -> void:
+	if street and street.car == c:  # only while you're driving it
+		_damage += amount / 10.0  # a 1000-health car wrecked counts as 100, like a life
+
+
+func _on_player_damaged(amount: float, _from: Vector3) -> void:
+	_damage += amount
+
+
+func damage_taken() -> float:
+	## Health lost on foot plus car damage, since the game started (medals take the change).
+	if street == null:
+		return fake_damage
+	var p: Object = street.get("player")
+	if p and p != _hooked and p.has_signal("damaged"):
+		_hooked = p
+		p.damaged.connect(_on_player_damaged)
+	if street.get("car"):
+		_relay_vehicle_changed(street.car)
+	return _damage
 
 
 func _relay_wanted_changed(stars: int) -> void: wanted_changed.emit(stars)

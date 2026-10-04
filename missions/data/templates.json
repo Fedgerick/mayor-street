@@ -122,7 +122,7 @@
 			"goodness": 3, "city_bonus": 100
 		},
 		{
-			"id": "armored_escort", "side": "good", "giver": "radio", "lean": 0, "unlock": "job:armored_escort",
+			"id": "armored_escort", "side": "good", "giver": "radio", "lean": 0, "unlock": "job:armored_escort", "needs_respect": 20,
 			"title": "Cash run to {end}",
 			"brief": "Dispatch: {start} is moving cash to {end}. Their driver didn't show. Take the van.",
 			"slots": {
@@ -176,7 +176,7 @@
 			"goodness": -6, "city_bonus": -60, "crime": 2
 		},
 		{
-			"id": "smuggling", "side": "bad", "giver": "payphone", "lean": 25,
+			"id": "smuggling", "side": "bad", "giver": "payphone", "lean": 25, "needs_respect": 20,
 			"title": "Smuggle from {start}",
 			"brief": "\"Crates at {start}. {end} is expecting them. Don't get pulled over.\"",
 			"slots": {
@@ -195,7 +195,7 @@
 			"goodness": -6, "city_bonus": -40, "stolen_goods": true, "crime": 2
 		},
 		{
-			"id": "racket", "side": "bad", "giver": "payphone", "lean": 50,
+			"id": "racket", "side": "bad", "giver": "payphone", "lean": 50, "needs_respect": 30,
 			"title": "Collections for {start}",
 			"brief": "\"{start} wants its money. Visit {a}, {b} and {c}, in that order. Be persuasive.\"",
 			"slots": {
@@ -277,6 +277,7 @@
 		},
 		{
 			"id": "raid_den", "side": "good", "giver": "radio", "lean": 0, "quest_only": true, "special": "crime_den", "resolves": "end",
+			"effect": "den_busted", "effect_at": "end",
 			"title": "Raid on {end}",
 			"brief": "Dispatch: {start} is going in on {end}. They want backup on the door.",
 			"slots": {
@@ -436,6 +437,267 @@
 			"pay": {"base": 150, "per_km": 100},
 			"time": {"base": 50, "per_km": 80},
 			"goodness": 3, "city_bonus": 150
+		},
+		{
+			"id": "ruiz_stakeout", "side": "good", "giver": "radio", "lean": 0, "quest_only": true,
+			"title": "Stakeout at {scene}",
+			"brief": "Ruiz: \"Somebody's moving stolen cars through {scene}. Sit on it. When they bolt, you stop them.\"",
+			"slots": {
+				"start": {"tag": "police"},
+				"scene": {"tag": "shop", "from": "start", "min_m": 250, "max_m": 1100}
+			},
+			"car": ["car_sedan", "car_hatch"],
+			"steps": [
+				{"do": "goto", "at": "scene", "text": "Park near {scene}"},
+				{"do": "hold", "at": "scene", "seconds": 15, "radius": 18, "text": "Watch {scene} (stay close)"},
+				{"do": "chase", "at": "scene", "text": "They made you! Ram the {car}", "escape_m": 450}
+			],
+			"route": ["start", "scene"],
+			"pay": {"base": 350, "per_km": 150},
+			"par": 110,
+			"goodness": 4, "city_bonus": 100
+		},
+		{
+			"id": "hart_site_guard", "side": "good", "giver": "council", "lean": 0,
+			"title": "Guard the site at {site}",
+			"brief": "Hart: \"The new build at {site} keeps getting trashed overnight. Keep an eye on it and stop whoever shows up.\"",
+			"slots": {
+				"start": {"tag": "shop"},
+				"site": {"tag": "industrial", "from": "start", "min_m": 200, "max_m": 1400, "near_player_m": 1200}
+			},
+			"car": ["car_truck"],
+			"steps": [
+				{"do": "goto", "at": "site", "text": "Get to the building site at {site}"},
+				{"do": "hold", "at": "site", "seconds": 20, "radius": 20, "text": "Keep watch over the site"},
+				{"do": "chase", "at": "site", "text": "Vandals! Stop the {car}", "escape_m": 420}
+			],
+			"route": ["start", "site"],
+			"pay": {"base": 250, "per_km": 100},
+			"par": 120,
+			"goodness": 3, "city_bonus": 400, "respect": 4
+		},
+		{
+			"id": "hart_expose", "side": "bad", "giver": "council", "lean": 0,
+			"title": "Dirt on Councilman Pratt",
+			"brief": "Hart: \"Pratt keeps his books at {start}. I never asked you to get them, and the Harbor Herald at {end} never saw them come in.\"",
+			"slots": {
+				"start": {"tag": "shop"},
+				"end": {"tag": "shop", "from": "start", "min_m": 300, "max_m": 1500}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "text": "Slip into {start} on foot"},
+				{"do": "hold", "at": "start", "seconds": 10, "radius": 8, "car": false, "text": "Photograph Pratt's books"},
+				{"do": "wanted", "stars": 1},
+				{"do": "goto", "at": "end", "text": "Get the photos to the Harbor Herald at {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 300, "per_km": 160},
+			"time": {"base": 50, "per_km": 90},
+			"goodness": -2, "city_bonus": 600, "crime": 1, "respect": 4
+		},
+		{
+			"id": "hart_rally", "side": "good", "giver": "council", "lean": 0, "quest_only": true,
+			"title": "Election night at {start}",
+			"brief": "Hart: \"Election night. Pratt's people want my rally at {start} to end in a riot. Make sure it doesn't.\"",
+			"slots": {
+				"start": {"tag": "park"},
+				"from": {"tag": "shop", "from": "start", "min_m": 150, "max_m": 900}
+			},
+			"car": ["car_van"],
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Get to the rally at {start}"},
+				{"do": "hold", "at": "start", "seconds": 25, "radius": 22, "car": false, "text": "Work the crowd, watch for trouble"},
+				{"do": "chase", "at": "from", "text": "Pratt's van is loaded with fireworks. Stop it", "escape_m": 450}
+			],
+			"route": ["from", "start"],
+			"pay": {"base": 2000, "per_km": 500},
+			"par": 140,
+			"goodness": 8, "city_bonus": 5000, "respect": 10
+		},
+		{
+			"id": "casino_heist", "side": "bad", "giver": "payphone", "lean": 0, "after": "house_always_loses",
+			"title": "The {start} heist",
+			"brief": "Marchetti: \"The Golden Ace counts the night's money in a back room. Walk in, crack it, and bring it to {end}. You'll have every cop in New Harbor on you. Lose them.\"",
+			"slots": {
+				"start": {"tag": "casino"},
+				"end": {"tag": "hideout", "from": "start", "min_m": 300}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "interior": "casino", "text": "Walk into {start}"},
+				{"do": "wanted", "stars": 1},
+				{"do": "hold", "at": "start", "seconds": 25, "radius": 14, "car": false, "marker": "counting_room", "text": "Crack the counting room"},
+				{"do": "wanted", "stars": 4},
+				{"do": "goto", "at": "end", "text": "Escape to {end}"},
+				{"do": "wanted", "stars": 0}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 6000, "per_km": 4000},
+			"time": {"base": 180, "per_km": 120},
+			"goodness": -25, "city_bonus": -1500, "crime": 10, "respect": 12, "effect": "casino_robbed", "effect_at": "start"
+		},
+		{
+			"id": "card_counter", "side": "good", "giver": "radio", "lean": 0, "after": "count_me_out",
+			"title": "Card counter at {start}",
+			"brief": "Ruiz: \"Pit boss at {start} spotted a cheat with a whole crew behind him. He'll run. Catch him and drive him to {end}.\"",
+			"slots": {
+				"start": {"tag": "casino"},
+				"end": {"tag": "police", "from": "start", "min_m": 200}
+			},
+			"car": ["car_sedan"],
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Get to {start}"},
+				{"do": "hold", "at": "start", "seconds": 6, "radius": 14, "car": false, "text": "Spot the cheat at the tables"},
+				{"do": "chase", "at": "start", "text": "He's running! Stop the {car}", "escape_m": 450},
+				{"do": "goto", "at": "end", "car": true, "text": "Drive him to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 900, "per_km": 600},
+			"par": 150,
+			"goodness": 6, "city_bonus": 400, "respect": 8
+		},
+		{
+			"id": "game_day", "side": "good", "giver": "council", "lean": 0, "after": "game_day_quest",
+			"title": "Game day at {start}",
+			"brief": "Hart: \"Big game at {start} and the shuttles broke down. Get fans from {fans} and {fans2} to the gates, and keep the scalpers off my street.\"",
+			"slots": {
+				"start": {"tag": "stadium"},
+				"fans": {"tag": "home", "from": "start", "min_m": 250, "max_m": 1100},
+				"fans2": {"tag": "shop", "from": "start", "min_m": 250, "max_m": 1100}
+			},
+			"car": ["car_van"],
+			"steps": [
+				{"do": "goto", "at": "fans", "car": true, "text": "Pick up fans at {fans}"},
+				{"do": "hold", "at": "fans", "seconds": 3, "car": true, "text": "Fans piling in..."},
+				{"do": "goto", "at": "start", "car": true, "text": "Drop them at {start}"},
+				{"do": "goto", "at": "fans2", "car": true, "text": "More fans waiting at {fans2}"},
+				{"do": "hold", "at": "fans2", "seconds": 3, "car": true, "text": "Fans piling in..."},
+				{"do": "goto", "at": "start", "car": true, "text": "Get them to {start} before kickoff"},
+				{"do": "chase", "at": "start", "text": "Scalpers! Stop their {car}", "escape_m": 450}
+			],
+			"route": ["start", "fans", "start", "fans2", "start"],
+			"pay": {"base": 800, "per_km": 250},
+			"time": {"base": 150, "per_km": 70},
+			"goodness": 5, "city_bonus": 1500, "respect": 8, "effect": "game_day", "effect_at": "start"
+		},
+		{
+			"id": "runway_cargo", "side": "bad", "giver": "payphone", "lean": 0, "after": "wheels_up",
+			"title": "Runway cargo at {start}",
+			"brief": "Marchetti: \"A plane drops crates at the end of the runway at {start}. Grab them all and get them to {end} before the cops wake up.\"",
+			"slots": {
+				"start": {"tag": "airfield"},
+				"end": {"tag": "warehouse", "from": "start", "min_m": 300}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": true, "text": "Drive out to {start}"},
+				{"do": "collect", "at": "start", "count": 4, "spread_m": 70, "text": "Grab the crates ({left} left)"},
+				{"do": "wanted", "stars": 2},
+				{"do": "goto", "at": "end", "car": true, "text": "Get the crates to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 2500, "per_km": 1500},
+			"time": {"base": 110, "per_km": 110},
+			"goodness": -12, "city_bonus": -400, "crime": 5, "respect": 10, "stolen_goods": true
+		},
+		{
+			"id": "pirate_take", "side": "bad", "giver": "payphone", "lean": 0, "quest_only": true,
+			"title": "Pirate radio",
+			"brief": "Marchetti: \"I want my own station. Get up {start}, splice in our feed, and get out to {end}.\"",
+			"slots": {
+				"start": {"tag": "radio_tower"},
+				"end": {"tag": "hideout", "from": "start", "min_m": 200}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "text": "Get to the foot of {start}"},
+				{"do": "hold", "at": "start", "seconds": 20, "radius": 10, "car": false, "text": "Splice in the pirate feed"},
+				{"do": "wanted", "stars": 2},
+				{"do": "goto", "at": "end", "text": "Get out to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 2000, "per_km": 800},
+			"time": {"base": 100, "per_km": 110},
+			"goodness": -10, "city_bonus": -300, "crime": 3, "respect": 10, "effect": "pirate_radio", "effect_at": "start"
+		},
+		{
+			"id": "pirate_back", "side": "good", "giver": "radio", "lean": 0, "quest_only": true,
+			"title": "Dead air at {start}",
+			"brief": "Ruiz: \"Somebody hijacked {start}. Their van's still at the bottom of the tower. Stop it, then get the station back on the air.\"",
+			"slots": {
+				"start": {"tag": "radio_tower"},
+				"from": {"tag": "police"}
+			},
+			"car": ["car_van"],
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Get to {start}"},
+				{"do": "chase", "at": "start", "text": "They're bolting! Stop the {car}", "escape_m": 450},
+				{"do": "goto", "at": "start", "text": "Back to {start}"},
+				{"do": "hold", "at": "start", "seconds": 12, "radius": 10, "car": false, "text": "Put KMAY back on the air"}
+			],
+			"route": ["from", "start"],
+			"pay": {"base": 1500, "per_km": 500},
+			"par": 160,
+			"goodness": 8, "city_bonus": 800, "respect": 10, "effect": "radio_saved", "effect_at": "start"
+		},
+		{
+			"id": "hit_on_the_hill", "side": "bad", "giver": "payphone", "lean": 0, "quest_only": true,
+			"title": "Hit on the hill",
+			"brief": "Marchetti: \"Old man Castellano thinks the Mansion on the Hill makes him untouchable. His guards say otherwise. Get past them, finish it, and lie low at {end}.\"",
+			"slots": {
+				"start": {"tag": "mansion"},
+				"end": {"tag": "hideout", "from": "start", "min_m": 200}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "text": "Get to the gates of {start} on foot"},
+				{"do": "wanted", "stars": 2},
+				{"do": "hold", "at": "start", "seconds": 18, "radius": 12, "car": false, "text": "Fight past the guards to Castellano"},
+				{"do": "wanted", "stars": 3},
+				{"do": "goto", "at": "end", "text": "Lie low at {end}"},
+				{"do": "wanted", "stars": 0}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 8000, "per_km": 2500},
+			"time": {"base": 140, "per_km": 110},
+			"goodness": -20, "city_bonus": -500, "crime": 8, "respect": 15
+		},
+		{
+			"id": "federal_reserve", "side": "bad", "giver": "payphone", "lean": 0, "quest_only": true,
+			"title": "The Federal Reserve",
+			"brief": "Marchetti: \"This is the one they'll write songs about. The Federal Reserve. Crack the vault and get the money to {end}. After tonight, the city is ours.\"",
+			"slots": {
+				"start": {"tag": "vault"},
+				"end": {"tag": "hideout", "from": "start", "min_m": 300}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "interior": "bank", "text": "Walk into {start}"},
+				{"do": "wanted", "stars": 2},
+				{"do": "hold", "at": "start", "seconds": 40, "radius": 14, "car": false, "marker": "vault", "text": "Crack the Reserve's vault"},
+				{"do": "wanted", "stars": 5},
+				{"do": "goto", "at": "end", "text": "Escape to {end}"},
+				{"do": "wanted", "stars": 0}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 25000, "per_km": 10000},
+			"time": {"base": 220, "per_km": 130},
+			"goodness": -40, "city_bonus": -5000, "crime": 20, "respect": 25
+		},
+		{
+			"id": "reserve_defense", "side": "good", "giver": "radio", "lean": 0, "quest_only": true,
+			"title": "Thin blue line",
+			"brief": "Ruiz: \"Marchetti's whole crew is hitting the Federal Reserve. Every unit is pinned down at {from}. It's on you. Stop their getaway van and lock that vault.\"",
+			"slots": {
+				"start": {"tag": "vault"},
+				"from": {"tag": "police", "from": "start", "min_m": 150}
+			},
+			"car": ["car_van"],
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Get to {start}, fast"},
+				{"do": "chase", "at": "start", "text": "The getaway van is moving. Stop the {car}", "escape_m": 500},
+				{"do": "goto", "at": "start", "text": "Back to {start}"},
+				{"do": "hold", "at": "start", "seconds": 15, "radius": 14, "car": false, "text": "Lock down the vault"}
+			],
+			"route": ["from", "start"],
+			"pay": {"base": 15000, "per_km": 3000},
+			"time": {"base": 200, "per_km": 120},
+			"goodness": 30, "city_bonus": 8000, "respect": 25
 		}
 	]
 }

@@ -46,6 +46,153 @@
 				{"text": "Mayor: build Police Headquarters", "until": {"built": "police_hq"}}
 			],
 			"reward": {"cash": 1500, "funds": 4000, "goodness": 10, "flag": "clean_streets", "note": "Crime is down across the city"}
+		},
+		{
+			"id": "friends_of_the_family", "role": "bad", "story": true, "act": 1, "contact": "marchetti",
+			"title": "Friends of the Family",
+			"desc": "Vinnie Marchetti runs the docks and wants to know if the new face in town can be trusted.",
+			"when": {"tier": 2, "respect_at_least": {"marchetti": 15}},
+			"steps": [
+				{"text": "Steal a car to order for Vinnie", "job": "car_to_order"},
+				{"text": "Drive the getaway for Vinnie's boys", "job": "getaway"}
+			],
+			"reward": {"cash": 800, "respect": {"marchetti": 10}, "note": "Marchetti trusts you with bigger work"}
+		},
+		{
+			"id": "ride_along", "role": "good", "story": true, "act": 1, "contact": "ruiz",
+			"title": "Ride Along",
+			"desc": "Captain Ruiz is short on officers and long on stolen cars. She'll take any help she can get.",
+			"when": {"tier": 2, "respect_at_least": {"ruiz": 15}},
+			"steps": [
+				{"text": "Stop a getaway car for Ruiz", "job": "vigilante"},
+				{"text": "Stake out a chop ring", "job": "ruiz_stakeout"}
+			],
+			"reward": {"cash": 800, "respect": {"ruiz": 10}, "note": "Ruiz puts your name on the dispatch list"}
+		},
+		{
+			"id": "council_business", "role": "council", "story": true, "act": 1, "contact": "hart",
+			"title": "Council Business",
+			"desc": "Councilwoman Hart wants the city built, and she isn't fussy about how her rivals get out of the way.",
+			"when": {"tier": 2},
+			"steps": [
+				{"text": "Guard Hart's building site", "job": "hart_site_guard"},
+				{"text": "Get the dirt on Councilman Pratt", "job": "hart_expose"}
+			],
+			"reward": {"funds": 4000, "respect": {"hart": 10}, "note": "Hart moves a little city money your way"}
+		},
+		{
+			"id": "house_always_loses", "role": "bad", "story": true, "act": 2, "contact": "marchetti",
+			"title": "The House Always Loses",
+			"desc": "The Golden Ace makes a fortune every night. Marchetti thinks some of it is his.",
+			"when": {"tier": 3, "respect_at_least": {"marchetti": 40}, "quest_done": "friends_of_the_family"},
+			"steps": [
+				{"text": "Mayor: build The Golden Ace Casino", "until": {"built": "casino"}},
+				{"text": "Mayor: build a hideout (The Bunker)", "until": {"built": "hideout"}},
+				{"text": "Rob the casino's counting room", "job": "casino_heist"}
+			],
+			"reward": {"cash": 2000, "respect": {"marchetti": 10}, "goodness": -5, "note": "Casino heists are on the payphones now"}
+		},
+		{
+			"id": "wheels_up", "role": "bad", "story": true, "act": 2, "contact": "marchetti",
+			"title": "Wheels Up",
+			"desc": "Planes land at night with nobody checking the crates. Marchetti wants a piece of that.",
+			"when": {"tier": 3, "respect_at_least": {"marchetti": 40}, "quest_done": "friends_of_the_family"},
+			"steps": [
+				{"text": "Mayor: build the Municipal Airfield", "until": {"built": "airfield"}},
+				{"text": "Mayor: build Pier 4 Warehouse", "until": {"built": "warehouse"}},
+				{"text": "Grab the runway cargo", "job": "runway_cargo"}
+			],
+			"reward": {"cash": 1500, "respect": {"marchetti": 8}, "note": "Runway cargo jobs are on the payphones now"}
+		},
+		{
+			"id": "count_me_out", "role": "good", "story": true, "act": 2, "contact": "ruiz",
+			"title": "Count Me Out",
+			"desc": "A ring of card cheats is bleeding the casino. Ruiz wants them in a cell, not in a back alley.",
+			"when": {"tier": 3, "respect_at_least": {"ruiz": 40}, "quest_done": "ride_along"},
+			"steps": [
+				{"text": "Mayor: build The Golden Ace Casino", "until": {"built": "casino"}},
+				{"text": "Catch the card counter", "job": "card_counter"}
+			],
+			"reward": {"cash": 1500, "respect": {"ruiz": 10}, "note": "Casino calls come over the radio now"}
+		},
+		{
+			"id": "game_day_quest", "role": "council", "story": true, "act": 2, "contact": "hart",
+			"title": "Game Day",
+			"desc": "Hart promised voters a stadium. Now she needs the first game day to go off without a hitch.",
+			"when": {"tier": 3, "respect_at_least": {"hart": 25}, "quest_done": "council_business"},
+			"steps": [
+				{"text": "Mayor: build City Stadium", "until": {"built": "stadium"}},
+				{"text": "Run game day", "job": "game_day"}
+			],
+			"reward": {"funds": 8000, "respect": {"hart": 10}, "note": "Hart calls on game days now"}
+		},
+		{
+			"id": "pirate_radio", "role": "bad", "story": true, "act": 2, "contact": "marchetti",
+			"title": "Pirate Radio",
+			"desc": "Marchetti wants his own voice on the air. KMAY has a tower and nobody guarding it.",
+			"when": {"tier": 3, "built": "radio_tower", "respect_at_least": {"marchetti": 30}},
+			"unless": {"flag": "radio_tower_side"},
+			"steps": [
+				{"text": "Take over the KMAY tower", "job": "pirate_take"}
+			],
+			"reward": {"cash": 1200, "respect": {"marchetti": 8}, "flag": "radio_tower_side", "note": "KMAY plays Marchetti's pirate feed"}
+		},
+		{
+			"id": "dead_air", "role": "good", "story": true, "act": 2, "contact": "ruiz",
+			"title": "Dead Air",
+			"desc": "Somebody is eyeing the KMAY tower. Ruiz wants it kept on the air.",
+			"when": {"tier": 3, "built": "radio_tower", "respect_at_least": {"ruiz": 30}},
+			"unless": {"flag": "radio_tower_side"},
+			"steps": [
+				{"text": "Take back the KMAY tower", "job": "pirate_back"}
+			],
+			"reward": {"cash": 1200, "respect": {"ruiz": 8}, "flag": "radio_tower_side", "note": "KMAY thanks you on the air"}
+		},
+		{
+			"id": "hit_on_the_hill_quest", "role": "bad", "story": true, "act": 3, "contact": "marchetti",
+			"title": "Hit on the Hill",
+			"desc": "One old boss stands between Marchetti and the whole city.",
+			"when": {"tier": 5, "respect_at_least": {"marchetti": 70}, "quest_done": "house_always_loses"},
+			"unless": {"flag": "ending"},
+			"steps": [
+				{"text": "Mayor: build the Mansion on the Hill", "until": {"built": "mansion"}},
+				{"text": "Take out Castellano", "job": "hit_on_the_hill"}
+			],
+			"reward": {"cash": 3000, "respect": {"marchetti": 10}, "note": "Marchetti is ready for the big one"}
+		},
+		{
+			"id": "the_big_one", "role": "bad", "story": true, "act": 3, "contact": "marchetti",
+			"title": "The Big One",
+			"desc": "The Federal Reserve. Pull this off and nobody in New Harbor will ever say no to you again.",
+			"when": {"tier": 5, "quest_done": "hit_on_the_hill_quest", "goodness_at_most": -25, "respect_at_least": {"marchetti": 70}},
+			"unless": {"flag": "ending"},
+			"steps": [
+				{"text": "Mayor: build the Federal Reserve", "until": {"built": "vault"}},
+				{"text": "Rob the Federal Reserve", "job": "federal_reserve"}
+			],
+			"reward": {"cash": 10000, "ending": "kingpin", "flag": "ending", "note": "You are the Kingpin of New Harbor"}
+		},
+		{
+			"id": "thin_blue_line", "role": "good", "story": true, "act": 3, "contact": "ruiz",
+			"title": "Thin Blue Line",
+			"desc": "Marchetti is going for the Federal Reserve. Ruiz needs somebody she trusts on the inside of the fight.",
+			"when": {"tier": 5, "quest_done": "count_me_out", "goodness_at_least": 25, "respect_at_least": {"ruiz": 70}},
+			"unless": {"flag": "ending"},
+			"steps": [
+				{"text": "Mayor: build the Federal Reserve", "until": {"built": "vault"}},
+				{"text": "Stop the Federal Reserve robbery", "job": "reserve_defense"}
+			],
+			"reward": {"cash": 10000, "funds": 20000, "ending": "hero", "flag": "ending", "note": "You are the Hero of New Harbor"}
+		},
+		{
+			"id": "election_night", "role": "council", "story": true, "act": 3, "contact": "hart",
+			"title": "Election Night",
+			"desc": "Hart is running for re-election and Pratt will do anything to stop her.",
+			"when": {"tier": 5, "respect_at_least": {"hart": 55}, "quest_done": "game_day_quest"},
+			"steps": [
+				{"text": "Keep Hart's rally safe", "job": "hart_rally"}
+			],
+			"reward": {"funds": 25000, "respect": {"hart": 10}, "flag": "hart_reelected", "note": "Hart is re-elected and the city budget grows"}
 		}
 	]
 }

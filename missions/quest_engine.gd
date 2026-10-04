@@ -10,10 +10,16 @@ extends RefCounted
 ##   goodness_at_least: n     goodness_at_most: n                      flag: key
 ##   quest_done: id           tier: n
 ##   stat_at_least: {key: n}  stat_below: {key: n}   (Progress.stats, filled by services/)
+##   respect_at_least: {contact: n}                   no_flag: key
+## A quest with "unless" is dropped while still active once those conditions hold (two
+## quests racing for the same tower, the two endings). Story quests ("story": true) carry
+## an "act" and a "contact"; a reward may add "respect" {contact: n} and an "ending".
 
 signal quest_started(q: Dictionary)
 signal quest_advanced(q: Dictionary)
 signal quest_done(q: Dictionary)
+signal quest_dropped(q: Dictionary)
+signal ending(kind: String)
 
 const PATH := "res://missions/data/quests.json"
 
@@ -21,6 +27,8 @@ var quests: Array = []  # definitions, in file order
 var progress: ProgressLink
 var goodness: Goodness
 var tags: BuildingTags
+var contacts: Contacts = null
+var templates := {}  # the director's, to say who hands out a quest's job
 
 
 func _init(p: ProgressLink, g: Goodness, t: BuildingTags, path := PATH) -> void:
@@ -63,6 +71,11 @@ func holds(cond: Dictionary) -> bool:
 				if goodness.value > v: return false
 			"flag":
 				if not progress.get_flag(v, false): return false
+			"no_flag":
+				if progress.get_flag(v, false): return false
+			"respect_at_least":
+				for c in v:
+					if contacts == null or contacts.get_respect(c) < v[c]: return false
 			"quest_done":
 				if state(v).get("state", "") != "done": return false
 			"tier":
@@ -87,11 +100,17 @@ func update() -> void:
 		var st := state(q.id)
 		var s: String = st.get("state", "")
 		if s == "":
-			if holds(q.get("when", {})):
+			if holds(q.get("when", {})) and not (q.has("unless") and holds(q.unless)):
 				progress.set_quest(q.id, {"state": "active", "step": 0, "done": 0})
 				quest_started.emit(q)
 				_settle(q)
 		elif s == "active":
+			if q.has("unless") and holds(q.unless):
+				var st2 := st.duplicate()
+				st2.state = "dropped"
+				progress.set_quest(q.id, st2)
+				quest_dropped.emit(q)
+				continue
 			_settle(q)
 
 
@@ -132,8 +151,14 @@ func _finish(q: Dictionary) -> void:
 	if r.has("flag"): progress.set_flag(r.flag, true)
 	for u in r.get("unlock", []):
 		progress.unlock(u, "quest:" + q.id)
+	if contacts:
+		for c in r.get("respect", {}):
+			contacts.add(c, float(r.respect[c]))
 	progress.count("quests_done")
 	quest_done.emit(q)
+	if r.has("ending"):
+		progress.set_flag("ending", r.ending)
+		ending.emit(r.ending)
 
 
 func pending_jobs(giver_templates: Dictionary, giver: String) -> Array:
@@ -183,7 +208,10 @@ func waiting_on(q: Dictionary) -> String:
 	## What the log shows under the step: who will call, or what the city still needs.
 	var step := current_step(q)
 	if step.has("job"):
-		return "Answer a ringing payphone" if q.role == "bad" else "Listen to the dispatch radio in any car"
+		match templates.get(step.job, {}).get("giver", "payphone" if q.role == "bad" else "radio"):
+			"payphone": return "Answer a ringing payphone"
+			"council": return "Councilwoman Hart will message you. Y takes her job at street level"
+		return "Listen to the dispatch radio in any car"
 	if step.has("until"):
 		var u: Dictionary = step.until
 		if u.has("population"):

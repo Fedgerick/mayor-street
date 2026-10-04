@@ -21,13 +21,15 @@ const TEMPLATES_PATH := "res://missions/data/templates.json"
 const GOTO_RADIUS := 9.0
 ## Tags with only one or two buildings, where a too-short trip still beats no job.
 const SPARSE_TAGS := ["crime_den", "abandoned_warehouse", "burning_building", "film_shoot", "armored_truck",
-	"substation", "bank", "hideout", "police_hq", "hospital"]
+	"substation", "bank", "hideout", "police_hq", "hospital", "police", "warehouse", "casino", "stadium",
+	"airfield", "radio_tower", "mansion", "vault", "park"]
 const CAR_NAMES := {"car_sedan": "sedan", "car_hatch": "hatchback", "car_van": "van", "car_truck": "pickup truck"}
 
 var city: City
 var tags: BuildingTags
 var router: RoadRouter
 var goodness: Goodness
+var contacts: Contacts = null
 var progress: ProgressLink
 var link: StreetLink
 var templates := {}  # id -> Dictionary, in file order
@@ -65,6 +67,10 @@ func eligible(t: Dictionary) -> bool:
 	if t.get("quest_only", false) or t.has("special"):
 		return false  # handed out by quests and by spawned specials only
 	if t.has("unlock") and not progress.is_unlocked(t.unlock):
+		return false
+	if t.has("after") and progress.quest(t.after).get("state", "") != "done":
+		return false  # a story job: the quest hands it out first, then it repeats
+	if contacts and not contacts.allows(t):
 		return false
 	var lean: float = t.get("lean", 0)
 	if t.side == "good" and goodness.value < lean:
@@ -109,6 +115,7 @@ func _generate(t: Dictionary, from: Vector3) -> Mission:
 	m.id = id
 	m.side = t.side
 	m.giver = t.giver
+	m.contact = Contacts.of_template(t)
 	if t.has("car"):
 		var model: String = t.car[rng.randi() % t.car.size()]
 		m.vars.car_model = model
@@ -250,6 +257,9 @@ func start(m: Mission) -> bool:
 	m.state = Mission.State.ACTIVE
 	m.step_i = 0
 	m.time_left = m.time_limit
+	m.elapsed = 0.0
+	m._damage0 = link.damage_taken()
+	m.damage = 0.0
 	started.emit(m)
 	_enter_step()
 	return true
@@ -332,6 +342,8 @@ func tick(delta: float) -> void:
 	var m := active
 	if m == null or not link.active():
 		return
+	m.elapsed += delta
+	m.damage = link.damage_taken() - m._damage0
 	if m.time_limit > 0.0:
 		m.time_left -= delta
 		if m.time_left <= 0.0:

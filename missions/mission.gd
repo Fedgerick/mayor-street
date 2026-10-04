@@ -23,6 +23,9 @@ var crime := 0
 var time_limit := 0.0     # seconds, 0 = untimed
 var max_wanted := 99
 var quest := ""           # quest id when a quest started this job
+var contact := ""         # who the job is for (contacts.gd)
+var story := false        # handed out by a story quest: intro, medal, replay
+var replay := false       # replayed from the quest log: half pay, no other rewards
 
 var state := State.OFFERED
 var step_i := 0
@@ -32,6 +35,9 @@ var points: Array[Vector3] = []  # collect step: what is left to pick up
 var fail_reason := ""
 var mission_car: Object = null
 var target: ChaseCar = null  # chase step: the car to stop
+var elapsed := 0.0        # seconds since the job started (medals)
+var damage := 0.0         # health and car damage taken during the job (medals)
+var _damage0 := 0.0
 var _escape_t := 0.0
 
 

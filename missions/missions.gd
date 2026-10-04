@@ -8,9 +8,14 @@ extends Node3D
 ##     add_child(missions)
 ##     missions.setup(city, street)
 ##
-## Keys: J quest log (either view); at street level Y takes a radio job, K abandons a job,
-## B bribes a nearby cop (bribe.gd); P black market phone and G crew backup with those
-## perks (perk_effects.gd).
+## Keys: J quest log (either view; with it open at street level, 1-9 replay a story job);
+## at street level Y takes a radio job or Councilwoman Hart's job, K abandons a job, B bribes
+## a nearby cop (bribe.gd); P black market phone and G crew backup with those perks
+## (perk_effects.gd).
+##
+## Round 3: three contacts with respect (contacts.gd), story quests in three acts with a
+## Hero or Kingpin ending (data/quests.json), a fly-by before story jobs (mission_intro.gd),
+## medals and replays (medals.gd), and street results that change the city (city_effects.gd).
 
 const PHONE_RADIUS := 2.6        # walk this close to a ringing phone to answer it
 const PHONE_MIN_M := 50.0        # a phone rings somewhere this far ...
@@ -20,6 +25,10 @@ const RADIO_GAP := Vector2(14.0, 28.0)   # seconds between radio calls while dri
 const PHONE_GAP := Vector2(12.0, 30.0)   # seconds between rings
 const OFFER_SECONDS := 16.0
 const STAND_IN_PHONES := 8
+const COUNCIL_GAP := Vector2(70.0, 160.0)  # seconds between Hart's messages
+const COUNCIL_KEEP := 240.0                # how long her job waits to be taken
+const COUNCIL_SHOW := 14.0                 # seconds the full message stays in the offer box
+const ACT_TIERS := [2, 3, 5]               # Small city, City, Metropolis
 
 var city: City
 var street: Node
@@ -33,6 +42,10 @@ var log_panel: QuestLog
 var bribe := Bribe.new()
 var perks: PerkEffects
 var specials: SpecialSpawner
+var contacts := Contacts.new()
+var medals := Medals.new()
+var effects: CityEffects
+var intro: MissionIntro
 var phones: Array[Vector3] = []   # payphone handsets on the sidewalk
 
 var _layer: CanvasLayer
@@ -53,6 +66,10 @@ var _brief_t := 0.0
 var _quest_t := 0.0
 var _phones_dirty := true
 var _bribe_state := ""           # Bribe.status() for the HUD hint
+var _council_offer: Mission = null
+var _council_t := 0.0
+var _council_show := 0.0
+var _council_wait := 30.0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -68,8 +85,21 @@ func setup(c: City, s: Node) -> void:
 	director = MissionDirector.new()
 	director.name = "Director"
 	add_child(director)
+	director.contacts = contacts
 	director.setup(c, link, goodness, progress)
 	quests = QuestEngine.new(progress, goodness, director.tags)
+	quests.contacts = contacts
+	quests.templates = director.templates
+	effects = CityEffects.new(c, progress)
+	effects.news.connect(func(text): _news(text, 5.0))
+	c.day_passed.connect(effects.day_passed)
+	contacts.rank_changed.connect(func(who, rank, up):
+		if up:
+			_news("%s: you're %s now" % [Contacts.display_name(who), rank], 5.0)
+		else:
+			_news("%s doesn't trust you like before (%s)" % [Contacts.display_name(who), rank], 5.0))
+	quests.ending.connect(_on_ending)
+	quests.quest_dropped.connect(func(q): _quest_news("%s: someone else got there first" % q.title, q))
 
 	goodness.changed.connect(_on_goodness)
 	goodness.perk_gained.connect(func(p, text):
@@ -105,6 +135,9 @@ func setup(c: City, s: Node) -> void:
 	log_panel = QuestLog.new()
 	log_panel.missions = self
 	_layer.add_child(log_panel)
+	intro = MissionIntro.new()
+	intro.name = "Intro"
+	add_child(intro)
 	perks = PerkEffects.new()
 	perks.name = "Perks"
 	add_child(perks)
@@ -141,10 +174,13 @@ func _sync_perks() -> void:
 # ----------------------------------------------------------------- per frame ---
 
 func _process(delta: float) -> void:
+	if quests == null:
+		return  # not set up yet
 	_quest_t -= delta
 	if _quest_t <= 0.0:
 		_quest_t = 1.0
 		quests.update()
+	_tick_council(delta)
 	var at_street := link.active()
 	hud.visible = at_street
 	if _phones_dirty:
@@ -206,7 +242,29 @@ func _answer_phone() -> void:
 	_brief = m.brief
 	_brief_side = m.side
 	_brief_t = 7.0
-	director.start(m)
+	begin(m)
+
+
+func begin(m: Mission) -> void:
+	## Starts a job; story jobs and replays first get a fly-by over their places.
+	if not (m.story or m.replay) or link.street == null or intro.playing:
+		director.start(m)
+		return
+	var places: Array = []
+	var seen: Array = []
+	var order: Array = m.template.get("route", [])
+	if order.is_empty():
+		order = m.slots.keys()
+	for slot in order:
+		var b: Dictionary = director.tags.building(m.slots[slot].building)
+		if b.is_empty() or b.id in seen:
+			continue
+		seen.append(b.id)
+		places.append([city.building_center(b), m.slots[slot].name])
+	var who := Contacts.display_name(m.contact)
+	var col: Color = Contacts.PEOPLE.get(m.contact, {}).get("color", Color(1, 0.82, 0.2))
+	intro.finished.connect(func(): director.start(m), CONNECT_ONE_SHOT)
+	intro.play(places, who + ("   (replay)" if m.replay else ""), col, m.brief)
 
 
 func _stop_ring() -> void:
@@ -239,6 +297,7 @@ func _offer(giver: String, from: Vector3) -> Mission:
 		var m := director.generate(pair[1], from)
 		if m:
 			m.quest = pair[0]
+			m.story = quests.get_def(pair[0]).get("story", false)
 			return m
 	if _rng.randf() < 0.7:
 		for sp in specials.active:
@@ -259,7 +318,13 @@ func offer_text() -> String:
 		return _brief
 	if _radio_offer and director.active == null:
 		return "DISPATCH  %s\n%s\nPress Y to take it  ($%d, %.1f km)" % [
-			"(quest)" if _radio_offer.quest != "" else "", _radio_offer.brief, _radio_offer.pay, _radio_offer.km()]
+			"(story)" if _radio_offer.story else ("(quest)" if _radio_offer.quest != "" else ""),
+			_radio_offer.brief, _radio_offer.pay, _radio_offer.km()]
+	if _council_offer and director.active == null:
+		if _council_show > 0.0:
+			return "CITY HALL  %s\n%s\nPress Y to take it  ($%d, %.1f km)" % [
+				"(story)" if _council_offer.story else "", _council_offer.brief, _council_offer.pay, _council_offer.km()]
+		return "Y  Hart's job: %s  ($%d)" % [_council_offer.title, _council_offer.pay]
 	return ""
 
 
@@ -268,7 +333,51 @@ func offer_side() -> String:
 		return "bad"
 	if _brief_t > 0.0:
 		return _brief_side
+	if _radio_offer == null and _council_offer and director.active == null:
+		return "council"
 	return "good"
+
+
+# ------------------------------------------------------------ Councilwoman Hart ---
+
+func _tick_council(delta: float) -> void:
+	## Hart's jobs arrive as messages in either view (the mayor HUD shows Progress notices)
+	## and wait a few minutes to be taken with Y at street level.
+	if _council_offer:
+		_council_t -= delta
+		if link.active():
+			_council_show = maxf(0.0, _council_show - delta)
+		if _council_t <= 0.0:
+			_council_offer = null
+			_council_wait = _rng.randf_range(COUNCIL_GAP.x, COUNCIL_GAP.y)
+		return
+	if director.active or progress.city_tier() < 1:
+		return
+	_council_wait -= delta
+	if _council_wait > 0.0:
+		return
+	_council_wait = _rng.randf_range(COUNCIL_GAP.x, COUNCIL_GAP.y)
+	var m := _offer("council", link.position() if link.active() else Vector3.INF)
+	if m == null:
+		return
+	_council_offer = m
+	_council_t = COUNCIL_KEEP
+	_council_show = COUNCIL_SHOW
+	if link.active():
+		hud.news("Message from Councilwoman Hart", 3.0)
+		_play_ui("phone_ring", "notify")
+	else:
+		_news("Councilwoman Hart: %s (take it with Y at street level)" % m.title, 8.0)
+
+
+func take_council_job() -> bool:
+	if _council_offer == null or director.active:
+		return false
+	var m := _council_offer
+	_council_offer = null
+	_council_wait = _rng.randf_range(COUNCIL_GAP.x, COUNCIL_GAP.y)
+	begin(m)
+	return true
 
 
 func _unhandled_input(e: InputEvent) -> void:
@@ -280,12 +389,17 @@ func _unhandled_input(e: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif not link.active():
 		return
+	elif log_panel.visible and k.keycode >= KEY_1 and k.keycode <= KEY_9:
+		if replay(k.keycode - KEY_1):
+			get_viewport().set_input_as_handled()
 	elif perks.handle_key(k.keycode):
 		get_viewport().set_input_as_handled()
 	elif k.keycode == KEY_Y and _radio_offer and director.active == null:
 		var m := _radio_offer
 		_radio_offer = null
-		director.start(m)
+		begin(m)
+		get_viewport().set_input_as_handled()
+	elif k.keycode == KEY_Y and take_council_job():
 		get_viewport().set_input_as_handled()
 	elif k.keycode == KEY_B and _bribe_state != "":
 		_try_bribe()
@@ -359,6 +473,18 @@ func _on_passed(m: Mission) -> void:
 	var sub := "$%d" % m.pay
 	if m.goodness != 0.0:
 		sub += "     goodness %+d" % int(m.goodness)
+	if not m.replay:
+		var changes := contacts.earn(m.contact, contacts.job_gain(m.template, m.story))
+		var rt := Contacts.change_text(changes)
+		if rt != "":
+			sub += "     respect: " + rt
+		var fx: String = m.template.get("effect", "")
+		var at: String = m.template.get("effect_at", "")
+		if fx != "" and m.slots.has(at):
+			effects.add(fx, director.tags.building(m.slots[at].building), m.slots[at].name)
+	if m.story or m.replay:
+		var medal := medals.record(m)
+		sub += "     %s medal  %d:%02d" % [Medals.NAMES[medal], int(m.elapsed) / 60, int(m.elapsed) % 60]
 	hud.banner("MISSION PASSED", sub, MissionHud.GOLD)
 	_play_ui("mission_passed", "cash")
 	if m.crime > 0:
@@ -374,6 +500,48 @@ func _on_failed(m: Mission) -> void:
 	_phone_wait = _rng.randf_range(PHONE_GAP.x, PHONE_GAP.y)
 	hud.banner("MISSION FAILED", m.fail_reason, MissionHud.BAD)
 	_play_ui("mission_failed", "error")
+
+
+func replay(i: int) -> bool:
+	## Replays the i-th passed story job from the quest log: half pay, a medal to beat, and
+	## nothing else changes (no goodness, respect, city funds or city effects).
+	var list := medals.replays()
+	if i < 0 or i >= list.size() or director.active or not link.active():
+		return false
+	var m := director.generate(list[i][0], link.position())
+	if m == null:
+		hud.news("That job's places aren't in the city any more", 3.0)
+		return true
+	m.replay = true
+	m.story = true
+	m.pay = int(m.pay * 0.5 / 10.0) * 10
+	m.goodness = 0.0
+	m.city_bonus = 0
+	m.crime = 0
+	log_panel.visible = false
+	_radio_offer = null
+	_stop_ring()
+	begin(m)
+	return true
+
+
+func _on_ending(kind: String) -> void:
+	## The story's end: Hero or Kingpin of the city. The game carries on.
+	progress.unlock("ending:" + kind, "story")
+	var hero := kind == "hero"
+	hud.banner("HERO OF NEW HARBOR" if hero else "KINGPIN OF NEW HARBOR",
+		"The city will remember you. Keep playing." if hero else "Nobody in this city says no to you again. Keep playing.",
+		MissionHud.GOOD if hero else MissionHud.BAD)
+	_news("The end of the story: you are the %s of New Harbor" % ("Hero" if hero else "Kingpin"), 10.0)
+
+
+func act() -> int:
+	## The story act the city has reached (0 before Small city).
+	var a := 0
+	for i in ACT_TIERS.size():
+		if progress.city_tier() >= ACT_TIERS[i]:
+			a = i + 1
+	return a
 
 
 func _on_goodness(value: float, _delta: float, reason: String) -> void:
@@ -635,7 +803,9 @@ func _make_phone(pos: Vector3, yaw: float) -> Node3D:
 
 func to_dict() -> Dictionary:
 	## Section "missions" in the save. Goodness, quests and counters live in Progress.
-	return {"director": director.to_dict(), "stand_ins": director.tags.to_dict(), "bribe": bribe.to_dict(), "perks": perks.to_dict(), "specials": specials.to_dict()}
+	return {"director": director.to_dict(), "stand_ins": director.tags.to_dict(), "bribe": bribe.to_dict(),
+		"perks": perks.to_dict(), "specials": specials.to_dict(), "respect": contacts.to_dict(),
+		"medals": medals.to_dict(), "effects": effects.to_dict()}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -644,3 +814,6 @@ func from_dict(d: Dictionary) -> void:
 	bribe.from_dict(d.get("bribe", {}))
 	perks.from_dict(d.get("perks", {}))
 	specials.from_dict(d.get("specials", {}))
+	contacts.from_dict(d.get("respect", {}))
+	medals.from_dict(d.get("medals", {}))
+	effects.from_dict(d.get("effects", []))

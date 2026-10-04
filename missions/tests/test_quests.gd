@@ -84,7 +84,7 @@ func _initialize() -> void:
 	d.setup(city, link, g, prog)
 	d.tags.stand_ins = false
 	var qe := QuestEngine.new(prog, g, d.tags)
-	check(qe.quests.size() == 4, "four quests loaded")
+	check(qe.quests.filter(func(q): return not q.get("story", false)).size() == 4, "four side quests loaded")
 
 	# Grand Opening: starts at once, population step passes in the grown demo city, waits on the bank.
 	qe.update()

@@ -15,6 +15,7 @@ var _unlocks := {}
 var _flags := {}
 var _counts := {}
 var _quests := {}
+var fake_tier := -1  # tests: pretend the city reached this milestone tier
 
 
 func _init(c: City, use_store := true) -> void:
@@ -113,6 +114,8 @@ func population() -> int:
 
 
 func city_tier() -> int:
+	if fake_tier >= 0:
+		return fake_tier
 	return store.city_tier if store else 0
 
 

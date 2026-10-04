@@ -23,6 +23,13 @@ func check(cond: bool, what: String) -> void:
 		failures += 1
 
 
+func _needs_landmark(t: Dictionary) -> bool:
+	for slot in t.slots:
+		if t.slots[slot].tag in ["casino", "stadium", "airfield", "radio_tower", "mansion", "vault", "park"]:
+			return true
+	return false
+
+
 func _initialize() -> void:
 	print("Missions tests")
 	var city := City.new()
@@ -74,6 +81,8 @@ func _initialize() -> void:
 	for id in d.templates:
 		if d.templates[id].has("special") and id != "raid_den":
 			continue  # needs a spawned special: test_specials.gd
+		if _needs_landmark(d.templates[id]):
+			continue  # late landmarks have no stand-ins: test_story.gd
 		var m := d.generate(id, link.fake_pos)
 		check(m != null and m.pay > 0 and m.route_m > 0.0,
 			"%s: %s" % [id, m.summary() if m else "could not generate"])

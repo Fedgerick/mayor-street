@@ -13,6 +13,7 @@ extends Control
 const GOOD := Color(0.35, 0.75, 1.0)
 const BAD := Color(1.0, 0.35, 0.3)
 const GOLD := Color(1.0, 0.82, 0.18)
+const COUNCIL := Color(0.55, 0.9, 0.55)
 
 var missions: Node  # Missions
 var arrow_angle := 0.0     # radians, 0 = straight ahead
@@ -155,7 +156,8 @@ func _draw_offer(vp: Vector2, s: float) -> void:
 	var lines := _font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, w - 32.0 * s, int(20 * s))
 	var h := lines.y + 26.0 * s
 	var r := Rect2(vp.x * 0.5 - w * 0.5, vp.y * 0.86 - h, w, h)
-	var col := BAD if missions.offer_side() == "bad" else GOOD
+	var side: String = missions.offer_side()
+	var col := BAD if side == "bad" else (COUNCIL if side == "council" else GOOD)
 	draw_style_box(panel_style(Color(0.05, 0.07, 0.1, 0.86), int(12 * s)), r)
 	draw_rect(Rect2(r.position, Vector2(5.0 * s, r.size.y)), col)
 	draw_multiline_string(_font, r.position + Vector2(18.0 * s, 28.0 * s), text, HORIZONTAL_ALIGNMENT_LEFT,
