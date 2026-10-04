@@ -36,6 +36,9 @@ func _run() -> void:
 	var street: StreetMode = t.street
 	var p: StreetPlayer = street.player
 	var life: CityLife = t.life
+	var prog = root.get_node_or_null("Progress")
+	if prog and prog.cash < 250:
+		prog.add_cash(250 - prog.cash, "test")   # the creator normally hands out start cash
 	street.crime.connect(func(k): crimes.append(k))
 	street.goodness_action.connect(func(k): actions.append(k))
 	street.wasted.connect(func(): got_wasted += 1)
@@ -177,6 +180,7 @@ func _run() -> void:
 	p.heal(100.0)
 
 	# --- Police chase ------------------------------------------------------------------
+	life.police.busted.disconnect(street.bust)   # watching the dispatch only
 	street.set_wanted(2)
 	await frames(60 * 4)
 	check(life.police.cop_count() > 0, "cops are dispatched for 2 stars (%d cars)" % life.police.cop_count())
@@ -211,6 +215,8 @@ func _run() -> void:
 		street._leave_car()
 		await frames(90)
 		street.heat.clear()
+
+	life.police.busted.connect(street.bust)
 
 	# --- Parked car theft --------------------------------------------------------------
 	crimes.clear()
