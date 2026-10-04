@@ -128,10 +128,16 @@ func setup(c: City, road_net: RoadNet, tr: Traffic, cr: Crowd) -> void:
 	refresh_stations()
 
 
-## Re-read police station cells. Uses City.service_sites("police") when the services
-## thread provides it; otherwise one stub station near the middle of the city.
+## Re-read police station cells: buildings tagged `police` in the catalog, else
+## service_sites("police") if a services object offers it, else one stub station near
+## the middle of the city.
 func refresh_stations() -> void:
 	stations.clear()
+	if city.has_method("find_tagged"):
+		for b in city.find_tagged("police"):
+			stations.append(Vector2i(b.x, b.y))
+		if not stations.is_empty():
+			return
 	for host in [city, city.get("services") if "services" in city else null]:
 		if host != null and host.has_method("service_sites"):
 			for kind in ["police", "police_hq"]:
@@ -166,8 +172,15 @@ func siren_list() -> Array:
 
 # ---------------------------------------------------------------- update ---
 
+var _station_timer := 0.0
+
+
 func step(dt: float) -> void:
 	_time += dt
+	_station_timer -= dt
+	if _station_timer <= 0.0:
+		_station_timer = 2.0
+		refresh_stations()
 	_stars = stars()
 	if _stars > 0:
 		_update_sight(dt)
@@ -561,6 +574,23 @@ static func _uniform(m: CharacterModel) -> void:
 			var mat := mesh_inst.get_surface_override_material(s) as StandardMaterial3D
 			if mat and cols.has(nm):
 				mat.albedo_color = cols[nm]
+
+
+## An officer was killed (by the player): drop them and scare everyone nearby.
+func kill_officer(o: Officer) -> void:
+	var at := o.pos
+	_remove_officer(o)
+	if crowd:
+		crowd.panic(at, 30.0, 10.0)
+
+
+## Cop cars within `radius` of pos (for missions' "lose the cops" steps).
+func police_cars_near(pos: Vector3, radius: float) -> int:
+	var n := 0
+	for c in cars:
+		if not c.leaving and c.pos.distance_to(pos) < radius:
+			n += 1
+	return n
 
 
 func cop_count() -> int:

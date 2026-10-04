@@ -183,6 +183,12 @@ func _garbage(dt: float) -> void:
 
 
 func _service_cells(kind: String) -> Array:
+	if kind == "garbage" and city.has_method("find_tagged"):
+		var out := []
+		for b in city.find_tagged("garbage_depot"):
+			out.append(Vector2i(b.x, b.y))
+		if not out.is_empty():
+			return out
 	for host in [city, city.get("services") if "services" in city else null]:
 		if host != null and host.has_method("service_sites"):
 			return host.service_sites(kind)
