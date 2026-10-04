@@ -13,6 +13,7 @@ extends Node3D
 
 signal sighting_changed(seen: bool)
 signal busted
+signal officer_fired(pos: Vector3)   ## an officer took a shot (for gunshot audio)
 
 const MAX_CARS := 6
 const MAX_OFFICERS := 8
@@ -541,6 +542,7 @@ func _run(o: Officer, dt: float) -> void:
 			o.shoot = rng.randf_range(1.6, 2.8)
 			_next_shot = _time + 0.9 - 0.1 * _stars
 			o.speed = 0.0
+			officer_fired.emit(o.pos)
 			if rng.randf() < 0.45 - dist * 0.012:
 				suspect.damage_player(3.0 + _stars, o.pos)
 			if crowd:

@@ -40,6 +40,7 @@ The suspect object needs `wanted_stars: int`, `suspect_position() -> Vector3`, `
 `life.police` (class Police):
 - `signal sighting_changed(seen: bool)`: a cop has, or lost, line of sight. Fade stars only while not seen.
 - `signal busted()`: an officer held a slow or stopped suspect for 1.2 s.
+- `signal officer_fired(pos: Vector3)`: an officer took a shot from `pos` (hit or miss), for gunshot audio.
 - `seen`, `last_seen`, `cop_count()`, `officer_count()`, `siren_list()` (for siren audio: `[pos, fwd]` per car).
 - Dispatch: cars by stars `[0, 1, 2, 3, 5, 6]`, at most 6 cars and 8 officers. Cars come from the nearest station: `CityServices.police_stations()` (each station's `road` point), read from `Progress.get_section("services")` or handed over with `life.set_services(services)`; else catalog buildings tagged `police`; else one stub station at the city centre. Stations are re-read every 2 s. If no station is within 520 m, a patrol car turns up out of sight nearby.
 - Line of sight is grid-based: any building tile between a cop and the suspect blocks it; range 75 m.

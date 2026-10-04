@@ -103,6 +103,8 @@ func _initialize() -> void:
 	# --- five stars respects the caps -------------------------------------------
 	s.wanted_stars = 5
 	s.vel = Vector3(6, 0, 0)  # running, so no bust
+	var shots := [0]
+	life.police.officer_fired.connect(func(_p): shots[0] += 1)
 	for f in 30 * 40:
 		life.step(dt)
 		max_cars = maxi(max_cars, life.police.cop_count())
@@ -110,6 +112,7 @@ func _initialize() -> void:
 	check(max_cars <= Police.MAX_CARS and max_cars >= 5, "five stars: %d cop cars (cap 6)" % max_cars)
 	check(max_off <= Police.MAX_OFFICERS, "officers capped (%d of 8)" % max_off)
 	check(s.hurt > 0.0, "officers shoot back at five stars (%.0f damage)" % s.hurt)
+	check(shots[0] > 0, "officer_fired signals each shot (%d)" % shots[0])
 
 	# --- breaking line of sight -------------------------------------------------------
 	var hidden := false
