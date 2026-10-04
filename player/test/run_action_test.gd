@@ -165,6 +165,15 @@ func _run() -> void:
 	check(street.cash() < cash0 or cash0 == 0, "bail paid ($%d -> $%d)" % [cash0, street.cash()])
 	check(street.wanted == 0 and street.combat.current == &"fists", "free to go, no stars")
 
+	# --- Regeneration with the Medic perk ------------------------------------------------
+	p.heal_rate = 1.5
+	p.hurt(90.0)
+	var low := p.health
+	await frames(60 * 8)
+	check(p.health > low + 2.0 and p.health <= StreetPlayer.REGEN_TO * 1.5 + 0.01, "a Medic slowly heals back up (%.0f -> %.0f, capped at 60)" % [low, p.health])
+	p.heal_rate = 1.0
+	p.heal(100.0)
+
 	# --- Police chase ------------------------------------------------------------------
 	street.set_wanted(2)
 	await frames(60 * 4)

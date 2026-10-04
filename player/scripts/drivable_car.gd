@@ -31,6 +31,7 @@ const MODELS := {
 @export var max_steer := 0.6
 @export var steer_speed := 3.2
 @export var brake_force := 40.0
+@export var handling := 1.0   # driver perk (Cabbie 1.15): more power, sharper steering, more grip
 
 var driver: Node = null
 var rig: OrbitRig
@@ -313,7 +314,7 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_just_pressed("street_reset"):
 			reset_upright()
 	# Speed-sensitive steering: full lock when slow, gentle at speed.
-	var lock := max_steer * lerpf(1.0, 0.32, clampf(absf(v) / _top_speed, 0.0, 1.0))
+	var lock := max_steer * clampf(handling, 0.5, 1.5) * lerpf(1.0, 0.32, clampf(absf(v) / _top_speed, 0.0, 1.0))
 	steering = move_toward(steering, steer_input * lock, steer_speed * delta)
 
 	var braking := false
@@ -324,7 +325,7 @@ func _physics_process(delta: float) -> void:
 			bf = brake_force * throttle
 			braking = true
 		else:
-			ef = _engine * throttle * clampf(1.0 - v / _top_speed, 0.0, 1.0)
+			ef = _engine * handling * throttle * clampf(1.0 - v / _top_speed, 0.0, 1.0)
 	elif throttle < -0.05:
 		if v > 1.0:
 			bf = brake_force * -throttle
@@ -336,7 +337,7 @@ func _physics_process(delta: float) -> void:
 	for w in _wheels:
 		var rear := w.position.z < 0.0
 		w.brake = brake_force * 1.5 if hb and rear else bf
-		w.wheel_friction_slip = 1.5 if hb and rear else 2.6
+		w.wheel_friction_slip = 1.5 if hb and rear else 2.6 * handling
 		w.engine_force = 0.0 if hb and rear else ef / _wheels.size()
 	for b in _brake_lights:
 		b.visible = braking or hb or (driver != null and throttle < -0.05 and v > 0.5)

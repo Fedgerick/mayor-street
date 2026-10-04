@@ -159,26 +159,63 @@ static func fire() -> CPUParticles3D:
 
 
 static func explosion(parent: Node, pos: Vector3) -> void:
-	var ball := MeshInstance3D.new()
+	# A cluster of fireballs that bloom and fade at slightly different times, a flash,
+	# flying debris, and a smoke cloud left behind.
 	var sm := SphereMesh.new()
 	sm.radius = 1.0
 	sm.height = 2.0
-	ball.mesh = sm
-	var mat: StandardMaterial3D = _mat("boom", Color(1.0, 0.6, 0.2, 0.95), true).duplicate()
-	ball.material_override = mat
-	ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(ball)
-	ball.global_position = pos + Vector3.UP * 0.8
-	ball.scale = Vector3.ONE * 0.6
-	_fade_and_free(ball, mat, 0.6, 5.5)
+	sm.radial_segments = 12
+	sm.rings = 6
+	for i in 7:
+		var ball := MeshInstance3D.new()
+		ball.mesh = sm
+		var hot := Color(1.0, 0.85, 0.35, 0.95) if i < 3 else Color(1.0, 0.42, 0.1, 0.85)
+		var mat: StandardMaterial3D = _mat("boom", Color.WHITE, true).duplicate()
+		mat.albedo_color = hot
+		ball.material_override = mat
+		ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(ball)
+		var off := Vector3(randf_range(-1.3, 1.3), randf_range(0.4, 2.0), randf_range(-1.3, 1.3)) * (0.3 if i < 3 else 1.0)
+		ball.global_position = pos + off
+		ball.scale = Vector3.ONE * randf_range(0.3, 0.6)
+		var t := ball.create_tween()
+		t.tween_interval(i * 0.035)
+		t.set_parallel(true)
+		t.tween_property(ball, "scale", Vector3.ONE * randf_range(1.6, 2.6), 0.45).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+		t.tween_property(ball, "global_position", pos + off * 1.6 + Vector3.UP * 1.2, 0.6)
+		t.tween_property(mat, "albedo_color", Color(0.5, 0.12, 0.04, 0.0), 0.6).set_ease(Tween.EASE_IN)
+		t.chain().tween_callback(ball.queue_free)
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.6, 0.25)
 	l.light_energy = 12.0
 	l.omni_range = 22.0
 	parent.add_child(l)
 	l.global_position = pos + Vector3.UP * 2.0
-	var t := l.create_tween()
-	t.tween_property(l, "light_energy", 0.0, 0.9)
-	t.tween_callback(l.queue_free)
-	puff(parent, pos + Vector3.UP, Color(0.2, 0.2, 0.2, 0.8), 1.4, 1.4)
-	puff(parent, pos + Vector3.UP, Color(1.0, 0.5, 0.15, 0.9), 0.8, 0.6)
+	var lt := l.create_tween()
+	lt.tween_property(l, "light_energy", 0.0, 0.9)
+	lt.tween_callback(l.queue_free)
+	# Debris: dark chunks thrown out and falling back.
+	var d := CPUParticles3D.new()
+	d.one_shot = true
+	d.emitting = false
+	d.amount = 24
+	d.lifetime = 1.4
+	d.explosiveness = 1.0
+	d.direction = Vector3.UP
+	d.spread = 80.0
+	d.initial_velocity_min = 5.0
+	d.initial_velocity_max = 11.0
+	d.gravity = Vector3(0, -14.0, 0)
+	d.angular_velocity_min = -400.0
+	d.angular_velocity_max = 400.0
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.18, 0.08, 0.14)
+	var dm := StandardMaterial3D.new()
+	dm.albedo_color = Color(0.08, 0.07, 0.07)
+	bm.material = dm
+	d.mesh = bm
+	parent.add_child(d)
+	d.global_position = pos + Vector3.UP
+	d.emitting = true
+	d.finished.connect(d.queue_free)
+	puff(parent, pos + Vector3.UP * 1.5, Color(0.16, 0.15, 0.15, 0.85), 2.2, 2.2)

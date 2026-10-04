@@ -67,6 +67,9 @@ var hud: StreetHud
 var life: Node = null               # CityLife, for traffic, people and police
 var hospitals: Array[Vector3] = []  # respawn overrides; otherwise read from the city
 var stations: Array[Vector3] = []
+## Optional: where Busted wakes the player instead of the station door, e.g.
+## `func(): await interiors.enter("police", null, "busted")` (the cells inside).
+var busted_wake: Callable
 
 var wanted: int:
 	get: return heat.level if heat else 0
@@ -157,6 +160,7 @@ func enter_street(from_camera: Camera3D, ground_point: Vector3) -> void:
 	var spot := sidewalk_spawn(ground_point)
 	player.process_mode = Node.PROCESS_MODE_INHERIT
 	player.visible = true
+	refresh_perks()
 	player.set_in_vehicle(false)
 	player.set_controls(false)
 	# Face the way the mayor camera looks, so the dive swings in from the same side.
@@ -310,6 +314,7 @@ func _enter_car(c: DrivableCar) -> void:
 		_commit(&"car_theft", c.global_position)
 		goodness_action.emit(&"steal_car")
 	c.set_meta("player_owned", true)
+	c.handling = float(perk("car_handling", 1.0))
 	c.set_driver(player)        # the car is ours now; input is ignored until we're seated
 	c.set_physics_process(false)
 	vehicle_changed.emit(c)
@@ -547,7 +552,7 @@ func _process(delta: float) -> void:
 			if (v as Node3D).global_position.distance_to(player.global_position) < enter_radius:
 				near = true
 				break
-		_hint.text = "E  get in" if near else ""
+		_hint.text = "E  get in" if near and not switching else ""
 		if not near and not switching and _traffic_car_near() != null:
 			_hint.text = "E  carjack"
 
@@ -843,7 +848,7 @@ func try_pickup(kind: StringName) -> bool:
 	var ok := false
 	match kind:
 		&"health":
-			ok = player.heal(StreetPlayer.MAX_HEALTH)
+			ok = player.heal(50.0 * player.heal_rate)
 		&"armor":
 			ok = player.add_armor(StreetPlayer.MAX_ARMOR)
 		_:
@@ -857,6 +862,22 @@ func try_pickup(kind: StringName) -> bool:
 
 func _progress() -> Node:
 	return get_node_or_null("/root/Progress")
+
+
+func perk(key: String, default: Variant = 0) -> Variant:
+	## A background perk from the created character (creator/ ResidentProfile).
+	var p := _progress()
+	if p and p.has_method("get_section"):
+		var profile = p.get_section("resident")
+		if profile and profile.has_method("perk"):
+			return profile.perk(key, default)
+	return default
+
+
+func refresh_perks() -> void:
+	player.heal_rate = float(perk("heal_rate", 1.0))
+	if car:
+		car.handling = float(perk("car_handling", 1.0))
 
 
 func cash() -> int:
@@ -920,7 +941,7 @@ func bust() -> void:
 	await _down_sequence("BUSTED", Color(0.3, 0.55, 1.0))
 	combat.strip()
 	var fee := _take_cash(BUSTED_FEE, "bail")
-	await _respawn(_respawn_point(false))
+	await _respawn(_respawn_point(false), busted_wake)
 	hud.note("Bail and fines  -$%d" % fee)
 
 
@@ -939,11 +960,13 @@ func _fade(to: float, seconds: float) -> void:
 	await t.finished
 
 
-func _respawn(at: Vector3) -> void:
+func _respawn(at: Vector3, wake := Callable()) -> void:
 	heat.clear()
 	_last_stars = 0
 	player.revive()
 	player.place(at, player.rig.yaw)
+	if wake.is_valid():
+		await wake.call()
 	player.rig.distance = combat._base_distance
 	player.rig.pitch = deg_to_rad(-12.0)
 	player.rig.snap()

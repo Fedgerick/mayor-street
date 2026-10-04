@@ -150,7 +150,8 @@ func _unhandled_input(e: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	city.advance(delta, 1.0)
+	if not _args.has("action-shots"):   # keep the light fixed for the action set
+		city.advance(delta, 1.0)
 	day_night.update_time(city.time_of_day())
 
 
@@ -192,6 +193,7 @@ func _action_shots(dir: String) -> void:
 		p.rig.yaw = _yaw_to(p.global_position, ped.pos)
 		p.face(p.rig.yaw)
 	p.rig.pitch = deg_to_rad(-4.0)
+	street.combat.select(&"pistol")
 	Input.action_press("street_aim")
 	await _wait(0.8)
 	await _snap("%s/%s_a2_aim.png" % [dir, tag])

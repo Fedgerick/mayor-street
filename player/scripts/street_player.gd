@@ -19,6 +19,9 @@ signal died
 const MAX_HEALTH := 100.0
 const MAX_ARMOR := 100.0
 const ARMOR_SHARE := 0.66   # armor soaks this much of each hit while it lasts
+const REGEN_TO := 40.0      # health slowly comes back up to this on its own
+const REGEN_RATE := 1.0     # hp per second
+const REGEN_DELAY := 8.0    # seconds after the last hit
 
 const COYOTE := 0.12
 const JUMP_BUFFER := 0.14
@@ -33,6 +36,8 @@ var armor := 0.0
 var dead := false
 var aiming := false   # set by StreetCombat: face where the camera looks, walk only
 var aim_yaw := 0.0
+var heal_rate := 1.0  # Medic perk 1.5: faster regeneration and stronger health pickups
+var _since_hurt := 0.0
 
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
 var _since_floor := 0.0
@@ -124,6 +129,9 @@ func _unhandled_input(e: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_since_hurt += delta
+	if not dead and health < REGEN_TO * heal_rate and _since_hurt > REGEN_DELAY / heal_rate:
+		health = minf(health + REGEN_RATE * heal_rate * delta, REGEN_TO * heal_rate)
 	var input := StreetInput.move_vector() if controls_enabled else Vector2.ZERO
 	var wish := rig.right_flat() * input.x + rig.forward_flat() * input.y
 	var sprinting := controls_enabled and Input.is_action_pressed("street_sprint") and not aiming
@@ -212,6 +220,7 @@ func hurt(amount: float, from_pos := Vector3.ZERO) -> bool:
 	var soak := minf(armor, amount * ARMOR_SHARE)
 	armor -= soak
 	health = maxf(health - (amount - soak), 0.0)
+	_since_hurt = 0.0
 	damaged.emit(amount, from_pos)
 	if health <= 0.0:
 		dead = true

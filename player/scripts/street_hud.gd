@@ -47,6 +47,11 @@ func set_black(a: float) -> void:
 
 
 func _process(delta: float) -> void:
+	# Under a CanvasLayer the anchors have no parent rect, so follow the viewport.
+	var vs := get_viewport_rect().size
+	if size != vs:
+		position = Vector2.ZERO
+		size = vs
 	_time += delta
 	flash = maxf(flash - delta * 1.6, 0.0)
 	_note_t = maxf(_note_t - delta, 0.0)

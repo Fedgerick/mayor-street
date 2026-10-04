@@ -6,6 +6,8 @@ extends Node3D
 ## one-shot get-in / get-out clips. Same `animate()` call as the old CharacterVisual.
 ## `seed_value` picks an outfit, so the same model can dress a crowd.
 
+signal dressed   # end of _dress(); creator/ re-applies a created look on it
+
 const SCENE := "res://player/assets/character.glb"
 const WALK_SPEED := 3.6     # m/s the Walk clip was authored for
 const RUN_SPEED := 7.2
@@ -73,6 +75,7 @@ func _dress() -> void:
 			mat.rim = 0.3
 			mat.rim_tint = 0.5
 			m.set_surface_override_material(s, mat)
+	dressed.emit()
 
 
 func _clip(n: String) -> AnimationNodeAnimation:
