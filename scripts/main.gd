@@ -13,7 +13,7 @@ extends Node3D
 ##   --nohud                hide the HUD
 ##   --perf                 show the frame rate readout (F3)
 
-enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE }
+enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE, BUILD }
 
 var city: City
 var view: CityView
@@ -25,6 +25,7 @@ var street: StreetMode  # street-level player (player/), created when a game sta
 var menu: GameMenu  # Esc menu and the corner key hint; keeps running while the game is paused
 
 var tool := Tool.INSPECT
+var build_kind := ""  # the catalog building in hand while tool is BUILD
 var overlay := 0
 var speed_index := 1
 var quality := 1
@@ -60,7 +61,9 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_args[kv[0]] = kv[1] if kv.size() > 1 else "1"
-	city = City.new()
+	# A load restarts this scene with the save waiting in Progress.
+	var save := Progress.take_pending_load()
+	city = City.new(int(save.city.get("seed", 1337))) if not save.is_empty() else City.new()
 	city.message.connect(func(t): hud.show_toast(t))
 	day_night = DayNight.new()
 	add_child(day_night)
@@ -73,11 +76,13 @@ func _ready() -> void:
 	hud = Hud.new()
 	hud.city = city
 	add_child(hud)
-	hud.tool_selected.connect(_set_tool)
+	hud.tool_selected.connect(_on_tool_button)
 	hud.overlay_selected.connect(_set_overlay)
 	hud.speed_selected.connect(_set_speed)
 	hud.quality_selected.connect(_set_quality)
 	hud.start_chosen.connect(_start)
+	hud.load_chosen.connect(func(slot): Progress.load_game(slot))
+	hud.build_menu.chosen.connect(_choose_building)
 	cam.moved.connect(day_night.set_view_distance)
 	menu = GameMenu.new()
 	add_child(menu)
@@ -88,7 +93,9 @@ func _ready() -> void:
 	_set_overlay(int(_args.get("overlay", "0")))
 	_set_speed(1)
 
-	if _args.has("demo") or _args.has("screenshot"):
+	if not save.is_empty():
+		_start(false, save)
+	elif _args.has("demo") or _args.has("screenshot"):
 		_start(_args.has("demo"))
 	else:
 		# Title screen: the island slowly orbits behind the menu.
@@ -100,13 +107,21 @@ func _ready() -> void:
 	day_night.update_time(city.time_of_day(), city.game_day())
 
 
-func _start(demo: bool) -> void:
-	if view.city == null:
-		view.setup(city)
-	if demo:
+## A new game (demo or empty island), or a saved one when save holds what
+## Progress.take_pending_load() returned.
+func _start(demo: bool, save := {}) -> void:
+	if not save.is_empty():
+		city.from_dict(save.city)
+	elif demo:
 		city.build_demo()
 	else:
 		city.build_starter()
+	if view.city == null:
+		view.setup(city)
+	Progress.begin(city, save)
+	Progress.notice.connect(_on_notice)
+	if _args.has("screenshot") or _args.has("shots") or _args.has("nosave"):
+		Progress.autosave_enabled = false
 	if _args.has("hour"):
 		city.minutes = float(city.game_day()) * 1440.0 + float(_args["hour"]) * 60.0
 	view.rebuild_all()
@@ -124,7 +139,8 @@ func _start(demo: bool) -> void:
 	life.setup(city, cam)
 	street = preload("res://player/scenes/street_mode.tscn").instantiate()
 	add_child(street)
-	street.setup(city)
+	street.setup(city)  # registers its own save section, "street"
+	street.set_life(life)  # carjacking, people and cops as targets, police chases
 	street.street_entered.connect(_on_street_entered)
 	street.street_exited.connect(_on_street_exited)
 	street.vehicle_changed.connect(func(_car): _update_hint())
@@ -141,8 +157,24 @@ func _start(demo: bool) -> void:
 		_toggle_perf()
 	if _args.has("street"):
 		go_street.call_deferred()
+	Progress.register_section("mayor", self)
+	Progress.started()
 	_update_hint()
 
+
+## The mayor's view, for saves: camera, speed and overlay.
+func to_dict() -> Dictionary:
+	return {"focus": [cam.focus.x, cam.focus.z], "dist": cam.dist, "yaw": cam.yaw, "tilt": cam.tilt,
+		"speed": speed_index, "overlay": overlay}
+
+
+func from_dict(d: Dictionary) -> void:
+	var f: Array = d.get("focus", [])
+	if f.size() == 2:
+		cam.set_view(Vector3(float(f[0]), 0.0, float(f[1])), float(d.get("dist", cam.dist)),
+			float(d.get("yaw", cam.yaw)), float(d.get("tilt", 0.0)))
+	_set_speed(clampi(int(d.get("speed", 1)), 0, SPEED_VALUES.size() - 1))
+	_set_overlay(clampi(int(d.get("overlay", 0)), 0, 3))
 
 func _shoot(path: String) -> void:
 	if _args.has("street"):
@@ -218,6 +250,9 @@ func go_street() -> void:
 func go_mayor() -> void:
 	if street == null or not street.active or street.busy:
 		return
+	if not street.can_exit():
+		street.exit_street(cam.global_transform, cam.fov)  # shows why ("Lose the cops first")
+		return
 	# Frame the mayor view on where the player ended up, looking the same way.
 	cam.set_view(street.focus_point(), 140.0, street.view_yaw())
 	street.exit_street(cam.global_transform, cam.fov)
@@ -257,9 +292,24 @@ func _update_hint() -> void:
 
 # ---------------------------------------------------------------- settings ---
 
+func _on_tool_button(t: int) -> void:
+	if t == Tool.BUILD:
+		hud.set_tool(tool)  # the Build button opens the menu; the tool comes from the menu
+		_toggle_build_menu()
+	else:
+		_set_tool(t)
+
+
+func _on_notice(text: String) -> void:
+	hud.show_toast(text, true)
+
+
 func _set_tool(t: int) -> void:
 	tool = t as Tool
 	_dragging = false
+	if tool != Tool.BUILD:
+		build_kind = ""
+	hud.build_menu.visible = false
 	hud.set_tool(t)
 	if view.city:
 		view.set_preview([], Color.WHITE)
@@ -304,6 +354,8 @@ func _input(e: InputEvent) -> void:
 		if _dragging:
 			_dragging = false
 			_update_preview()
+		elif hud.build_menu.visible:
+			hud.build_menu.visible = false
 		elif tool != Tool.INSPECT:
 			_set_tool(Tool.INSPECT)
 		else:
@@ -328,6 +380,8 @@ func _unhandled_input(e: InputEvent) -> void:
 		var k := (e as InputEventKey).keycode
 		if k >= KEY_1 and k <= KEY_6:
 			_set_tool(k - KEY_1)
+		elif (k == KEY_7 or k == KEY_B) and started:
+			_toggle_build_menu()
 		elif k == KEY_SPACE:
 			_set_speed(1 if speed_index == 0 else 0)
 		elif k == KEY_N and started:
@@ -347,6 +401,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			if mb.pressed and c != null:
 				if tool == Tool.INSPECT:
 					_inspect(c)
+				elif tool == Tool.BUILD and _build_def().placement != "line":
+					_place_building(c)
 				else:
 					_drag_start = c
 					_dragging = true
@@ -391,14 +447,27 @@ func _apply(a: Vector2i, b: Vector2i) -> void:
 			city.place_zone(city.rect_cells(a, b), _zone_for_tool())
 		Tool.BULLDOZE:
 			city.bulldoze(city.rect_cells(a, b))
+		Tool.BUILD:  # power lines, drawn like roads by services/
+			var sv := Progress.get_section("services")
+			if sv and sv.has_method("place_power_line"):
+				sv.place_power_line(city.road_path(a, b))
 
 
 func _preview_cells() -> Array:
 	if _hover.x < 0 or tool == Tool.INSPECT:
 		return []
 	var a := _drag_start if _dragging else _hover
-	if tool == Tool.ROAD:
+	if tool == Tool.ROAD or (tool == Tool.BUILD and _build_def().placement == "line"):
 		return city.road_path(a, _hover)
+	if tool == Tool.BUILD:
+		var d := _build_def()
+		var at := _build_cell(_hover)
+		var out := []
+		for y in maxi(d.size, 1):
+			for x in maxi(d.size, 1):
+				if city.inside(at.x + x, at.y + y):
+					out.append(at + Vector2i(x, y))
+		return out
 	var out := []
 	var r := city.rect_cells(a, _hover)
 	for y in range(r.position.y, r.end.y):
@@ -414,6 +483,10 @@ func _update_preview() -> void:
 		Tool.COM: col = Color(0.35, 0.65, 1.0)
 		Tool.IND: col = Color(1.0, 0.75, 0.2)
 		Tool.BULLDOZE: col = Color(1.0, 0.3, 0.25)
+		Tool.BUILD:
+			var ok: bool = _build_def().placement == "line" or _hover.x < 0 \
+				or city.can_place_special(build_kind, _build_cell(_hover)) == ""
+			col = Color(0.35, 1.0, 0.5) if ok else Color(1.0, 0.3, 0.25)
 	view.set_preview(_preview_cells(), col)
 
 
@@ -427,7 +500,54 @@ func _update_tip(pos: Vector2) -> void:
 		Tool.ROAD: cost = city.road_cost(city.road_path(a, _hover))
 		Tool.RES, Tool.COM, Tool.IND: cost = city.zone_cost(city.rect_cells(a, _hover), _zone_for_tool())
 		Tool.BULLDOZE: cost = city.bulldoze_cost(city.rect_cells(a, _hover))
+		Tool.BUILD:
+			var d := _build_def()
+			var text: String = d.name
+			if d.placement == "line":
+				var sv := Progress.get_section("services")
+				if sv and sv.has_method("line_cost"):
+					cost = sv.line_cost(city.road_path(a, _hover))
+					text += "\n$%d" % cost if cost > 0 else ""
+				else:
+					text += "\nComes with city services"
+			else:
+				var why := city.can_place_special(build_kind, _build_cell(_hover))
+				text += "\n" + (why if why != "" else "$" + Catalog.thousands(int(d.cost)))
+			hud.show_tip(pos, text)
+			return
 	hud.show_tip(pos, "$%d" % cost if cost > 0 else "")
+
+
+# ------------------------------------------------------------- build menu ---
+
+func _toggle_build_menu() -> void:
+	if hud.build_menu.visible:
+		hud.build_menu.visible = false
+	else:
+		hud.build_menu.open()
+
+
+func _choose_building(kind: String) -> void:
+	build_kind = kind
+	_set_tool(Tool.BUILD)
+	_update_preview()
+
+
+func _build_def() -> Dictionary:
+	return Catalog.get_def(build_kind) if build_kind != "" else Catalog.DEFAULTS
+
+
+func _build_cell(c: Vector2i) -> Vector2i:
+	## The footprint's top-left tile, with the cursor near its middle.
+	var s: int = _build_def().size
+	return c - Vector2i((s - 1) / 2, (s - 1) / 2) if s > 1 else c
+
+
+func _place_building(c: Vector2i) -> void:
+	var id := city.place_special(build_kind, _build_cell(c))
+	if id >= 0:
+		if _build_def().unique:
+			_set_tool(Tool.INSPECT)  # only one of these; put the tool down
 
 
 func _inspect(c: Vector2i) -> void:
@@ -435,6 +555,15 @@ func _inspect(c: Vector2i) -> void:
 	var t := "Tile %d, %d\nLand value %d%%" % [c.x, c.y, int(city.land_value[i] * 100.0)]
 	if city.road[i] == 1:
 		t = "Road\nTraffic %d%%" % int(city.traffic[i] * 100.0)
+		for pid in city.props_at(i):
+			t += "\n" + city.buildings[pid].name
+	elif city.bld[i] >= 0 and city.buildings[city.bld[i]].has("kind"):
+		var b: Dictionary = city.buildings[city.bld[i]]
+		var d := Catalog.get_def(b.kind)
+		var up := int(d.upkeep)
+		t = "%s\n%s" % [b.name, ("Costs $%d a day" % up) if up > 0 else ("Earns $%d a day" % -up) if up < 0 else ""]
+		if d.desc != "":
+			t += "\n" + d.desc
 	elif city.bld[i] >= 0:
 		var b: Dictionary = city.buildings[city.bld[i]]
 		var what := "residents" if b.zone == City.Zone.RES else "jobs"

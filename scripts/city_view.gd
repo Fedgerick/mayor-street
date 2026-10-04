@@ -305,6 +305,8 @@ func rebuild_all() -> void:
 
 
 func _building_mesh(b: Dictionary) -> String:
+	if b.has("kind"):
+		return Kit.special_mesh_name(b.kind, b.size, b.variant)
 	return Kit.building_mesh_name(b.zone, b.stage, b.size, b.variant)
 
 
@@ -325,7 +327,8 @@ func _wall_tint(b: Dictionary) -> Color:
 
 
 func _accent(b: Dictionary) -> Color:
-	var c: Color = Kit.ACCENTS[b.tint2 % Kit.ACCENTS.size()]
+	# Catalog buildings wear their brand colour on signs and trim.
+	var c: Color = Catalog.get_def(b.kind).accent if b.has("kind") else Kit.ACCENTS[b.tint2 % Kit.ACCENTS.size()]
 	c.a = b.seed
 	return c
 
@@ -354,6 +357,10 @@ func _rebuild_chunk(key: Vector2i) -> void:
 			var center := city.cell_center(x, y)
 			if city.road[i] == 1:
 				_add_road(groups, lamps, x, y, center)
+				for pid in city.props_at(i):  # payphones and other street props
+					var pb: Dictionary = city.buildings[pid]
+					if not growing.has(pid):
+						_push(groups, _building_mesh(pb), _building_xform(pb), _wall_tint(pb), _accent(pb), true)
 				continue
 			var bid := city.bld[i]
 			if bid >= 0:

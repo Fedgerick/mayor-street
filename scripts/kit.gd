@@ -119,7 +119,10 @@ func _load_dir(sub: String) -> void:
 
 
 func _load_mesh(sub: String, nm: String) -> bool:
-	var path := ROOT + sub + "/" + nm + ".glb"
+	return _load_mesh_at(ROOT + sub + "/" + nm + ".glb", nm, sub)
+
+
+func _load_mesh_at(path: String, nm: String, sub: String) -> bool:
 	if not ResourceLoader.exists(path):
 		return false
 	var scene: PackedScene = load(path)
@@ -165,3 +168,40 @@ func building_mesh_name(zone: int, stage: int, size: int, variant: int) -> Strin
 
 func mesh(nm: String) -> Mesh:
 	return meshes.get(nm)
+
+
+var _special_tried := {}
+
+
+## The mesh name for a catalog building, loading its model on first use. Until a model
+## exists it borrows a kit building of the same size, or gets a plain block.
+func special_mesh_name(kind: String, size: int, variant: int) -> String:
+	var nm := "special/" + kind
+	if meshes.has(nm):
+		return nm
+	var d := Catalog.get_def(kind)
+	if d.is_empty():
+		return ""
+	if not _special_tried.has(kind):
+		_special_tried[kind] = true
+		if d.model != "" and _load_mesh_at(d.model, nm, "specials"):
+			return nm
+	var list: Array = variants.get("%s_%d" % [d.stand_in, size], [])
+	if list.is_empty() and size <= 2:
+		list = variants.get("c_3_2" if size == 2 else "c_2_1", [])
+	if not list.is_empty():
+		return list[variant % list.size()]
+	return _block(nm, d)
+
+
+func _block(nm: String, d: Dictionary) -> String:
+	var w: float = maxf(d.size, 1) * City.TILE - 2.0
+	var h: float = d.height
+	var box := BoxMesh.new()
+	box.size = Vector3(w, h, w)
+	var st := SurfaceTool.new()
+	st.append_from(box, 0, Transform3D(Basis(), Vector3(0, h * 0.5, 0)))
+	var m := st.commit()
+	m.surface_set_material(0, materials["Concrete"])
+	meshes[nm] = m
+	return nm

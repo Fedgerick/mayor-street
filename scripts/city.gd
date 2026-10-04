@@ -10,6 +10,7 @@ signal building_added(id: int, animate: bool)
 signal building_removed(id: int)
 signal day_passed
 signal message(text: String)
+signal land_value_computed  ## services/ adjusts land_value in place after each recompute
 
 const SIZE := 80
 const TILE := 12.0
@@ -42,6 +43,7 @@ var coast_dist := PackedFloat32Array()
 
 var buildings := {}  # id -> Dictionary
 var _next_id := 1
+var _props := {}  # road cell index -> ids of the street props (payphones) standing there
 
 var funds := 50000.0
 var tax_rate := 0.09
@@ -55,9 +57,15 @@ var last_expense := 0.0
 var rng := RandomNumberGenerator.new()
 var animate_growth := true
 var noise := FastNoiseLite.new()
+var map_seed := 1337
+## The Progress store (set by Progress.begin): building unlocks are checked against it.
+var progress: Object = null
+## Optional, from services/: func(x, y) -> bool, asked before a zone lot grows. False holds it back.
+var growth_check := Callable()
 
 
 func _init(seed_value: int = 1337) -> void:
+	map_seed = seed_value
 	rng.seed = seed_value
 	noise.seed = seed_value
 	noise.frequency = 0.0035
@@ -232,7 +240,7 @@ func road_path(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 func road_cost(path: Array[Vector2i]) -> int:
 	var n := 0
 	for c in path:
-		if inside(c.x, c.y) and land[idx(c.x, c.y)] == 1 and road[idx(c.x, c.y)] == 0:
+		if inside(c.x, c.y) and land[idx(c.x, c.y)] == 1 and road[idx(c.x, c.y)] == 0 and not is_special_cell(idx(c.x, c.y)):
 			n += 1
 	return n * ROAD_COST
 
@@ -243,7 +251,7 @@ func place_road(path: Array[Vector2i]) -> bool:
 		return false
 	var r := Rect2i(path[0], Vector2i.ONE)
 	for c in path:
-		if not inside(c.x, c.y) or land[idx(c.x, c.y)] == 0:
+		if not inside(c.x, c.y) or land[idx(c.x, c.y)] == 0 or is_special_cell(idx(c.x, c.y)):
 			continue
 		var i := idx(c.x, c.y)
 		if bld[i] >= 0:
@@ -270,7 +278,7 @@ func zone_cost(r: Rect2i, z: int) -> int:
 	for y in range(r.position.y, r.end.y):
 		for x in range(r.position.x, r.end.x):
 			var i := idx(x, y)
-			if land[i] == 1 and road[i] == 0 and zone[i] != z:
+			if land[i] == 1 and road[i] == 0 and zone[i] != z and not is_special_cell(i):
 				n += 1
 	return n * ZONE_COST
 
@@ -282,7 +290,7 @@ func place_zone(r: Rect2i, z: int) -> bool:
 	for y in range(r.position.y, r.end.y):
 		for x in range(r.position.x, r.end.x):
 			var i := idx(x, y)
-			if land[i] == 0 or road[i] == 1 or zone[i] == z:
+			if land[i] == 0 or road[i] == 1 or zone[i] == z or is_special_cell(i):
 				continue
 			if bld[i] >= 0:
 				remove_building(bld[i])
@@ -300,7 +308,7 @@ func bulldoze_cost(r: Rect2i) -> int:
 		for x in range(r.position.x, r.end.x):
 			var i := idx(x, y)
 			if road[i] == 1:
-				n += 1
+				n += 1 + _props.get(i, []).size()
 			elif bld[i] >= 0 and not seen.has(bld[i]):
 				seen[bld[i]] = true
 				n += 1
@@ -323,6 +331,8 @@ func bulldoze(r: Rect2i) -> bool:
 			var i := idx(x, y)
 			if bld[i] >= 0:
 				remove_building(bld[i])
+			for pid in _props.get(i, []).duplicate():
+				remove_building(pid)
 			road[i] = 0
 			zone[i] = Zone.NONE
 	_zoned_dirty = true
@@ -338,7 +348,8 @@ func capacity(b: Dictionary) -> int:
 	return CAP[b.zone][b.stage]
 
 
-func add_building(x: int, y: int, size: int, z: int, stage: int, rot: int, animate := true) -> int:
+## extra: more keys for the entry (kind, name, tags...), set before building_added fires.
+func add_building(x: int, y: int, size: int, z: int, stage: int, rot: int, animate := true, extra := {}) -> int:
 	var id := _next_id
 	_next_id += 1
 	var b := {
@@ -346,13 +357,23 @@ func add_building(x: int, y: int, size: int, z: int, stage: int, rot: int, anima
 		"variant": rng.randi(), "seed": rng.randf(), "born": minutes,
 		"tint": rng.randi() % 8, "tint2": rng.randi() % 8, "connected": true,
 	}
-	buildings[id] = b
-	for dy in size:
-		for dx in size:
-			bld[idx(x + dx, y + dy)] = id
-	_count(b, 1)
+	b.merge(extra, true)
+	_insert(b)
 	building_added.emit(id, animate)
 	return id
+
+
+func _insert(b: Dictionary) -> void:
+	buildings[b.id] = b
+	if b.size == 0:
+		var i := idx(b.x, b.y)
+		if not _props.has(i):
+			_props[i] = []
+		_props[i].append(b.id)
+	for dy in b.size:
+		for dx in b.size:
+			bld[idx(b.x + dx, b.y + dy)] = b.id
+	_count(b, 1)
 
 
 func remove_building(id: int) -> void:
@@ -362,10 +383,15 @@ func remove_building(id: int) -> void:
 	for dy in b.size:
 		for dx in b.size:
 			bld[idx(b.x + dx, b.y + dy)] = -1
+	if b.size == 0:
+		var i := idx(b.x, b.y)
+		_props[i].erase(id)
+		if _props[i].is_empty():
+			_props.erase(i)
 	buildings.erase(id)
 	_count(b, -1)
 	building_removed.emit(id)
-	cells_changed.emit(Rect2i(b.x, b.y, b.size, b.size))
+	cells_changed.emit(Rect2i(b.x, b.y, maxi(b.size, 1), maxi(b.size, 1)))
 
 
 func _count(b: Dictionary, sign: int) -> void:
@@ -392,7 +418,250 @@ func _recount() -> void:
 
 
 func building_center(b: Dictionary) -> Vector3:
+	if b.size == 0:
+		# A street prop stands at the sidewalk's outer edge, facing the road (rot).
+		var f: Vector2i = DIRS[b.rot]
+		return cell_center(b.x, b.y) - Vector3(f.x, 0.0, f.y) * PROP_OFFSET
 	return Vector3((b.x + b.size * 0.5) * TILE, 0.0, (b.y + b.size * 0.5) * TILE)
+
+
+## Where the front door is: the model's door spot for catalog buildings, otherwise the middle
+## of the side facing the road.
+func door_position(b: Dictionary) -> Vector3:
+	var c := building_center(b)
+	if b.size == 0:
+		return c
+	var basis := Basis(Vector3.UP, b.rot * PI * 0.5)
+	if b.has("kind"):
+		var door: Dictionary = Catalog.get_def(b.kind).get("door", {})
+		if not door.is_empty():
+			return c + basis * Vector3(door.x, 0.0, door.z)
+	return c + basis * Vector3(0.0, 0.0, b.size * TILE * 0.5 - 0.6)
+
+
+# ---------------------------------------------------------- special buildings ---
+
+const PROP_OFFSET := 5.6  # street props: metres from the road tile's centre line
+
+
+## Ids of the street props (payphones) standing on a road tile.
+func props_at(i: int) -> Array:
+	return _props.get(i, [])
+
+
+func is_special_cell(i: int) -> bool:
+	return bld[i] >= 0 and buildings[bld[i]].has("kind")
+
+
+## "" when the catalog building can go at cell (its top-left tile; the road tile for a street
+## prop), otherwise the reason it can't. free skips the unlock check and the cost.
+func can_place_special(kind: String, cell: Vector2i, free := false) -> String:
+	var d := Catalog.get_def(kind)
+	if d.is_empty():
+		return "Unknown building"
+	if d.placement == "line":
+		return "Drag power lines like a road"
+	if not free and progress != null and not progress.is_unlocked(kind):
+		return Catalog.lock_text(kind) + " to unlock it"
+	if d.unique and not specials_of(kind).is_empty():
+		return "The city already has %s" % d.name
+	if not inside(cell.x, cell.y):
+		return "Off the map"
+	if d.placement == "street":
+		var i := idx(cell.x, cell.y)
+		if road[i] == 0:
+			return "It goes on a sidewalk: pick a road"
+		if _props.has(i):
+			return "There's already one on this block"
+	else:
+		var s: int = d.size
+		for y in range(cell.y, cell.y + s):
+			for x in range(cell.x, cell.x + s):
+				if not inside(x, y) or land[idx(x, y)] == 0:
+					return "Needs flat land"
+				if road[idx(x, y)] == 1:
+					return "Can't build on a road"
+				if bld[idx(x, y)] >= 0:
+					return "Bulldoze what's there first"
+		if d.needs_road and front_side(cell, s) < 0:
+			return "Needs a road alongside"
+	if not free and funds < float(d.cost):
+		return "Not enough money ($%s needed)" % Catalog.thousands(int(d.cost))
+	return ""
+
+
+## Buys and places a catalog building. Returns its id, or -1 after a message saying why not.
+## rot is the side the front faces (DIRS); -1 picks the road side.
+func place_special(kind: String, cell: Vector2i, rot := -1, free := false) -> int:
+	var why := can_place_special(kind, cell, free)
+	if why != "":
+		message.emit(why)
+		return -1
+	var d := Catalog.get_def(kind)
+	if not free and float(d.cost) > 0.0 and not spend(float(d.cost)):
+		return -1
+	var s: int = d.size
+	if d.placement == "street":
+		if rot < 0:
+			rot = (sidewalk_side(cell) + 2) % 4
+	else:
+		for y in range(cell.y, cell.y + s):
+			for x in range(cell.x, cell.x + s):
+				zone[idx(x, y)] = Zone.NONE
+				trees[idx(x, y)] = 0
+		_zoned_dirty = true
+		if rot < 0:
+			rot = maxi(front_side(cell, s), 0)
+	var id := add_building(cell.x, cell.y, s, Zone.NONE, 1, rot, animate_growth,
+		{"kind": kind, "name": d.name, "tags": d.tags.duplicate()})
+	cells_changed.emit(Rect2i(cell, Vector2i(maxi(s, 1), maxi(s, 1))).grow(1))
+	return id
+
+
+## Placed buildings carrying a tag (catalog buildings only; zone buildings have no tags).
+func find_tagged(tag: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for b in buildings.values():
+		if b.has("tags") and tag in b.tags:
+			out.append(b)
+	return out
+
+
+func specials_of(kind: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for b in buildings.values():
+		if b.get("kind", "") == kind:
+			out.append(b)
+	return out
+
+
+## The side of a size x size lot at cell with the most road along it, or -1 for none.
+func front_side(cell: Vector2i, s: int) -> int:
+	var best := -1
+	var most := 0
+	for r in 4:
+		var n := 0
+		for k in s:
+			var p: Vector2i
+			match r:
+				0: p = Vector2i(cell.x + k, cell.y + s)
+				1: p = Vector2i(cell.x + s, cell.y + k)
+				2: p = Vector2i(cell.x + k, cell.y - 1)
+				_: p = Vector2i(cell.x - 1, cell.y + k)
+			if is_road(p.x, p.y):
+				n += 1
+		if n > most:
+			most = n
+			best = r
+	return best
+
+
+## The side of a road tile whose sidewalk borders a lot (where street props stand).
+func sidewalk_side(c: Vector2i) -> int:
+	for r in 4:
+		var n: Vector2i = c + DIRS[r]
+		if inside(n.x, n.y) and land[idx(n.x, n.y)] == 1 and road[idx(n.x, n.y)] == 0:
+			return r
+	return 0
+
+
+# ---------------------------------------------------------------- save, load ---
+
+const _INT_KEYS := ["id", "x", "y", "size", "zone", "stage", "rot", "variant", "tint", "tint2"]
+
+
+## Everything needed to rebuild this city. Every key of every building entry is kept, so
+## other threads' keys must be JSON-safe.
+func to_dict() -> Dictionary:
+	return {
+		"seed": map_seed, "size": SIZE,
+		"land": Marshalls.raw_to_base64(land),
+		"height": Marshalls.raw_to_base64(height.to_byte_array()),
+		"road": Marshalls.raw_to_base64(road),
+		"zone": Marshalls.raw_to_base64(zone),
+		"trees": Marshalls.raw_to_base64(trees),
+		"buildings": buildings.values(),
+		"next_id": _next_id,
+		"funds": funds, "tax_rate": tax_rate, "minutes": minutes, "demand": demand.duplicate(),
+		"last_income": last_income, "last_expense": last_expense,
+		"rng": str(rng.state),
+	}
+
+
+## Restores a city from to_dict() (after a trip through JSON). Use a City made with the same
+## seed, before anything listens to it: a load builds the scene around the restored city.
+func from_dict(d: Dictionary) -> bool:
+	var n := SIZE * SIZE
+	if int(d.get("size", SIZE)) != SIZE:
+		return false
+	var a := Marshalls.base64_to_raw(str(d.get("land", "")))
+	if a.size() == n:
+		land = a
+	var h := Marshalls.base64_to_raw(str(d.get("height", ""))).to_float32_array()
+	if h.size() == n:
+		height = h
+	a = Marshalls.base64_to_raw(str(d.get("road", "")))
+	if a.size() == n:
+		road = a
+	a = Marshalls.base64_to_raw(str(d.get("zone", "")))
+	if a.size() == n:
+		zone = a
+	a = Marshalls.base64_to_raw(str(d.get("trees", "")))
+	if a.size() == n:
+		trees = a
+	buildings.clear()
+	_props.clear()
+	bld.fill(-1)
+	var top := 0
+	for e in d.get("buildings", []):
+		if not e is Dictionary:
+			continue
+		var b: Dictionary = e.duplicate(true)
+		if not b.has_all(_INT_KEYS):
+			continue
+		for k in _INT_KEYS:
+			b[k] = int(b[k])
+		b["seed"] = float(b.get("seed", 0.0))
+		b["born"] = float(b.get("born", 0.0))
+		b["connected"] = bool(b.get("connected", true))
+		if b.has("kind"):
+			var cd := Catalog.get_def(str(b.kind))
+			if cd.is_empty():
+				continue  # a building this version of the game doesn't know
+			b["kind"] = str(b.kind)
+			b["tags"] = cd.tags.duplicate()  # tags follow the catalog; the name is the building's own
+			if not b.has("name"):
+				b["name"] = cd.name
+		if not _fits(b):
+			continue
+		_insert(b)
+		top = maxi(top, b.id)
+	_next_id = maxi(int(d.get("next_id", 1)), top + 1)
+	funds = float(d.get("funds", funds))
+	tax_rate = float(d.get("tax_rate", tax_rate))
+	minutes = float(d.get("minutes", minutes))
+	var dm: Array = d.get("demand", [])
+	for i in mini(dm.size(), demand.size()):
+		demand[i] = float(dm[i])
+	last_income = float(d.get("last_income", 0.0))
+	last_expense = float(d.get("last_expense", 0.0))
+	if d.has("rng"):
+		rng.state = str(d.rng).to_int()
+	_zoned_dirty = true
+	_recount()
+	compute_traffic()
+	compute_land_value()
+	return true
+
+
+func _fits(b: Dictionary) -> bool:
+	if not inside(b.x, b.y) or buildings.has(b.id) or b.zone < 0 or b.zone > Zone.IND or b.rot < 0 or b.rot > 3:
+		return false
+	for dy in b.size:
+		for dx in b.size:
+			if not inside(b.x + dx, b.y + dy) or bld[idx(b.x + dx, b.y + dy)] >= 0:
+				return false
+	return true
 
 
 # --------------------------------------------------------------- simulation ---
@@ -458,6 +727,8 @@ func _try_grow(x: int, y: int) -> void:
 		return
 	var d: float = demand[z]
 	if d <= 0.02:
+		return
+	if growth_check.is_valid() and not growth_check.call(x, y):
 		return
 	var rot := road_access_dir(x, y)
 	if bld[i] < 0:
@@ -534,6 +805,14 @@ func _day_tick() -> void:
 	for i in SIZE * SIZE:
 		roads += road[i]
 	var expense := roads * ROAD_UPKEEP
+	# Catalog buildings: upkeep, or a day's takings for businesses (negative upkeep).
+	for b in buildings.values():
+		if b.has("kind"):
+			var u := float(Catalog.get_def(b.kind).get("upkeep", 0))
+			if u >= 0.0:
+				expense += u
+			else:
+				income -= u
 	funds += income - expense
 	last_income = income
 	last_expense = expense
@@ -683,6 +962,7 @@ func compute_land_value() -> void:
 		v -= minf(ind[i] * 1.6, 0.4) * (0.4 if zone[i] == Zone.IND else 1.0)
 		v -= maxf(traf[i] - 0.6, 0.0) * 0.6
 		land_value[i] = clampf(v, 0.0, 1.0)
+	land_value_computed.emit()
 
 
 func _blur(src: PackedFloat32Array, r: int) -> PackedFloat32Array:

@@ -7,10 +7,11 @@ signal overlay_selected(mode: int)
 signal speed_selected(speed: int)
 signal quality_selected(level: int)
 signal start_chosen(demo: bool)
+signal load_chosen(slot: String)
 
-const TOOLS := ["Inspect", "Road", "Residential", "Commercial", "Industrial", "Bulldoze"]
+const TOOLS := ["Inspect", "Road", "Residential", "Commercial", "Industrial", "Bulldoze", "Build"]
 const TOOL_COLORS := [Color(0.85, 0.88, 0.95), Color(0.75, 0.78, 0.85), Color(0.3, 0.85, 0.4),
-	Color(0.3, 0.6, 1.0), Color(1.0, 0.75, 0.2), Color(1.0, 0.35, 0.3)]
+	Color(0.3, 0.6, 1.0), Color(1.0, 0.75, 0.2), Color(1.0, 0.35, 0.3), Color(1.0, 0.85, 0.45)]
 const OVERLAYS := ["None", "Zones", "Traffic", "Land value"]
 const SPEEDS := ["II", "1x", "3x", "10x"]
 
@@ -32,6 +33,10 @@ var toast: Label
 var _toast_t := 0.0
 var start_panel: Control
 var tax_label: Label
+var lbl_tier: Label
+var build_menu: BuildMenu
+var _toast_bad: StyleBoxFlat
+var _toast_good: StyleBoxFlat
 
 
 func _ready() -> void:
@@ -50,12 +55,19 @@ func _ready() -> void:
 	root.add_child(tip)
 	toast = Label.new()
 	toast.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	toast.position = Vector2(-200, 90)
-	toast.size = Vector2(400, 40)
+	toast.position = Vector2(-310, 90)
+	toast.size = Vector2(620, 40)
 	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	toast.add_theme_stylebox_override("normal", panel_style(Color(0.6, 0.15, 0.12, 0.92), 10))
+	toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_toast_bad = panel_style(Color(0.6, 0.15, 0.12, 0.92), 10)
+	_toast_good = panel_style(Color(0.12, 0.38, 0.24, 0.94), 10)
+	toast.add_theme_stylebox_override("normal", _toast_bad)
 	toast.visible = false
+	toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(toast)
+	build_menu = BuildMenu.new()
+	build_menu.city = city
+	root.add_child(build_menu)
 	no_keyboard_focus(root)
 
 
@@ -122,11 +134,18 @@ func _build_top() -> void:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 26)
 	p.add_child(h)
+	var nv := VBoxContainer.new()
+	nv.add_theme_constant_override("separation", -2)
+	h.add_child(nv)
 	var name_l := Label.new()
 	name_l.text = "NEW HARBOR"
 	name_l.add_theme_font_size_override("font_size", 20)
 	name_l.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
-	h.add_child(name_l)
+	nv.add_child(name_l)
+	lbl_tier = Label.new()
+	lbl_tier.add_theme_font_size_override("font_size", 12)
+	lbl_tier.add_theme_color_override("font_color", Color(0.6, 0.66, 0.76))
+	nv.add_child(lbl_tier)
 	lbl_funds = _stat(h, "FUNDS")
 	lbl_income = _stat(h, "PER DAY")
 	lbl_pop = _stat(h, "POPULATION")
@@ -148,7 +167,7 @@ func _build_top() -> void:
 func _build_bottom() -> void:
 	var p := PanelContainer.new()
 	p.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	p.position = Vector2(-520, -78)
+	p.position = Vector2(-578, -78)
 	root.add_child(p)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 6)
@@ -279,6 +298,18 @@ func show_start() -> void:
 	s.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	s.add_theme_color_override("font_color", Color(0.7, 0.76, 0.85))
 	v.add_child(s)
+	var saves := Progress.list_saves()
+	if not saves.is_empty():
+		var c := Button.new()
+		c.text = "Continue\n" + SavePanel.describe(saves[0])
+		c.custom_minimum_size = Vector2(0, 64)
+		c.pressed.connect(func(): load_chosen.emit(saves[0].slot))
+		v.add_child(c)
+		var l := Button.new()
+		l.text = "Load a saved game"
+		l.custom_minimum_size = Vector2(0, 46)
+		l.pressed.connect(_show_load)
+		v.add_child(l)
 	var a := Button.new()
 	a.text = "Start on an empty island"
 	a.custom_minimum_size = Vector2(0, 52)
@@ -295,6 +326,19 @@ func show_start() -> void:
 	q.pressed.connect(func(): get_tree().quit())
 	v.add_child(q)
 	no_keyboard_focus(start_panel)
+
+
+func _show_load() -> void:
+	start_panel.visible = false
+	var sp := SavePanel.new()
+	sp.set_anchors_preset(Control.PRESET_CENTER)
+	sp.position = Vector2(-310, -220)
+	root.add_child(sp)
+	sp.open(false)
+	no_keyboard_focus(sp)
+	sp.closed.connect(func():
+		sp.queue_free()
+		start_panel.visible = true)
 
 
 func _close_start(demo: bool) -> void:
@@ -329,10 +373,13 @@ func show_tip(pos: Vector2, text: String) -> void:
 	tip.position = pos + Vector2(18, 18)
 
 
-func show_toast(text: String) -> void:
+func show_toast(text: String, good := false) -> void:
+	## Red for problems ("Not enough money"), green for good news (milestones, saves).
 	toast.text = text
+	toast.add_theme_stylebox_override("normal", _toast_good if good else _toast_bad)
+	toast.size = Vector2(620, 0)  # height follows the wrapped text
 	toast.visible = true
-	_toast_t = 2.5
+	_toast_t = 4.0 if good else 2.5
 
 
 func is_over_ui(pos: Vector2) -> bool:
@@ -358,6 +405,7 @@ func _process(delta: float) -> void:
 	for i in 3:
 		bars[i].value = city.demand[i + 1]
 	tax_label.text = "Tax %d%%" % int(round(city.tax_rate * 100.0))
+	lbl_tier.text = Catalog.TIERS[Progress.city_tier].name.to_upper()
 
 
 static func _fmt(n: int) -> String:

@@ -10,6 +10,7 @@ const MAYOR_KEYS := [
 	["Q E / right-drag", "Rotate"],
 	["Wheel / middle-drag", "Zoom / grab"],
 	["1 to 6", "Inspect, road, zones, bulldoze"],
+	["7 / B", "Build menu"],
 	["O", "Overlays"],
 	["Space  ,  .", "Pause, slower, faster"],
 	["N", "Skip an hour"],
@@ -20,7 +21,9 @@ const STREET_KEYS := [
 	["Tab", "Back to the mayor view"],
 	["WASD + mouse", "Walk and look"],
 	["Shift / Space", "Run / jump"],
-	["E or F", "Get in or out of a car"],
+	["E or F", "Get in or out of a car, or carjack"],
+	["Click / right-click", "Attack / aim"],
+	["Q / wheel / 1 to 3", "Switch weapon"],
 	["W S / A D", "Drive / steer"],
 	["Space", "Handbrake"],
 	["H", "Horn"],
@@ -28,9 +31,9 @@ const STREET_KEYS := [
 ]
 # The corner hint for each situation: key, what it does.
 const HINTS := {
-	&"mayor": [["Tab", "Walk the streets"], ["Esc", "Menu"]],
-	&"foot": [["WASD", "Walk"], ["Shift", "Run"], ["Space", "Jump"], ["E", "Get in a car"],
-		["Tab", "Mayor view"], ["Esc", "Menu"]],
+	&"mayor": [["B", "Build"], ["Tab", "Walk the streets"], ["Esc", "Menu"]],
+	&"foot": [["WASD", "Walk"], ["Shift", "Run"], ["Space", "Jump"], ["E", "Car / carjack"],
+		["Click", "Attack"], ["Q", "Weapon"], ["Tab", "Mayor view"], ["Esc", "Menu"]],
 	&"car": [["W S", "Drive"], ["A D", "Steer"], ["Space", "Handbrake"], ["H", "Horn"], ["E", "Get out"],
 		["Tab", "Mayor view"], ["Esc", "Menu"]],
 }
@@ -38,6 +41,9 @@ const HINTS := {
 var is_open := false
 var _theme: Theme
 var _menu: Control
+var _panel: PanelContainer
+var _saves: SavePanel
+var _save_btn: Button
 var _resume: Button
 var _screen: Button
 var _hint: PanelContainer
@@ -68,7 +74,10 @@ func _input(e: InputEvent) -> void:
 		toggle_fullscreen()
 		get_viewport().set_input_as_handled()
 	elif is_open and (key == KEY_ESCAPE or e.is_action_pressed("ui_cancel") or is_start_button(e)):
-		close()
+		if _saves.visible:
+			_saves.close()  # back to the menu
+		else:
+			close()
 		get_viewport().set_input_as_handled()
 
 
@@ -87,6 +96,9 @@ func open() -> void:
 	_screen.text = "Play in a window" if is_fullscreen() else "Full screen"
 	_hint.visible = false
 	_menu.visible = true
+	_saves.visible = false
+	_panel.visible = true
+	_save_btn.disabled = not Progress.playing
 	_resume.grab_focus()
 
 
@@ -216,6 +228,7 @@ func _build_menu() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_menu.add_child(center)
 	var panel := PanelContainer.new()
+	_panel = panel
 	var ps := Hud.panel_style(Color(0.07, 0.09, 0.13, 0.94), 16)
 	ps.content_margin_left = 40
 	ps.content_margin_right = 40
@@ -239,7 +252,13 @@ func _build_menu() -> void:
 	v.add_child(row)
 	_resume = _button(row, "Resume", close)
 	_screen = _button(row, "Play in a window", toggle_fullscreen)
-	_button(row, "Quit to desktop", func(): get_tree().quit())
+	_button(row, "Quit to desktop", quit_game)
+	var row2 := HBoxContainer.new()
+	row2.alignment = BoxContainer.ALIGNMENT_CENTER
+	row2.add_theme_constant_override("separation", 14)
+	v.add_child(row2)
+	_save_btn = _button(row2, "Save game", func(): _show_saves(true))
+	_button(row2, "Load game", func(): _show_saves(false))
 	v.add_child(_small("F11 or Alt+Enter also switch between full screen and a window", HORIZONTAL_ALIGNMENT_CENTER))
 	v.add_child(HSeparator.new())
 
@@ -250,6 +269,22 @@ func _build_menu() -> void:
 	cols.add_child(_key_table("STREET LEVEL", STREET_KEYS))
 	v.add_child(_small("Mayor Street %s" % ProjectSettings.get_setting("application/config/version", ""),
 		HORIZONTAL_ALIGNMENT_RIGHT))
+	_saves = SavePanel.new()
+	center.add_child(_saves)
+	_saves.closed.connect(func():
+		_panel.visible = true
+		_resume.grab_focus())
+
+
+func _show_saves(saving: bool) -> void:
+	_panel.visible = false
+	_saves.open(saving)
+
+
+func quit_game() -> void:
+	## Quit to desktop, keeping the game in the autosave slot.
+	Progress.autosave()
+	get_tree().quit()
 
 
 func _button(parent: Control, text: String, action: Callable) -> Button:

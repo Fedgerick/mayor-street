@@ -4,9 +4,8 @@ The shared foundation from round-2 plan phase 0. Code against this page. The Cit
 thread owns everything here (`scripts/`). If you need something that isn't on this page,
 send a note through the coordinator instead of working around it.
 
-Status: interface written 2026-10-03. Code lands in this order: progress store and saves,
-then the catalog and placing, then the build menu. Names on this page will not change
-without a note.
+Status 2026-10-04: everything on this page is in the code, with tests in
+`tests/progress_test.gd`. Names on this page will not change without a note.
 
 ## The short version
 
@@ -75,6 +74,9 @@ var quests: Dictionary  # quest id -> {"state": "active" | "done" | "failed", ..
 func set_quest(id: String, d: Dictionary) -> void
 func quest_state(id: String) -> String                # "" when never started
 signal quest_changed(id: String)
+
+# Good news for the HUD (green toast): milestones, unlocks, saves. Problems stay on City.message.
+signal notice(text: String)
 ```
 
 Goodness rules (perks, drift toward zero, what moves it) belong to missions/. Missions keeps
@@ -196,6 +198,9 @@ City.can_place_special(kind: String, cell: Vector2i, free := false) -> String  #
 City.place_special(kind: String, cell: Vector2i, rot := -1, free := false) -> int  # building id, or -1 plus a message
 City.find_tagged(tag: String) -> Array[Dictionary]   # placed buildings carrying the tag
 City.specials_of(kind: String) -> Array[Dictionary]
+City.door_position(b: Dictionary) -> Vector3          # the model's door spot, or the middle of the road side
+City.props_at(cell_index: int) -> Array               # ids of street props (payphones) on a road tile
+City.building_center(b) -> Vector3                    # for a payphone: its spot on the sidewalk
 ```
 
 - `cell` is the top-left tile of the footprint. For a street prop (payphone) it's the road

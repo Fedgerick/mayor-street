@@ -14,11 +14,14 @@ config/icon="res://assets/icon/icon.png"
 config/windows_native_icon="res://assets/icon/icon.ico"
 boot_splash/bg_color=Color(0.07, 0.08, 0.1, 1)
 boot_splash/show_image=false
+config/use_custom_user_dir=true
+config/custom_user_dir_name="MayorStreet"
 
 [autoload]
 
 Kit="*res://scripts/kit.gd"
 Audio="*res://audio/audio_director.gd"
+Progress="*res://scripts/progress.gd"
 
 [display]
 

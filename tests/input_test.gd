@@ -25,7 +25,7 @@ func _initialize() -> void:
 func _run() -> void:
 	print("Input tests")
 	await _frames(5)
-	var hud: Hud = main.hud
+	var hud = main.hud  # untyped: naming Hud here would compile it before the autoloads exist
 	var demo := _find_button(hud.start_panel, "Load the demo city")
 	check(demo != null, "title screen offers the demo city")
 	check(_find_button(hud.start_panel, "Quit") != null, "title screen has a Quit button")
