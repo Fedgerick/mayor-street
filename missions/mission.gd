@@ -1,0 +1,69 @@
+class_name Mission
+extends RefCounted
+## One job, made from a template and real buildings. Built by MissionDirector.generate();
+## everything the HUD shows (title, objective, timer, pay) is read from here.
+
+enum State { OFFERED, ACTIVE, PASSED, FAILED }
+
+var template: Dictionary
+var id: String
+var side: String          # "good" or "bad"
+var giver: String         # "radio" or "payphone"
+var title: String
+var brief: String
+var slots := {}           # slot -> {building, name, cell (road tile out front), pos (Vector3)}
+var vars := {}            # extra text fields, e.g. car
+var steps: Array = []     # template steps with text filled in
+var route_m := 0.0        # road metres along the template's route
+var risk := 1.0
+var pay := 0
+var city_bonus := 0
+var goodness := 0.0
+var crime := 0
+var time_limit := 0.0     # seconds, 0 = untimed
+var max_wanted := 99
+var quest := ""           # quest id when a quest started this job
+
+var state := State.OFFERED
+var step_i := 0
+var time_left := 0.0
+var hold := 0.0           # seconds held in a hold step
+var points: Array[Vector3] = []  # collect step: what is left to pick up
+var fail_reason := ""
+var mission_car: Object = null
+var target: ChaseCar = null  # chase step: the car to stop
+var _escape_t := 0.0
+
+
+func step() -> Dictionary:
+	return steps[step_i] if step_i < steps.size() else {}
+
+
+func step_pos() -> Vector3:
+	var s := step()
+	if s.has("at") and slots.has(s.at):
+		return slots[s.at].pos
+	return Vector3.INF
+
+
+func objective() -> String:
+	var s := step()
+	var text: String = s.get("text", "")
+	return text.replace("{left}", str(points.size()))
+
+
+func format(text: String) -> String:
+	for k in slots:
+		text = text.replace("{%s}" % k, slots[k].name)
+	for k in vars:
+		text = text.replace("{%s}" % k, str(vars[k]))
+	return text
+
+
+func km() -> float:
+	return route_m / 1000.0
+
+
+func summary() -> String:
+	## One line for offers and the quest log: "Fare to Lucky Pawn, 1.2 km, $230".
+	return "%s  -  %.1f km  -  $%d" % [title, km(), pay]

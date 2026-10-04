@@ -1,0 +1,244 @@
+{
+	"_doc": "Mission templates. See missions/README.md for every field. Slots name buildings by tag; steps say what to do at them; pay grows with the road distance along `route`.",
+	"templates": [
+		{
+			"id": "taxi", "side": "good", "giver": "radio", "lean": 0,
+			"title": "Fare to {end}",
+			"brief": "Dispatch: a fare at {start} needs a ride to {end}. Meter's running.",
+			"slots": {
+				"start": {"tag": "home"},
+				"end": {"tag": "shop", "from": "start", "min_m": 250, "max_m": 1300}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": true, "text": "Pick up the fare at {start}"},
+				{"do": "hold", "at": "start", "seconds": 2, "car": true, "text": "Fare getting in..."},
+				{"do": "goto", "at": "end", "car": true, "text": "Drive the fare to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 40, "per_km": 110},
+			"time": {"base": 25, "per_km": 80},
+			"goodness": 1, "city_bonus": 20
+		},
+		{
+			"id": "delivery", "side": "good", "giver": "radio", "lean": 0,
+			"title": "Delivery for {end}",
+			"brief": "Dispatch: {start} has a parcel that has to reach {end} before closing.",
+			"slots": {
+				"start": {"tag": "shop"},
+				"end": {"tag": "home", "from": "start", "min_m": 300, "max_m": 1500}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Collect the parcel at {start}"},
+				{"do": "goto", "at": "end", "text": "Deliver it to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 50, "per_km": 100},
+			"time": {"base": 35, "per_km": 85},
+			"goodness": 1, "city_bonus": 25
+		},
+		{
+			"id": "fire_call", "side": "good", "giver": "radio", "lean": 0,
+			"title": "Fire at {end}",
+			"brief": "Dispatch: smoke reported at {end}. {start} is short-handed, get there first.",
+			"slots": {
+				"start": {"tag": "fire_station"},
+				"end": {"tag": "home", "from": "start", "min_m": 200, "max_m": 1400}
+			},
+			"steps": [
+				{"do": "goto", "at": "end", "text": "Get to the fire at {end}"},
+				{"do": "hold", "at": "end", "seconds": 6, "radius": 14, "car": false, "text": "Get everyone out"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 80, "per_km": 120},
+			"time": {"base": 30, "per_km": 70},
+			"goodness": 3, "city_bonus": 60
+		},
+		{
+			"id": "ambulance", "side": "good", "giver": "radio", "lean": 0,
+			"title": "Patient at {start}",
+			"brief": "Dispatch: someone collapsed at {start}. Get them to {end}, fast.",
+			"slots": {
+				"start": {"tag": "home"},
+				"end": {"tag": "hospital", "from": "start", "min_m": 250, "max_m": 1600}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": true, "text": "Reach the patient at {start}"},
+				{"do": "hold", "at": "start", "seconds": 3, "car": true, "text": "Loading the patient..."},
+				{"do": "goto", "at": "end", "car": true, "text": "Rush them to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 90, "per_km": 120},
+			"time": {"base": 25, "per_km": 70},
+			"goodness": 3, "city_bonus": 50
+		},
+		{
+			"id": "vigilante", "side": "good", "giver": "radio", "lean": 0,
+			"title": "Stop the getaway car",
+			"brief": "Dispatch to all units: robbery at {scene}. Suspect fleeing in a {car}. {start} wants them stopped.",
+			"slots": {
+				"start": {"tag": "police"},
+				"scene": {"tag": "shop", "from": "start", "min_m": 150, "max_m": 900, "near_player_m": 500}
+			},
+			"car": ["car_sedan", "car_hatch"],
+			"steps": [
+				{"do": "chase", "at": "scene", "text": "Ram the {car} until it stops", "escape_m": 450}
+			],
+			"route": ["start", "scene"],
+			"pay": {"base": 150, "per_km": 120},
+			"time": {"base": 120},
+			"goodness": 4, "city_bonus": 60
+		},
+		{
+			"id": "cleanup", "side": "good", "giver": "radio", "lean": 0,
+			"title": "Clean up near {district}",
+			"brief": "Dispatch: {start} can't keep up. Clear the trash piles around {district}.",
+			"slots": {
+				"start": {"tag": "garbage_depot"},
+				"district": {"tag": "home", "from": "start", "min_m": 200, "max_m": 1500}
+			},
+			"steps": [
+				{"do": "collect", "at": "district", "count": 5, "spread_m": 110, "text": "Clear the trash piles ({left} left)"}
+			],
+			"route": ["start", "district"],
+			"pay": {"base": 80, "per_km": 60},
+			"time": {"base": 150, "per_km": 40},
+			"goodness": 2, "city_bonus": 120
+		},
+		{
+			"id": "power_restore", "side": "good", "giver": "radio", "lean": 0,
+			"title": "Substation down near {end}",
+			"brief": "Dispatch: a substation near {end} tripped. {start} needs someone to reset it.",
+			"slots": {
+				"start": {"tag": "power_plant"},
+				"end": {"tag": "industrial", "from": "start", "min_m": 250, "max_m": 1600}
+			},
+			"steps": [
+				{"do": "goto", "at": "end", "text": "Get to the substation by {end}"},
+				{"do": "hold", "at": "end", "seconds": 8, "radius": 12, "car": false, "text": "Reset the breakers"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 100, "per_km": 90},
+			"time": {"base": 40, "per_km": 80},
+			"goodness": 3, "city_bonus": 100
+		},
+		{
+			"id": "armored_escort", "side": "good", "giver": "radio", "lean": 0, "unlock": "job:armored_escort",
+			"title": "Cash run to {end}",
+			"brief": "Dispatch: {start} is moving cash to {end}. Their driver didn't show. Take the van.",
+			"slots": {
+				"start": {"tag": "bank"},
+				"end": {"tag": "police_hq", "from": "start", "min_m": 300}
+			},
+			"steps": [
+				{"do": "vehicle", "at": "start", "model": "car_van", "color": "#d8d8d0", "text": "Get in the cash van at {start}"},
+				{"do": "goto", "at": "end", "car": "mission", "text": "Drive the cash to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 300, "per_km": 250},
+			"time": {"base": 40, "per_km": 90},
+			"goodness": 5, "city_bonus": 150
+		},
+		{
+			"id": "car_to_order", "side": "bad", "giver": "payphone", "lean": 0,
+			"title": "A {car} for {start}",
+			"brief": "\"{start} has a buyer for a {car}. One's parked by {lot}. Bring it in clean.\"",
+			"slots": {
+				"start": {"tag": "chop_shop"},
+				"lot": {"tag": "shop", "from": "start", "min_m": 300, "max_m": 1400}
+			},
+			"car": ["car_van", "car_truck", "car_hatch"],
+			"steps": [
+				{"do": "vehicle", "at": "lot", "model": "{car}", "steal": true, "text": "Steal the {car} parked by {lot}"},
+				{"do": "goto", "at": "start", "car": "mission", "text": "Deliver the {car} to {start}"}
+			],
+			"route": ["lot", "start"],
+			"pay": {"base": 200, "per_km": 160},
+			"time": {"base": 60, "per_km": 110},
+			"goodness": -4, "city_bonus": -30, "crime": 1
+		},
+		{
+			"id": "getaway", "side": "bad", "giver": "payphone", "lean": 0,
+			"title": "Getaway from {pickup}",
+			"brief": "\"Crew's finishing a job at {pickup}. Be out front with a car, then lose the heat and get them to {end}.\"",
+			"slots": {
+				"end": {"tag": "hideout"},
+				"pickup": {"tag": "shop", "from": "end", "min_m": 400, "max_m": 1600}
+			},
+			"steps": [
+				{"do": "goto", "at": "pickup", "car": true, "text": "Pull up outside {pickup}"},
+				{"do": "hold", "at": "pickup", "seconds": 3, "car": true, "text": "Crew piling in..."},
+				{"do": "wanted", "stars": 2},
+				{"do": "goto", "at": "end", "car": true, "clean": true, "text": "Lose the cops and reach {end}"}
+			],
+			"route": ["pickup", "end"],
+			"pay": {"base": 300, "per_km": 200},
+			"time": {"base": 90, "per_km": 120},
+			"goodness": -6, "city_bonus": -60, "crime": 2
+		},
+		{
+			"id": "smuggling", "side": "bad", "giver": "payphone", "lean": 25,
+			"title": "Smuggle from {start}",
+			"brief": "\"Crates at {start}. {end} is expecting them. Don't get pulled over.\"",
+			"slots": {
+				"start": {"tag": "warehouse"},
+				"end": {"tag": "pawn_shop", "from": "start", "min_m": 300}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": true, "text": "Back a car up to {start}"},
+				{"do": "hold", "at": "start", "seconds": 4, "car": true, "text": "Loading the crates..."},
+				{"do": "goto", "at": "end", "car": true, "text": "Get the crates to {end}"}
+			],
+			"route": ["start", "end"],
+			"max_wanted": 1,
+			"pay": {"base": 350, "per_km": 260},
+			"time": {"base": 40, "per_km": 100},
+			"goodness": -6, "city_bonus": -40, "crime": 2
+		},
+		{
+			"id": "racket", "side": "bad", "giver": "payphone", "lean": 50,
+			"title": "Collections for {start}",
+			"brief": "\"{start} wants its money. Visit {a}, {b} and {c}, in that order. Be persuasive.\"",
+			"slots": {
+				"start": {"tag": "nightclub"},
+				"a": {"tag": "shop", "from": "start", "min_m": 100, "max_m": 700},
+				"b": {"tag": "shop", "from": "a", "min_m": 100, "max_m": 700},
+				"c": {"tag": "shop", "from": "b", "min_m": 100, "max_m": 700}
+			},
+			"steps": [
+				{"do": "goto", "at": "a", "text": "Go to {a}"},
+				{"do": "hold", "at": "a", "seconds": 4, "car": false, "text": "Lean on the owner of {a}"},
+				{"do": "goto", "at": "b", "text": "Go to {b}"},
+				{"do": "hold", "at": "b", "seconds": 4, "car": false, "text": "Lean on the owner of {b}"},
+				{"do": "goto", "at": "c", "text": "Go to {c}"},
+				{"do": "hold", "at": "c", "seconds": 4, "car": false, "text": "Lean on the owner of {c}"},
+				{"do": "wanted", "stars": 1},
+				{"do": "goto", "at": "start", "text": "Bring the money to {start}"}
+			],
+			"route": ["start", "a", "b", "c", "start"],
+			"pay": {"base": 400, "per_km": 180},
+			"time": {"base": 120, "per_km": 90},
+			"goodness": -8, "city_bonus": -50, "crime": 3
+		},
+		{
+			"id": "bank_job", "side": "bad", "giver": "payphone", "lean": 0, "quest_only": true,
+			"title": "The {start} job",
+			"brief": "\"This is it. Walk into {start}, crack the vault, and get the money to {end}. Every cop in town will be on you.\"",
+			"slots": {
+				"start": {"tag": "bank"},
+				"end": {"tag": "hideout", "from": "start", "min_m": 200}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "text": "Walk into {start}"},
+				{"do": "wanted", "stars": 1},
+				{"do": "hold", "at": "start", "seconds": 20, "radius": 12, "car": false, "text": "Crack the vault (stay inside)"},
+				{"do": "wanted", "stars": 3},
+				{"do": "goto", "at": "end", "text": "Escape to {end}"},
+				{"do": "wanted", "stars": 0}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 2500, "per_km": 3000},
+			"time": {"base": 150, "per_km": 120},
+			"goodness": -20, "city_bonus": -800, "crime": 8
+		}
+	]
+}
