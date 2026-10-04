@@ -12,10 +12,23 @@ warns the first time: click More info, then Run anyway.
 
 **Windows, no install:** download `builds/MayorStreet-sandbox-windows.zip`, unzip, double-click `MayorStreet.exe`.
 
+Saved games live in `%APPDATA%\MayorStreet\saves` (on Linux `~/.local/share/MayorStreet/saves`), so they survive
+reinstalling or updating the game.
+
 **From source (any OS):**
 1. Install Godot 4.5.1 (standard build, not .NET) from https://godotengine.org/download.
 2. Copy this `game` folder to your PC, open Godot, click Import, pick `project.godot`.
 3. The first open imports the art (a minute or two). Press F5 to play.
+
+## Starting a game
+
+The title screen offers **Continue** (your newest save), **Load a saved game**, **Start on an empty island** and **Load
+the demo city**. A new game first opens the character creator for your Resident, then asks you to pick a home on the
+map; the first Tab dive lands on the sidewalk outside your front door. Walk in to change clothes or save.
+
+**Saving.** Esc, then Save game: three slots, each listed with your name, the day, the population and when it was
+saved. The game also autosaves every 3 game days, when you walk into your home, and when you quit or close the
+window. Load game (Esc menu or title screen) restarts the game from a save.
 
 ## Mayor view controls
 
@@ -26,7 +39,9 @@ warns the first time: click More info, then Run anyway.
 | Zoom | Mouse wheel (zooms toward the cursor) |
 | Tools | 1 Inspect, 2 Road, 3 Residential, 4 Commercial, 5 Industrial, 6 Bulldoze |
 | Build | Click and drag. Roads draw an L-shape, zones and bulldoze a rectangle. Esc or right-click cancels |
-| Overlays | O cycles zones / traffic / land value |
+| Build menu | 7 or B: power, parks, garbage, safety, businesses, street and landmarks (see below) |
+| Overlays | O cycles zones / traffic / land value; the City services panel (bottom right) adds power, parks, garbage, police, fire, crime and happiness |
+| Quests | J opens the quest log (on the street too) |
 | Time | Space pause, `,` `.` slower/faster (1x, 3x, 10x), N skips an hour |
 | Graphics | Low / Med / High buttons on the left. Med suits a Ryzen 5700U; High adds reflections, softer shadows and bounce light at full resolution |
 | Menu | Esc (once it has dropped any build tool) pauses and opens the menu: resume, full screen or window, quit, and every control. Start on a gamepad |
@@ -34,23 +49,46 @@ warns the first time: click More info, then Run anyway.
 | Music | M toggles music on and off |
 | Frame rate | F3 shows fps, draw calls and triangles (works on the street too) |
 
+## The build menu
+
+Open it with 7 or B. Every building is listed by group with its price, size and daily running cost (businesses earn
+instead). Locked ones stay in the list, greyed out, with the goal that unlocks them. The header shows the city's
+current milestone and the next goal:
+
+| Milestone | Goal | Unlocks, for example |
+|---|---|---|
+| Town | start | coal plant, power lines, small park, garbage depot, landfill, police and fire stations |
+| Village | 1,000 people | gas station, pawn shop, diner, payphones |
+| Small city | 5,000 people | Second National Bank, nightclub, chop shop, warehouse, plaza |
+| City | 15,000 people or $52,000 income per resident | gas plant, Police HQ, hospital, The Bunker, recycling |
+| Big city | 40,000 people and $48,000 income per resident | casino, stadium, airfield, solar and wind, radio tower |
+| Metropolis | 70,000 people and $58,000 income per resident | Federal Reserve, Mansion on the Hill, Mayor's Tower |
+
+Click an entry, then click the map: the footprint shows green where it fits and red where it doesn't, and the
+tooltip says why (no road alongside, not enough money, something in the way). Power lines drag like roads.
+Payphones go on a sidewalk. Banks, the casino, the Bunker and the other landmarks are one per city, and they become
+places for jobs and quests on the street.
+
 ## Street level
 
 Press **Tab** in the mayor view to dive down to a character on the sidewalk under the camera, and Tab again to fly
-back up. Time runs at 1x while you're on the street.
+back up (not while the police are after you). Time runs at 1x while you're on the street.
 
 | | |
 |---|---|
 | Move / sprint / jump | WASD, Shift, Space |
 | Look | Mouse |
-| Get in / out of a car | E or F near a car |
+| Cars | E or F near a car to get in or out; near a stopped car in traffic, E pulls the driver out |
+| Fight | Left click attacks, right click aims. Q, the mouse wheel or 1 to 3 switch between fists, pistol and shotgun |
 | Drive | W/S throttle and brake, A/D steer, Space handbrake, H horn, R puts the car back on its wheels. Headlights come on by themselves |
+| Jobs | Answer a ringing payphone, or Y takes a job from the dispatch radio; K gives it up. J is the quest log |
 | Menu | Esc pauses and frees the cursor; Resume grabs it again |
 | Gamepad | Left stick move, A jump, Y car, Back switches view, Start opens the menu |
 
 Cars, trucks and pedestrians fill the streets around the camera (`citylife/`), with working signals at junctions.
-They are scenery for now: they don't collide with you or react to you. The parked cars you can drive and the
-buildings do collide.
+Crimes earn wanted stars and the police come after you; Wasted wakes you at the hospital and Busted at the police
+station, both for a fee. Jobs, good and bad, move you along the goodness scale, which gives perks at each end.
+Some buildings can be walked into: your home, the bank, the police station and others (`interiors/`).
 
 ## How the city grows
 
@@ -64,7 +102,13 @@ can merge into 2x2 skyscrapers.
 - `scripts/city_view.gd` renders terrain, sea and chunked MultiMeshes; owns the data textures shaders read
 - `scripts/day_night.gd`, `shaders/sky.gdshader` sun, moon, sky, post-processing
 - `scripts/kit.gd` loads the Blender kit and swaps materials for `shaders/kit.gdshader`
-- `scripts/mayor_camera.gd`, `scripts/hud.gd`, `scripts/main.gd`
+- `scripts/mayor_camera.gd`, `scripts/hud.gd`, `scripts/main.gd` (wires every thread's part into the game)
+- `scripts/progress.gd` the `Progress` autoload: the Resident's cash, goodness, unlocks, milestones, stats, flags,
+  quests, and save games (one JSON file per slot, with a section per thread). The contract other threads code
+  against is `scripts/PROGRESS_INTERFACE.md`
+- `scripts/catalog.gd` every special building: group, size, price, upkeep, milestone, tags, interior.
+  `City.place_special()` puts one on the map; `scripts/build_menu.gd` lists them; `scripts/save_panel.gd` is the
+  save and load list
 - `scripts/game_menu.gd` the Esc menu, the corner key hint and full screen switching. Keys that must always work
   (Tab, Esc, F11, Alt+Enter) are read in `_input`, ahead of the HUD, and HUD buttons never take keyboard focus
 - `tools/blender/build_kit.py` generates `assets/kit/**.glb` (`pip install bpy`, then `python3 tools/blender/build_kit.py`,
@@ -73,13 +117,17 @@ can merge into 2x2 skyscrapers.
 - `tools/icon/make_icon.py` draws `assets/icon/` (game, exe and shortcut icon) and the installer's side panel
 - `tools/installer/` builds the installer from an exported exe: `bash tools/installer/build.sh MayorStreet.exe [out_dir]`
   (needs NSIS: `apt-get install nsis`). Test it on Linux with 64-bit Wine: `wine64 MayorStreet-Setup.exe /S`
-- `player/`, `citylife/`, `art/` are owned by their own threads
+- `player/`, `citylife/`, `art/`, `audio/`, `services/`, `interiors/`, `missions/` and `creator/` are owned by their
+  own threads; each has its own tests
 
 ## Checks
 
 ```
 godot --headless --path . --script res://tests/run_tests.gd
-godot --headless --path . --fixed-fps 60 --script res://tests/input_test.gd   # Tab, Space, Esc after HUD clicks
+godot --headless --path . --fixed-fps 60 --script res://tests/input_test.gd   # Tab, Space, Esc, B after HUD clicks
+godot --headless --path . --script res://tests/progress_test.gd    # catalog, placing, unlocks, wallets, save files
+godot --headless --path . --script res://tests/save_load_test.gd   # save and load through the real game scene
+xvfb-run -a godot --rendering-driver vulkan --resolution 1920x1080 --path . --script res://tests/ui_shots.gd -- --out=shots
 godot --path . -- --demo --hour=21 --screenshot=night.png   # render a frame and quit
 godot --path . -- --demo --shots=shots --nohud              # render the look-dev views (--only=day,night) and quit
 godot --headless --path . --script res://tests/bench.gd -- --demo   # script cost per frame, mayor views and on foot
