@@ -1,0 +1,51 @@
+{
+	"_doc": "Quests: hand-written chains of jobs and city goals. See missions/README.md. `when` starts a quest, each step waits on its own conditions or on a job, and `reward` pays out at the end.",
+	"quests": [
+		{
+			"id": "grand_opening", "role": "mayor",
+			"title": "Grand Opening",
+			"desc": "Every real city needs a real bank. Grow the town, then build Second National Bank.",
+			"when": {},
+			"steps": [
+				{"text": "Grow the city to 5,000 people", "until": {"population": 5000}},
+				{"text": "Build Second National Bank", "until": {"built": "bank"}}
+			],
+			"reward": {"funds": 5000, "unlock": ["job:armored_escort"], "note": "Armored escort jobs are on the dispatch radio"}
+		},
+		{
+			"id": "the_bunker", "role": "bad",
+			"title": "The Bunker",
+			"desc": "Somebody noticed the new bunker. A payphone is ringing for you.",
+			"when": {"built": "hideout", "and_built": "bank"},
+			"steps": [
+				{"text": "Steal a van for the crew", "job": "bunker_van"},
+				{"text": "Case the bank", "job": "case_the_bank"},
+				{"text": "Rob the bank and get to the Bunker", "job": "bank_job"}
+			],
+			"reward": {"cash": 1000, "goodness": -10, "flag": "bunker_upgraded", "unlock": ["route:kingpin"],
+				"note": "The Bunker is upgraded. The Kingpin route is open"}
+		},
+		{
+			"id": "lights_on", "role": "good",
+			"title": "Lights On",
+			"desc": "A blackout hit part of town. Get the substation running, then make sure it never happens again.",
+			"when": {"built": "power_plant", "stat_below": {"power_pct": 95}},
+			"steps": [
+				{"text": "Restore the failed substation", "job": "power_restore"},
+				{"text": "Mayor: build enough power for everyone (100%)", "until": {"stat_at_least": {"power_pct": 100}}}
+			],
+			"reward": {"funds": 3000, "goodness": 5, "unlock": ["solar_farm"], "note": "Solar farms unlocked early"}
+		},
+		{
+			"id": "clean_streets", "role": "good",
+			"title": "Clean Streets",
+			"desc": "The dens are multiplying. Raid three of them with the police, then give the city a proper headquarters.",
+			"when": {"built": "police", "goodness_at_least": 10},
+			"steps": [
+				{"text": "Raid crime dens ({done}/3)", "job": "raid_den", "times": 3},
+				{"text": "Mayor: build Police Headquarters", "until": {"built": "police_hq"}}
+			],
+			"reward": {"cash": 1500, "funds": 4000, "goodness": 10, "flag": "clean_streets", "note": "Crime is down across the city"}
+		}
+	]
+}

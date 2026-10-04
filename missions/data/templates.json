@@ -239,6 +239,58 @@
 			"pay": {"base": 2500, "per_km": 3000},
 			"time": {"base": 150, "per_km": 120},
 			"goodness": -20, "city_bonus": -800, "crime": 8
+		},
+		{
+			"id": "bunker_van", "side": "bad", "giver": "payphone", "lean": 0, "quest_only": true,
+			"title": "A van for {end}",
+			"brief": "\"Nice place, {end}. We need wheels for the big one. There's a {car} by {lot}. Bring it home.\"",
+			"slots": {
+				"end": {"tag": "hideout"},
+				"lot": {"tag": "shop", "from": "end", "min_m": 300, "max_m": 1500}
+			},
+			"car": ["car_van"],
+			"steps": [
+				{"do": "vehicle", "at": "lot", "model": "{car}", "steal": true, "text": "Steal the {car} parked by {lot}"},
+				{"do": "goto", "at": "end", "car": "mission", "text": "Drive it to {end}"}
+			],
+			"route": ["lot", "end"],
+			"pay": {"base": 250, "per_km": 150},
+			"time": {"base": 60, "per_km": 110},
+			"goodness": -4, "city_bonus": -20, "crime": 1
+		},
+		{
+			"id": "case_the_bank", "side": "bad", "giver": "payphone", "lean": 0, "quest_only": true,
+			"title": "Case {start}",
+			"brief": "\"Go look at {start}. Park across the street, count the guards, time the patrols. Then come back to {end}.\"",
+			"slots": {
+				"start": {"tag": "bank"},
+				"end": {"tag": "hideout", "from": "start"}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": true, "text": "Drive to {start}"},
+				{"do": "hold", "at": "start", "seconds": 12, "radius": 30, "car": true, "text": "Watch {start} from your car"},
+				{"do": "goto", "at": "end", "text": "Report back at {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 150, "per_km": 80},
+			"goodness": -2, "city_bonus": 0, "crime": 0
+		},
+		{
+			"id": "raid_den", "side": "good", "giver": "radio", "lean": 0, "quest_only": true,
+			"title": "Raid on {end}",
+			"brief": "Dispatch: {start} is going in on {end}. They want backup on the door.",
+			"slots": {
+				"start": {"tag": "police"},
+				"end": {"tag": "crime_den", "from": "start", "min_m": 200}
+			},
+			"steps": [
+				{"do": "goto", "at": "end", "text": "Meet the squad at {end}"},
+				{"do": "hold", "at": "end", "seconds": 10, "radius": 14, "car": false, "text": "Clear out the den"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 300, "per_km": 120},
+			"time": {"base": 50, "per_km": 80},
+			"goodness": 6, "city_bonus": 200
 		}
 	]
 }

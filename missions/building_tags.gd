@@ -20,10 +20,11 @@ const STAND_INS := {
 	"power_plant": [City.Zone.IND, ["Bayside Power Station"]],
 	"bank": [City.Zone.COM, ["Second National Bank"]],
 	"hideout": [City.Zone.IND, ["The Bunker"]],
-	"chop_shop": [City.Zone.IND, ["Sal's Auto Body"]],
+	"chop_shop": [City.Zone.IND, ["Eddie's Auto Body"]],
 	"warehouse": [City.Zone.IND, ["Pier 4 Warehouse"]],
 	"pawn_shop": [City.Zone.COM, ["Lucky Pawn"]],
-	"nightclub": [City.Zone.COM, ["Club Neon"]],
+	"nightclub": [City.Zone.COM, ["Club Voltage"]],
+	"crime_den": [City.Zone.IND, ["The Rat Hole", "Dockside Den", "Cinder Block Club"]],
 }
 
 const STREETS := ["Elm", "Maple", "Harbor", "Lincoln", "Bay", "Pine", "Union", "Grand", "Market",
@@ -120,3 +121,15 @@ func _zone_noun(b: Dictionary, tag: String) -> String:
 	if b.zone == City.Zone.COM:
 		return ["", " shops", " plaza", " tower"][b.stage]
 	return " works"
+
+
+func to_dict() -> Dictionary:
+	## Which ordinary buildings stand in for which tags, so names stay put across saves.
+	return {"borrowed": _borrowed.duplicate()}
+
+
+func from_dict(d: Dictionary) -> void:
+	_borrowed.clear()
+	var b: Dictionary = d.get("borrowed", {})
+	for t in b:
+		_borrowed[t] = int(b[t])

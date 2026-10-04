@@ -330,7 +330,7 @@ func tick(delta: float) -> void:
 		return
 	var s := m.step()
 	var me := link.position()
-	var near: bool = _flat_dist(me, m.step_pos()) <= s.get("radius", GOTO_RADIUS)
+	var near: bool = flat_dist(me, m.step_pos()) <= s.get("radius", GOTO_RADIUS)
 	match s.do:
 		"goto":
 			if near and _car_ok(m, s) and (not s.get("clean", false) or link.wanted() == 0):
@@ -352,7 +352,7 @@ func tick(delta: float) -> void:
 				fail("The suspect got away")
 			elif m.target.is_wrecked:
 				_advance()
-			elif _flat_dist(me, m.target.global_position) > s.get("escape_m", 450.0):
+			elif flat_dist(me, m.target.global_position) > s.get("escape_m", 450.0):
 				m._escape_t += delta
 				if m._escape_t > 8.0:
 					fail("The suspect got away")
@@ -360,7 +360,7 @@ func tick(delta: float) -> void:
 				m._escape_t = 0.0
 		"collect":
 			for i in range(m.points.size() - 1, -1, -1):
-				if _flat_dist(me, m.points[i]) < 6.0:
+				if flat_dist(me, m.points[i]) < 6.0:
 					m.points.remove_at(i)
 					updated.emit(m)
 			if m.points.is_empty():
@@ -376,7 +376,7 @@ func _car_ok(m: Mission, s: Dictionary) -> bool:
 	return (link.car() != null) == bool(need)
 
 
-static func _flat_dist(a: Vector3, b: Vector3) -> float:
+static func flat_dist(a: Vector3, b: Vector3) -> float:
 	if a == Vector3.INF or b == Vector3.INF:
 		return INF
 	return Vector2(a.x - b.x, a.z - b.z).length()
