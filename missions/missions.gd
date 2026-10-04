@@ -55,6 +55,7 @@ func setup(c: City, s: Node) -> void:
 	street = s
 	_rng.seed = 5150
 	link = StreetLink.new(s)
+	use_interiors(get_parent().get("interiors") if get_parent() else null)
 	progress = ProgressLink.new(c)
 	goodness = Goodness.new()
 	goodness.value = progress.goodness()
@@ -98,8 +99,25 @@ func setup(c: City, s: Node) -> void:
 	log_panel = QuestLog.new()
 	log_panel.missions = self
 	_layer.add_child(log_panel)
+	_sync_perks()
 	if progress.store:
 		progress.store.register_section("missions", self)
+
+
+func use_interiors(im: Node) -> void:
+	## Enterable buildings (interiors/InteriorManager): the bank job walks in and cracks
+	## the vault marker. Picked up from main.gd's `interiors` when it exists.
+	link.interiors = im
+
+
+func _sync_perks() -> void:
+	## Perk unlocks follow the scale (a save may predate a perk, or drift may have passed).
+	for p in Goodness.PERKS:
+		if goodness.has_perk(p[1]):
+			if not progress.is_unlocked("perk:" + p[1]):
+				progress.unlock("perk:" + p[1], "goodness")
+		elif progress.is_unlocked("perk:" + p[1]):
+			progress.lock("perk:" + p[1])
 
 
 # ----------------------------------------------------------------- per frame ---
@@ -114,14 +132,16 @@ func _process(delta: float) -> void:
 	if _phones_dirty:
 		_phones_dirty = false
 		_place_phones()
-	if not at_street:
+	if not at_street or link.inside() != "":
 		_hide_markers()
-		return
+		if not at_street:
+			return
 	_brief_t = maxf(0.0, _brief_t - delta)
 	if director.active == null:
 		_tick_phone(delta)
 		_tick_radio(delta)
-	_update_markers()
+	if link.inside() == "":
+		_update_markers()
 
 
 func _tick_phone(delta: float) -> void:
@@ -488,8 +508,16 @@ func _sidewalk(cell: Vector2i, rot: int) -> Vector3:
 	return city.cell_center(cell.x, cell.y) + Vector3(d.x, 0, d.y) * 4.6
 
 
+const PHONE_MODEL := "res://assets/kit/props/payphone.glb"
+
+
 func _make_phone(pos: Vector3, yaw: float) -> Node3D:
-	## Placeholder payphone: a post with a hooded box. The art thread's model replaces it.
+	## The art kit's payphone, or a post with a hooded box when the kit isn't there (tests).
+	if ResourceLoader.exists(PHONE_MODEL):
+		var model: Node3D = (load(PHONE_MODEL) as PackedScene).instantiate()
+		model.position = pos
+		model.rotation.y = yaw
+		return model
 	var n := Node3D.new()
 	n.position = pos
 	n.rotation.y = yaw

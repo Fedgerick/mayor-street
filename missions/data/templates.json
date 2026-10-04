@@ -228,9 +228,9 @@
 				"end": {"tag": "hideout", "from": "start", "min_m": 200}
 			},
 			"steps": [
-				{"do": "goto", "at": "start", "car": false, "text": "Walk into {start}"},
+				{"do": "goto", "at": "start", "car": false, "interior": "bank", "text": "Walk into {start}"},
 				{"do": "wanted", "stars": 1},
-				{"do": "hold", "at": "start", "seconds": 20, "radius": 12, "car": false, "text": "Crack the vault (stay inside)"},
+				{"do": "hold", "at": "start", "seconds": 20, "radius": 12, "car": false, "marker": "vault", "text": "Crack the vault (stand in the vault)"},
 				{"do": "wanted", "stars": 3},
 				{"do": "goto", "at": "end", "text": "Escape to {end}"},
 				{"do": "wanted", "stars": 0}

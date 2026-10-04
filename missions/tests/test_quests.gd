@@ -4,6 +4,25 @@ extends SceneTree
 var failures := 0
 
 
+class FakeRoom extends Node3D:
+	var marks := {}
+	func marker(n: String) -> Node3D:
+		return marks.get(n)
+
+
+class FakeInteriors extends Node:
+	var current: FakeRoom = null
+	var current_id := ""
+	var current_building := {}
+	var city: City
+	func is_inside() -> bool:
+		return current != null
+	func door_info(kind: String) -> Dictionary:
+		return {"door": Vector3(0, 0, 6)} if kind == "bank" else {}
+	func door_transform(b: Dictionary) -> Transform3D:
+		return Transform3D(Basis(), city.building_center(b))
+
+
 func check(cond: bool, what: String) -> void:
 	if cond:
 		print("  ok   ", what)
@@ -139,6 +158,37 @@ func _initialize() -> void:
 	far_b.tags = ["hideout"]
 	far_pay = d.generate("bank_job").pay
 	check(far_pay > near_pay, "a far-off bunker makes a bigger score ($%d at %d tiles vs $%d at %d)" % [far_pay, best_far, near_pay, best_near])
+
+	# With enterable buildings the bank job means walking in and standing in the vault.
+	near_b.erase("tags")
+	far_b.erase("tags")
+	bunker.tags = ["hideout"]
+	bank.kind = "bank"
+	var fi := FakeInteriors.new()
+	fi.city = city
+	root.add_child(fi)
+	link.interiors = fi
+	var bj := d.generate("bank_job", city.cell_center(40, 40))
+	d.start(bj)
+	link.fake_car = null
+	link.fake_pos = bj.slots.start.pos
+	d.tick(0.1)
+	check(bj.step_i == 0, "standing outside the bank isn't enough")
+	var room := FakeRoom.new()
+	root.add_child(room)
+	var vault := Node3D.new()
+	room.add_child(vault)
+	vault.global_position = Vector3(0, 2500, 0)
+	room.marks["vault"] = vault
+	fi.current = room
+	fi.current_id = "bank"
+	fi.current_building = bank
+	d.tick(0.1)
+	check(bj.step_i == 2 and link.wanted() == 1, "walking in sets off the alarm")
+	check(link.near_marker("vault", 3.0) == false, "no street player: marker check is off")
+	d.fail("test")
+	link.interiors = null
+	link.set_wanted(0)
 
 	# Clean Streets needs goodness 10 and a police station; three raids, then HQ.
 	_tag(city, City.Zone.COM, "police", "Precinct 9", used)

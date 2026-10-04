@@ -16,6 +16,7 @@ signal goodness_action(kind: StringName)  # Goodness.ACTIONS kinds, from street 
 const STUB_FADE_SECONDS := 9.0  # one stub star fades every this many seconds out of sight
 
 var street: Node = null  # StreetMode
+var interiors: Node = null  # InteriorManager (interiors/), when main.gd has one
 var fake_pos := Vector3.ZERO
 var fake_car: Object = null
 var fake_active := true
@@ -44,11 +45,42 @@ func active() -> bool:
 
 
 func position() -> Vector3:
+	## Where the player is on the map. Rooms load far above the city, so inside a
+	## building this is that building's door.
 	if street == null:
 		return fake_pos
+	if inside() != "" and not interiors.current_building.is_empty():
+		return interiors.door_transform(interiors.current_building).origin
 	if street.car:
 		return street.car.global_position
 	return street.player.global_position
+
+
+func inside() -> String:
+	## The interior the player is in ("bank", "bunker"...), or "".
+	if interiors and interiors.is_inside():
+		return interiors.current_id
+	return ""
+
+
+func inside_building() -> int:
+	return int(interiors.current_building.get("id", -1)) if inside() != "" else -1
+
+
+func has_door(b: Dictionary) -> bool:
+	## Whether this building can really be walked into.
+	return interiors != null and b.has("kind") and not interiors.door_info(String(b.kind)).is_empty()
+
+
+func near_marker(marker: String, radius: float) -> bool:
+	## Inside a room: is the player within radius of one of its markers (e.g. "vault")?
+	if street == null or inside() == "" or interiors.current == null:
+		return false
+	var mk: Node3D = interiors.current.marker(marker)
+	if mk == null:
+		return false
+	var p: Vector3 = street.player.global_position
+	return Vector2(p.x - mk.global_position.x, p.z - mk.global_position.z).length() <= radius
 
 
 func car() -> Object:

@@ -335,9 +335,14 @@ func tick(delta: float) -> void:
 	var near: bool = flat_dist(me, m.step_pos()) <= s.get("radius", GOTO_RADIUS)
 	match s.do:
 		"goto":
-			if near and _car_ok(m, s) and (not s.get("clean", false) or link.wanted() == 0):
+			if s.has("interior") and _walk_in(m, s):
+				if link.inside() == s.interior and link.inside_building() == m.slots[s.at].building:
+					_advance()
+			elif near and _car_ok(m, s) and (not s.get("clean", false) or link.wanted() == 0):
 				_advance()
 		"hold":
+			if s.has("marker") and link.inside() != "":
+				near = link.near_marker(s.marker, 3.0)
 			if near and _car_ok(m, s):
 				m.hold += delta
 				if m.hold >= s.seconds:
@@ -367,6 +372,12 @@ func tick(delta: float) -> void:
 					updated.emit(m)
 			if m.points.is_empty():
 				_advance()
+
+
+func _walk_in(m: Mission, s: Dictionary) -> bool:
+	## A goto with "interior" means going inside, when the building really has a door
+	## (a placed special and an InteriorManager); stand-ins just need you at the kerb.
+	return link.has_door(city.buildings.get(m.slots[s.at].building, {}))
 
 
 func _car_ok(m: Mission, s: Dictionary) -> bool:
