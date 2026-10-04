@@ -9,13 +9,13 @@ extends Node
 ##     add_child(nav)
 ##     nav.setup(city, street, {"life": life, "missions": missions, "resident": resident, "interiors": interiors})
 ##
-## G opens and closes the city map in either view; main's Esc menu can call open_map().
+## V opens and closes the city map in either view; main's Esc menu can call open_map().
 
 signal waypoint_changed(pos: Vector3)   ## Vector3.INF when cleared
 signal arrived(id: String)              ## the GPS target was reached ("waypoint" or a mark id)
 signal map_toggled(open: bool)
 
-const MAP_KEY := KEY_G
+const MAP_KEY := KEY_V  # M is music, G calls crew backup (missions perk)
 const ARRIVE_M := 18.0             # the waypoint clears this close
 const WALK_RADIUS_M := 120.0       # minimap range on foot ...
 const DRIVE_RADIUS_M := 240.0      # ... and at full speed in a car
@@ -72,7 +72,7 @@ func setup(c: City, street_mode: Node = null, parts := {}) -> void:
 	resident = parts.get("resident")
 	interiors = parts.get("interiors")
 	add_to_group("city_nav")
-	process_mode = Node.PROCESS_MODE_ALWAYS   # G and Esc still work on the paused map
+	process_mode = Node.PROCESS_MODE_ALWAYS   # V and Esc still work on the paused map
 	route = GpsRoute.new(city)
 	_img = MapPainter.paint(city)
 	texture = ImageTexture.create_from_image(_mipmapped())

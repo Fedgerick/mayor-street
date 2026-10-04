@@ -8,9 +8,9 @@ Owned by the Minimap and GPS thread (round 3, thread 6). Design: `design/round-3
   targets. Targets out of range sit on the rim. The GPS distance left is beside it.
 - **GPS**: a line along the roads to the current target, redrawn as you move. The waypoint wins, then
   the highest-priority mark, then (until missions marks its own) the missions 3D beacon.
-- **City map**: **G** in either view, or `open_map()` from the Esc menu. North up, the whole island,
+- **City map**: **V** in either view (M is music, G is the crew-backup perk), or `open_map()` from the Esc menu. North up, the whole island,
   click to set a waypoint, right-click to clear it, wheel to zoom, drag to move, hover a special building
-  for its name, G or Esc to close. It pauses the game while open (unless the Esc menu already had).
+  for its name, V or Esc to close. It pauses the game while open (unless the Esc menu already had).
 - The waypoint is saved in the Progress section `navigation`.
 
 ## Wiring (main.gd, City sandbox thread)
@@ -28,8 +28,8 @@ nav.setup(city, street, {"life": life, "missions": missions, "resident": residen
 
 That's all. Optional:
 - An Esc menu button "City map" calling `nav.open_map()`. The map draws on layer 70, above the menu (60);
-  Esc or G closes it and you're back in the menu.
-- Key lists: add `["G", "City map"]` to `MAYOR_KEYS` and `STREET_KEYS` in game_menu.gd, and to the
+  Esc or V closes it and you're back in the menu.
+- Key lists: add `["V", "City map"]` to `MAYOR_KEYS` and `STREET_KEYS` in game_menu.gd, and to the
   street hints if there is room.
 - If the sandbox adds a minimap data hook later, `MapPainter` is the one place that reads City for the
   picture.
@@ -84,7 +84,7 @@ blips and the beacon over the next objective (or the ringing payphone) for the t
 
 | File | What |
 |---|---|
-| city_nav.gd | `CityNav`: the API, blips, GPS choice, the G key, the save section, owns the two screens |
+| city_nav.gd | `CityNav`: the API, blips, GPS choice, the V key, the save section, owns the two screens |
 | map_painter.gd | `MapPainter`: the city as a 960 x 960 picture, repainted a patch at a time |
 | gps_route.gd | `GpsRoute`: search over the roads (from the target, cached) and the line's turns |
 | minimap.gd | `Minimap`: the round map |

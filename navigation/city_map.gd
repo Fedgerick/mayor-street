@@ -2,7 +2,7 @@ class_name CityMap
 extends Control
 ## The full city map: the whole island, north up, with the GPS route, every blip, a legend
 ## and the names of special buildings under the mouse. Click to set a waypoint, right-click
-## to clear it, wheel to zoom, drag to pan. CityNav opens and closes it (G, or the Esc menu).
+## to clear it, wheel to zoom, drag to pan. CityNav opens and closes it (V, or the Esc menu).
 
 signal close_requested
 
@@ -150,7 +150,7 @@ func _draw_title(vp: Vector2, s: float) -> void:
 	draw_rect(Rect2(0, 0, vp.x, 58.0 * s), Color(0.03, 0.05, 0.08, 0.75))
 	draw_rect(Rect2(0, vp.y - 46.0 * s, vp.x, 46.0 * s), Color(0.03, 0.05, 0.08, 0.75))
 	_text(Vector2(0, 40.0 * s), "NEW HARBOR", int(26 * s), Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, vp.x)
-	var keys := "Click  Set waypoint     Right-click  Clear it     Wheel  Zoom     Drag  Move     G or Esc  Close"
+	var keys := "Click  Set waypoint     Right-click  Clear it     Wheel  Zoom     Drag  Move     V or Esc  Close"
 	_text(Vector2(0, vp.y - 22.0 * s), keys, int(16 * s), Color(0.8, 0.84, 0.9), HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 
 
