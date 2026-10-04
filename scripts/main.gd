@@ -133,6 +133,8 @@ func _start(demo: bool, save := {}) -> void:
 		Progress.autosave_enabled = false
 	services = CityServices.new(city)  # sets city.growth_check and adjusts land value itself
 	Progress.register_section("services", services)
+	view.services = services
+	services.coverage_changed.connect(view.mark_map_dirty)  # power changes light or darken windows
 	if demo and save.is_empty():
 		services.build_demo_services()  # plants, depots, police, fire and parks for the demo
 	services_view = ServicesView.new()
@@ -316,6 +318,13 @@ func go_mayor() -> void:
 	if not street.can_exit():
 		street.exit_street(cam.global_transform, cam.fov)  # shows why ("Lose the cops first")
 		return
+	if interiors and interiors.is_inside():
+		# Rooms sit high above the map: walk out of the building first, then fly up.
+		if interiors.busy:
+			return
+		await interiors.exit()
+		if not street.active or street.busy or not street.can_exit():
+			return
 	# Frame the mayor view on where the player ended up, looking the same way.
 	cam.set_view(street.focus_point(), 140.0, street.view_yaw())
 	street.exit_street(cam.global_transform, cam.fov)
@@ -374,6 +383,7 @@ func _set_tool(t: int) -> void:
 		build_kind = ""
 	hud.build_menu.visible = false
 	hud.set_tool(t)
+	hud.show_tip(Vector2.ZERO, "")  # the next mouse move brings back a tip for the new tool
 	if view.city:
 		view.set_preview([], Color.WHITE)
 	RenderingServer.global_shader_parameter_set("grid_alpha", 0.0 if tool == Tool.INSPECT else 1.0)

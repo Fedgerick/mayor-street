@@ -114,6 +114,15 @@ func _run() -> void:
 	await _frames(1)
 	check(not bm.visible and not main.menu.is_open, "Esc closes the build menu before the Esc menu")
 
+	# Tab inside a building walks out of it first: rooms sit high above the map.
+	_key(KEY_TAB)
+	check(await _until(func(): return main.street.active, 900), "dive again")
+	var inside: bool = await main.interiors.enter("police")
+	check(inside and main.interiors.is_inside(), "into the police station")
+	_key(KEY_TAB)
+	check(await _until(func(): return not main.in_street(), 900), "Tab from inside a building flies up")
+	check(not main.interiors.is_inside() and main.cam.focus.y < 1.0, "out of the room, mayor camera on the city (focus y %.1f)" % main.cam.focus.y)
+
 	_key(KEY_TAB, true)
 	await _frames(1)
 	check(not main.in_street(), "Alt+Tab is left to the system")

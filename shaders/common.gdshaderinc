@@ -53,9 +53,10 @@ vec4 city_at(ivec2 c) {
 	return texelFetch(city_map, c, 0);
 }
 
-// city_map G channel: zone * 64 + (built ? 32 : 0)
+// city_map G channel: zone * 64 + (built ? 32 : 0) + (a building without power ? 16 : 0)
 int zone_of(vec4 cm) { return int(cm.g * 255.0 + 0.5) / 64; }
 bool built_of(vec4 cm) { return (int(cm.g * 255.0 + 0.5) % 64) >= 32; }
+bool dark_of(vec4 cm) { return (int(cm.g * 255.0 + 0.5) % 32) >= 16; }
 
 vec3 zone_rgb(int z) {
 	if (z == 1) return vec3(0.25, 0.85, 0.35);

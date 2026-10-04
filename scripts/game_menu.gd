@@ -36,9 +36,9 @@ const STREET_KEYS := [
 const HINTS := {
 	&"mayor": [["Tab", "Walk the streets"], ["Esc", "Menu"]],  # the tool bar shows 7 Build
 	&"foot": [["WASD", "Walk"], ["Shift", "Run"], ["Space", "Jump"], ["E", "Car / carjack"],
-		["Click", "Attack"], ["Q", "Weapon"], ["Tab", "Mayor view"], ["Esc", "Menu"]],
+		["Click", "Attack"], ["Q", "Weapon"], ["J", "Quests"], ["Tab", "Mayor view"], ["Esc", "Menu"]],
 	&"car": [["W S", "Drive"], ["A D", "Steer"], ["Space", "Handbrake"], ["H", "Horn"], ["E", "Get out"],
-		["Tab", "Mayor view"], ["Esc", "Menu"]],
+		["J", "Quests"], ["Tab", "Mayor view"], ["Esc", "Menu"]],
 }
 
 var is_open := false

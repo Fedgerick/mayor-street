@@ -364,6 +364,10 @@ void fragment() {
 	} else if (kind == 6) {
 		emit += vec3(1.0, 0.05, 0.03) * (0.35 + smoothstep(0.1, 0.5, night) * 2.2);
 	}
+	// A building without power keeps its windows, signs and lamps dark at night.
+	if (kind >= 1 && kind <= 3 && dark_of(city_at(cell_of(origin)))) {
+		emit *= 1.0 - smoothstep(0.1, 0.5, night);
+	}
 
 	// Map overlays.
 	ivec2 cell = cell_of(ground_level ? wpos : origin + (wpos - origin) * vec3(0.98, 0.0, 0.98));

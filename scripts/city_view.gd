@@ -33,6 +33,7 @@ var preview_img: Image
 var preview_tex: ImageTexture
 var lamp_positions := {}  # Vector2i chunk -> Array[Vector3] (lamp heads, used by real lights)
 var _map_dirty := false
+var services: Object = null  # CityServices: buildings without power go dark at night
 var _tops := {}  # mesh name -> its highest vertex
 var _beacon_mesh: SphereMesh
 
@@ -74,15 +75,22 @@ func refresh_map() -> void:
 	var n := City.SIZE
 	var data := PackedByteArray()
 	data.resize(n * n * 4)
+	var power_on: bool = services != null and services.power_in_play()
 	for i in n * n:
-		var built := 32 if city.bld[i] >= 0 else 0
+		var bid := city.bld[i]
+		var built := 32 if bid >= 0 else 0
+		var dark := 16 if power_on and bid >= 0 and not city.buildings[bid].get("powered", true) else 0
 		data[i * 4] = 255 if city.road[i] == 1 else 0
-		data[i * 4 + 1] = city.zone[i] * 64 + built
+		data[i * 4 + 1] = city.zone[i] * 64 + built + dark
 		data[i * 4 + 2] = clampi(int(city.traffic[i] * 127.0), 0, 255)
 		data[i * 4 + 3] = clampi(int(city.land_value[i] * 255.0), 0, 255)
 	city_img.set_data(n, n, false, Image.FORMAT_RGBA8, data)
 	city_tex.update(city_img)
 	_map_dirty = false
+
+
+func mark_map_dirty() -> void:
+	_map_dirty = true
 
 
 func set_preview(cells: Array, color: Color) -> void:
