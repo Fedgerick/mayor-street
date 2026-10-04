@@ -217,6 +217,12 @@ func _run() -> void:
 	check(ClothingStock.unpaid(CharacterLook.new(), PackedStringArray()).total == 0, "free colors cost nothing")
 	for i in range(CharacterLook.CLOTH_FREE, CharacterLook.CLOTH.size()):
 		check(ClothingStock.price(ClothingStock.cloth_id(i)) > 0, "shop color %d has a price" % i)
+	var progd: Node = root.get_node_or_null("Progress")
+	if progd:
+		progd.unlock(ClothingStock.PERK_DISCOUNT, "test")
+		check(ClothingStock.price("cloth:17") == roundi(150 * 0.85), "shop discount perk takes 15% off")
+		progd.lock(ClothingStock.PERK_DISCOUNT)
+		check(ClothingStock.price("cloth:17") == 150, "full price without the perk")
 	if CharacterModel.available():
 		var shop := CharacterCreator.new()
 		shop.mode = CharacterCreator.Mode.SHOP

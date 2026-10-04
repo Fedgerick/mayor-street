@@ -17,8 +17,25 @@ const ITEMS := {
 const SLOTS := ["top", "bottom", "shoes"]
 
 
+const PERK_DISCOUNT := "perk:shop_discount"   # goodness +25: shops give 15% off
+const DISCOUNT := 0.85
+
+
 static func price(id: String) -> int:
+	## What the item costs right now, after the shop discount perk.
+	return roundi(list_price(id) * price_factor())
+
+
+static func list_price(id: String) -> int:
 	return int(ITEMS.get(id, {}).get("price", 0))
+
+
+static func price_factor() -> float:
+	var tree := Engine.get_main_loop() as SceneTree
+	var prog: Node = tree.root.get_node_or_null("Progress") if tree else null
+	if prog and prog.call("is_unlocked", PERK_DISCOUNT):
+		return DISCOUNT
+	return 1.0
 
 
 static func item_name(id: String) -> String:
