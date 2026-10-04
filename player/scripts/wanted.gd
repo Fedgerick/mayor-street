@@ -8,6 +8,7 @@ extends Node
 
 signal wanted_changed(level: int)
 signal crime_committed(kind: StringName, pos: Vector3, severity: int)
+signal escaped   # the last star faded out: the player lost the police
 
 const MAX_LEVEL := 5
 const HEAT_FOR := [0.0, 1.0, 3.0, 6.0, 10.0, 15.0]   # heat needed for each star
@@ -102,6 +103,8 @@ func _process(delta: float) -> void:
 		var n := level - 1
 		heat = HEAT_FOR[n]
 		_set_level(n)
+		if n == 0:
+			escaped.emit()
 
 
 func fade_progress() -> float:

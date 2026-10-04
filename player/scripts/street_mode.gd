@@ -114,6 +114,7 @@ func _ready() -> void:
 	add_child(heat)
 	heat._witness_check = _witnessed
 	heat.wanted_changed.connect(_on_wanted_changed)
+	heat.escaped.connect(_on_escaped)
 	combat = StreetCombat.new()
 	combat.name = "Combat"
 	add_child(combat)
@@ -599,11 +600,15 @@ func damage_player(amount: float, from_pos := Vector3.ZERO, _source := "") -> vo
 
 
 func _on_wanted_changed(level: int) -> void:
-	if level == 0 and _last_stars > 0 and not down:
-		goodness_action.emit(&"flee_police")   # got away
-		hud.note("Lost them")
 	_last_stars = level
 	wanted_changed.emit(level)
+
+
+func _on_escaped() -> void:
+	## Stars faded out on their own (not cleared by a mission or a respawn).
+	if not down:
+		goodness_action.emit(&"flee_police")
+		hud.note("Lost them")
 
 
 func _commit(kind: StringName, pos: Vector3) -> void:
