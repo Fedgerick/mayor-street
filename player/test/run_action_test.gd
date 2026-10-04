@@ -133,7 +133,9 @@ func _run() -> void:
 	check(c._smoke != null and not c.burning, "a damaged car smokes")
 	c.take_hit(650.0)
 	check(c.burning, "a wrecked car catches fire")
-	await frames(int(DrivableCar.BURN_SECONDS * 60.0) + 10)
+	await frames(int(DrivableCar.BURN_SECONDS * 60.0) - 20)
+	p.place(c.global_position + Vector3(0, 0.3, 0) + c.global_basis.x * 4.0, 0.0)
+	await frames(30)
 	check(exploded[0] and c.wrecked, "then explodes")
 	check(p.health < h0, "the blast hurts the player nearby (%.0f -> %.0f)" % [h0, p.health])
 	p.place(c.global_position + Vector3(0, 0.2, 2.5), 0.0)
@@ -200,8 +202,11 @@ func _run() -> void:
 		await frames(5)
 		check(not life.traffic.cars.has(tc), "the car leaves traffic")
 		check(&"carjack" in crimes and &"steal_car" in actions, "carjacking is a crime (goodness: steal_car)")
+		street.heat.clear()   # keep the cops from the chase test out of it
 		await frames(60 * 4)
 		check(street.car != null and street.car.model == model, "player drives off in the same %s" % model)
+		if street.car == null:
+			print("  debug: down=%s busted=%d wasted=%d switching=%s puppet=%s dead=%s stars=%d" % [street.down, got_busted, got_wasted, street.switching, p.puppet, p.dead, street.wanted])
 		check(p.in_vehicle and not street.switching, "seated")
 		street._leave_car()
 		await frames(90)

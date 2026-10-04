@@ -30,6 +30,7 @@ signal vehicle_changed(car: DrivableCar)
 signal wanted_changed(stars: int)
 signal crime(kind: StringName)              # every crime the player commits (Wanted.CRIMES kinds)
 signal goodness_action(kind: StringName)    # Goodness.ACTIONS kinds: steal_car, hit_person, kill_person, hit_cop, flee_police
+signal hit_landed(kind: StringName, pos: Vector3, weapon: StringName)   # world / car / ped / officer, for audio
 signal wasted
 signal busted
 
@@ -352,7 +353,7 @@ func _enter_car(c: DrivableCar) -> void:
 
 
 func _leave_car() -> void:
-	if switching:
+	if switching or car == null:
 		return
 	switching = true
 	var c := car
@@ -716,6 +717,8 @@ func apply_hit(hit: Dictionary, damage: float, dir: Vector3, weapon: StringName)
 			hurt_person(hit.target, damage, dir, weapon)
 		&"officer":
 			hurt_officer(hit.target, damage, dir, weapon)
+	if hit.kind != &"none":
+		hit_landed.emit(hit.kind, hit.pos, weapon)
 
 
 func on_shot_fired(_weapon: StringName, pos: Vector3) -> void:
@@ -944,8 +947,8 @@ func _on_player_died() -> void:
 
 func bust() -> void:
 	## The police caught the player: lose the guns and some cash, wake at the station.
-	if down or not active or busy or player.dead:
-		return
+	if down or not active or busy or player.dead or wanted == 0:
+		return   # nobody arrests a player with no stars
 	down = true
 	busted.emit()
 	if switching:
