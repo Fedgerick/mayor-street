@@ -578,7 +578,7 @@ func _update_ambience(delta: float, street: bool, started: bool) -> void:
 	if indoors:
 		for k in _amb_target:
 			if k != "amb_room":
-				_amb_target[k] *= 0.2
+				_amb_target[k] *= 0.15
 	for k in _amb:
 		var g: float = move_toward(amb_gains[k], _amb_target[k], delta * 0.45)
 		amb_gains[k] = g

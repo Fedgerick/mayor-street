@@ -36,8 +36,8 @@ Suggested README line for the mayor controls table: `| Music | M toggles music o
 | `Missions` | `director.started / passed / failed / step_changed`; a step with `"marker": "vault"` sets off the bank alarm at the step's slot `pos` |
 | `InteriorManager` | `interior_entered(id, building)`, `interior_exited` |
 
-Requested from other threads (audio connects them only if they exist): `StreetMode.hit_landed` from the
-Street-level player thread, and `Police.officer_fired` from the Traffic and pedestrians thread.
+`StreetMode.hit_landed` (eec246f) and `Police.officer_fired` (75e9db0) are live; impact sounds are
+capped at three per frame because a shotgun reports every pellet.
 
 ## What the director reads (please keep these names, or tell the audio thread)
 

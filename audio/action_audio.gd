@@ -37,6 +37,8 @@ var _bank_in: AudioStreamPlayer
 var _bank_out: AudioStreamPlayer3D
 var _bank_pos := Vector3.ZERO
 var _rng := RandomNumberGenerator.new()
+var _hit_frame := -1
+var _hits_this_frame := 0
 
 
 func _ready() -> void:
@@ -142,6 +144,14 @@ func _on_fired(id: StringName) -> void:
 
 
 func _on_hit(kind: StringName, pos: Vector3, weapon: StringName) -> void:
+	# A shotgun blast reports every pellet; three impact sounds per frame is plenty.
+	var f := Engine.get_process_frames()
+	if f != _hit_frame:
+		_hit_frame = f
+		_hits_this_frame = 0
+	_hits_this_frame += 1
+	if _hits_this_frame > 3:
+		return
 	var fists := weapon == &"fists"
 	match kind:
 		&"ped", &"officer":

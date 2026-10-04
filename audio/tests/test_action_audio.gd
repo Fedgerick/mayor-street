@@ -103,6 +103,24 @@ func _run() -> void:
 		await wait(0.1)
 		check(n("explosion") == 1, "car explosion")
 
+	# Impacts and cop gunshots, as player/ and citylife/ report them.
+	if street.has_signal("hit_landed"):
+		var p0: Vector3 = street.player.global_position + Vector3(2, 1, 0)
+		var before := n("bullet_impact") + n("ricochet")
+		await process_frame
+		for i in 8:
+			street.hit_landed.emit(&"world", p0, &"shotgun")
+		var got := n("bullet_impact") + n("ricochet") - before
+		check(got == 3, "shotgun pellets capped at 3 impact sounds (%d)" % got)
+		await process_frame
+		street.hit_landed.emit(&"ped", p0, &"fists")
+		street.hit_landed.emit(&"car", p0, &"pistol")
+		check(n("punch_hit_1") + n("punch_hit_2") == 1 and n("bullet_metal") == 1, "punch and metal impacts")
+	var police = main.life.get("police")
+	if police and police.has_signal("officer_fired"):
+		police.officer_fired.emit(street.player.global_position + Vector3(10, 0, 0))
+		check(n("gun_cop") == 1, "cop gunshot")
+
 	# Carjack, as citylife reports it.
 	main.life.traffic.car_taken.emit(street.player.global_position + Vector3(3, 0, 0), Vector3.FORWARD)
 	check(n("carjack") == 1, "carjack scuffle")
@@ -125,7 +143,8 @@ func _run() -> void:
 		await wait(0.2)
 		check(audio.indoors, "inside an interior")
 		check(act._bank_in.playing and not act._bank_out.playing, "bank alarm switches to the inside bell")
-		check(audio._amb_target["amb_room"] > 0.5 and audio._amb_target["amb_city_day"] < 0.2, "room tone up, city down indoors")
+		check(audio._amb_target["amb_room"] > 0.5 and audio._amb_target["amb_city_day"] < 0.2,
+			"room tone up, city down indoors (room %.2f, city %.2f, indoors %s)" % [audio._amb_target["amb_room"], audio._amb_target["amb_city_day"], audio.indoors])
 		main.interiors.interior_exited.emit("bank", {})
 		await wait(0.2)
 		check(not audio.indoors, "back outside")
