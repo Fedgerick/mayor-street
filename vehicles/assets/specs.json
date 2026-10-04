@@ -1,0 +1,536 @@
+{
+ "car_ambulance": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.38,
+    "steer": true,
+    "z": -1.75
+   },
+   {
+    "dual": true,
+    "radius": 0.38,
+    "steer": false,
+    "z": 1.9
+   }
+  ],
+  "damage": [
+   "car_ambulance_dmg1",
+   "car_ambulance_dmg2",
+   "car_ambulance_dmg3"
+  ],
+  "height": 2.2,
+  "length": 5.5,
+  "lods": [
+   "car_ambulance",
+   "car_ambulance_lod1",
+   "car_ambulance_lod2"
+  ],
+  "seat": [
+   -0.36,
+   0.71,
+   -0.9
+  ],
+  "siren": true,
+  "tinted": false,
+  "track": 0.84,
+  "tris": [
+   6648,
+   1590,
+   412
+  ],
+  "wheel_radius": 0.38,
+  "width": 2.0
+ },
+ "car_bus": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.5,
+    "steer": true,
+    "z": -3.85
+   },
+   {
+    "dual": true,
+    "radius": 0.5,
+    "steer": false,
+    "z": 2.9
+   }
+  ],
+  "damage": [
+   "car_bus_dmg1",
+   "car_bus_dmg2",
+   "car_bus_dmg3"
+  ],
+  "height": 3.35,
+  "length": 11.5,
+  "lods": [
+   "car_bus",
+   "car_bus_lod1",
+   "car_bus_lod2"
+  ],
+  "seat": [
+   -0.36,
+   0.81,
+   -4.8
+  ],
+  "siren": false,
+  "tinted": false,
+  "track": 1.05,
+  "tris": [
+   7890,
+   1540,
+   368
+  ],
+  "wheel_radius": 0.5,
+  "width": 2.55
+ },
+ "car_firetruck": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.5,
+    "steer": true,
+    "z": -3.35
+   },
+   {
+    "dual": true,
+    "radius": 0.5,
+    "steer": false,
+    "z": 2.45
+   },
+   {
+    "dual": true,
+    "radius": 0.5,
+    "steer": false,
+    "z": 3.65
+   }
+  ],
+  "damage": [
+   "car_firetruck_dmg1",
+   "car_firetruck_dmg2",
+   "car_firetruck_dmg3"
+  ],
+  "height": 3.05,
+  "length": 9.2,
+  "lods": [
+   "car_firetruck",
+   "car_firetruck_lod1",
+   "car_firetruck_lod2"
+  ],
+  "seat": [
+   -0.36,
+   1.26,
+   -2.9
+  ],
+  "siren": true,
+  "tinted": false,
+  "track": 1.04,
+  "tris": [
+   7698,
+   1696,
+   426
+  ],
+  "wheel_radius": 0.5,
+  "width": 2.44
+ },
+ "car_garbage": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.5,
+    "steer": true,
+    "z": -2.85
+   },
+   {
+    "dual": true,
+    "radius": 0.5,
+    "steer": false,
+    "z": 1.75
+   },
+   {
+    "dual": true,
+    "radius": 0.5,
+    "steer": false,
+    "z": 2.95
+   }
+  ],
+  "damage": [
+   "car_garbage_dmg1",
+   "car_garbage_dmg2",
+   "car_garbage_dmg3"
+  ],
+  "height": 2.85,
+  "length": 8.0,
+  "lods": [
+   "car_garbage",
+   "car_garbage_lod1",
+   "car_garbage_lod2"
+  ],
+  "seat": [
+   -0.36,
+   1.26,
+   -2.25
+  ],
+  "siren": false,
+  "tinted": false,
+  "track": 1.0,
+  "tris": [
+   7090,
+   1636,
+   346
+  ],
+  "wheel_radius": 0.5,
+  "width": 2.36
+ },
+ "car_hatch": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": true,
+    "z": -1.1
+   },
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": false,
+    "z": 1.05
+   }
+  ],
+  "damage": [
+   "car_hatch_dmg1",
+   "car_hatch_dmg2",
+   "car_hatch_dmg3"
+  ],
+  "height": 1.5,
+  "length": 3.85,
+  "lods": [
+   "car_hatch",
+   "car_hatch_lod1",
+   "car_hatch_lod2"
+  ],
+  "seat": [
+   -0.36,
+   0.6799999999999999,
+   0.05
+  ],
+  "siren": false,
+  "tinted": true,
+  "track": 0.76,
+  "tris": [
+   6210,
+   1256,
+   306
+  ],
+  "wheel_radius": 0.36,
+  "width": 1.72
+ },
+ "car_pickup": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.42,
+    "steer": true,
+    "z": -1.85
+   },
+   {
+    "dual": false,
+    "radius": 0.42,
+    "steer": false,
+    "z": 1.75
+   }
+  ],
+  "damage": [
+   "car_pickup_dmg1",
+   "car_pickup_dmg2",
+   "car_pickup_dmg3"
+  ],
+  "height": 1.92,
+  "length": 5.5,
+  "lods": [
+   "car_pickup",
+   "car_pickup_lod1",
+   "car_pickup_lod2"
+  ],
+  "seat": [
+   -0.36,
+   0.88,
+   -0.25
+  ],
+  "siren": false,
+  "tinted": true,
+  "track": 0.86,
+  "tris": [
+   5988,
+   1254,
+   306
+  ],
+  "wheel_radius": 0.42,
+  "width": 2.0
+ },
+ "car_police": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": true,
+    "z": -1.4
+   },
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": false,
+    "z": 1.35
+   }
+  ],
+  "damage": [
+   "car_police_dmg1",
+   "car_police_dmg2",
+   "car_police_dmg3"
+  ],
+  "height": 1.66,
+  "length": 4.5,
+  "lods": [
+   "car_police",
+   "car_police_lod1",
+   "car_police_lod2"
+  ],
+  "seat": [
+   -0.36,
+   0.6799999999999999,
+   0.12
+  ],
+  "siren": true,
+  "tinted": false,
+  "track": 0.81,
+  "tris": [
+   6606,
+   1348,
+   398
+  ],
+  "wheel_radius": 0.36,
+  "width": 1.82
+ },
+ "car_sedan": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": true,
+    "z": -1.4
+   },
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": false,
+    "z": 1.35
+   }
+  ],
+  "damage": [
+   "car_sedan_dmg1",
+   "car_sedan_dmg2",
+   "car_sedan_dmg3"
+  ],
+  "height": 1.46,
+  "length": 4.5,
+  "lods": [
+   "car_sedan",
+   "car_sedan_lod1",
+   "car_sedan_lod2"
+  ],
+  "seat": [
+   -0.36,
+   0.6799999999999999,
+   0.12
+  ],
+  "siren": false,
+  "tinted": true,
+  "track": 0.81,
+  "tris": [
+   6210,
+   1256,
+   306
+  ],
+  "wheel_radius": 0.36,
+  "width": 1.82
+ },
+ "car_sports": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": true,
+    "z": -1.42
+   },
+   {
+    "dual": false,
+    "radius": 0.37,
+    "steer": false,
+    "z": 1.38
+   }
+  ],
+  "damage": [
+   "car_sports_dmg1",
+   "car_sports_dmg2",
+   "car_sports_dmg3"
+  ],
+  "height": 1.24,
+  "length": 4.45,
+  "lods": [
+   "car_sports",
+   "car_sports_lod1",
+   "car_sports_lod2"
+  ],
+  "seat": [
+   -0.36,
+   0.48,
+   0.5
+  ],
+  "siren": false,
+  "tinted": true,
+  "track": 0.86,
+  "tris": [
+   5984,
+   1254,
+   306
+  ],
+  "wheel_radius": 0.36,
+  "width": 1.96
+ },
+ "car_taxi": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": true,
+    "z": -1.4
+   },
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": false,
+    "z": 1.35
+   }
+  ],
+  "damage": [
+   "car_taxi_dmg1",
+   "car_taxi_dmg2",
+   "car_taxi_dmg3"
+  ],
+  "height": 1.46,
+  "length": 4.5,
+  "lods": [
+   "car_taxi",
+   "car_taxi_lod1",
+   "car_taxi_lod2"
+  ],
+  "seat": [
+   -0.36,
+   0.6799999999999999,
+   0.12
+  ],
+  "siren": false,
+  "tinted": false,
+  "track": 0.81,
+  "tris": [
+   6254,
+   1268,
+   318
+  ],
+  "wheel_radius": 0.36,
+  "width": 1.82
+ },
+ "car_truck": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.48,
+    "steer": true,
+    "z": -2.6
+   },
+   {
+    "dual": true,
+    "radius": 0.48,
+    "steer": false,
+    "z": 2.55
+   },
+   {
+    "dual": true,
+    "radius": 0.48,
+    "steer": false,
+    "z": 1.4
+   }
+  ],
+  "damage": [
+   "car_truck_dmg1",
+   "car_truck_dmg2",
+   "car_truck_dmg3"
+  ],
+  "height": 2.75,
+  "length": 6.84,
+  "lods": [
+   "car_truck",
+   "car_truck_lod1",
+   "car_truck_lod2"
+  ],
+  "seat": [
+   -0.36,
+   1.26,
+   -2.05
+  ],
+  "siren": false,
+  "tinted": true,
+  "track": 0.96,
+  "tris": [
+   6690,
+   1452,
+   360
+  ],
+  "wheel_radius": 0.48,
+  "width": 2.24
+ },
+ "car_van": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": true,
+    "z": -1.6
+   },
+   {
+    "dual": false,
+    "radius": 0.36,
+    "steer": false,
+    "z": 1.55
+   }
+  ],
+  "damage": [
+   "car_van_dmg1",
+   "car_van_dmg2",
+   "car_van_dmg3"
+  ],
+  "height": 2.08,
+  "length": 4.9,
+  "lods": [
+   "car_van",
+   "car_van_lod1",
+   "car_van_lod2"
+  ],
+  "seat": [
+   -0.36,
+   0.71,
+   -0.55
+  ],
+  "siren": false,
+  "tinted": true,
+  "track": 0.86,
+  "tris": [
+   5988,
+   1256,
+   308
+  ],
+  "wheel_radius": 0.36,
+  "width": 1.98
+ }
+}
