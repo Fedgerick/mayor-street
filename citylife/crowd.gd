@@ -21,6 +21,8 @@ class Ped:
 	var look2 := 0
 	var outfit := 0       # CharacterModel seed; `look` matches its colours
 	var hero: CharacterModel  # full rigged model while close to the camera
+	var flee := 0.0       # seconds left running from trouble
+	var flee_from := Vector3.ZERO
 	var size := 1.0
 	var crossing := false
 	var pos := Vector3.ZERO
@@ -177,8 +179,101 @@ func _leave_crossing(p: Ped) -> void:
 		p.crossing = false
 
 
+const RUN := 4.3
+
+
+## Everyone within `radius` of `pos` runs away from it for a while.
+func panic(pos: Vector3, radius: float, seconds := 8.0) -> int:
+	var n := 0
+	var r2 := radius * radius
+	for p in peds:
+		var d2 := p.pos.distance_squared_to(pos)
+		if d2 > r2:
+			continue
+		n += 1
+		p.pause = 0.0
+		# Closer people run longer.
+		p.flee = maxf(p.flee, seconds * (1.2 - 0.6 * sqrt(d2) / radius))
+		p.flee_from = pos
+		if p.arm < 0 or p.crossing:
+			# Turn around if walking toward the trouble.
+			var to := pos - p.pos
+			if p.fwd.dot(to) > 0.0 and net.has_walk_edge(p.b, p.a) and p.arm < 0:
+				var tmp := p.a
+				p.a = p.b
+				p.b = tmp
+				p.t = p.length - p.t
+		_place(p)
+	return n
+
+
+func fleeing_count() -> int:
+	var n := 0
+	for p in peds:
+		if p.flee > 0.0:
+			n += 1
+	return n
+
+
+## A person who just appeared at `pos` (a driver pulled from a car) and runs from `from`.
+func spawn_fleeing(pos: Vector3, from: Vector3) -> Ped:
+	var cell := net.city.world_to_cell(pos)
+	if not net.city.inside(cell.x, cell.y):
+		return null
+	var i := net.city.idx(cell.x, cell.y)
+	var best := -1
+	var bd := INF
+	for k in 4:
+		var node := i * 4 + k
+		if net.walk_adj.has(node):
+			var d := net.node_pos(node).distance_squared_to(pos)
+			if d < bd:
+				bd = d
+				best = node
+	if best < 0:
+		return null
+	var p := Ped.new()
+	p.a = best
+	if not _choose_flee(p, -1):
+		return null
+	p.speed = rng.randf_range(1.1, 1.6)
+	p.size = rng.randf_range(0.9, 1.08)
+	p.side = rng.randf_range(0.0, 0.3)
+	_set_outfit(p, rng.randi() % 100000)
+	p.flee = 12.0
+	p.flee_from = from
+	_place(p)
+	peds.append(p)
+	return p
+
+
+func _choose_flee(p: Ped, came_from: int) -> bool:
+	var edges: Array = net.walk_adj.get(p.a, [])
+	if edges.is_empty():
+		return false
+	var pick: Array = edges[0]
+	var best := -INF
+	for e in edges:
+		var d := net.node_pos(e[0]).distance_to(p.flee_from)
+		if e[0] == came_from:
+			d -= 4.0  # prefer not to double back
+		d += rng.randf() * 2.0
+		if d > best:
+			best = d
+			pick = e
+	p.b = pick[0]
+	p.arm = pick[1]
+	p.length = maxf(net.node_pos(p.a).distance_to(net.node_pos(p.b)), 0.01)
+	p.t = 0.0
+	p.crossing = false
+	return true
+
+
 func step(dt: float) -> void:
 	for p in peds.duplicate():
+		if p.flee > 0.0:
+			_run(p, dt)
+			continue
 		if p.pause > 0.0:
 			p.pause -= dt
 			p.phase = 0.0
@@ -204,6 +299,22 @@ func step(dt: float) -> void:
 			if p.arm < 0 and rng.randf() < 0.06:
 				p.pause = rng.randf_range(2.0, 7.0)  # window shopping, phone, chat
 		_place(p)
+
+
+func _run(p: Ped, dt: float) -> void:
+	p.flee -= dt
+	if p.arm >= 0 and not p.crossing:
+		_enter_crossing(p)  # no waiting for the light when running
+	p.t += RUN * dt
+	p.phase = fmod(p.phase + RUN * dt * 3.2, TAU)
+	if p.t >= p.length:
+		var came: int = p.a
+		_leave_crossing(p)
+		p.a = p.b
+		if not _choose_flee(p, came):
+			remove(p)
+			return
+	_place(p)
 
 
 func _place(p: Ped) -> void:
@@ -239,9 +350,9 @@ func render() -> void:
 		_buf[o] = right.x; _buf[o + 1] = 0.0; _buf[o + 2] = back.x; _buf[o + 3] = p.pos.x
 		_buf[o + 4] = 0.0; _buf[o + 5] = p.size; _buf[o + 6] = 0.0; _buf[o + 7] = p.pos.y
 		_buf[o + 8] = right.z; _buf[o + 9] = 0.0; _buf[o + 10] = back.z; _buf[o + 11] = p.pos.z
-		var moving := p.pause <= 0.0 and (p.arm < 0 or p.crossing)
+		var moving := p.pause <= 0.0 and (p.arm < 0 or p.crossing) or p.flee > 0.0
 		_buf[o + 12] = p.phase
-		_buf[o + 13] = 1.0 if moving else 0.0
+		_buf[o + 13] = (1.5 if p.flee > 0.0 else 1.0) if moving else 0.0
 		_buf[o + 14] = float(p.look)
 		_buf[o + 15] = float(p.look2)
 		n += 1
@@ -298,6 +409,9 @@ func update_heroes(dt: float) -> void:
 		var m: CharacterModel = p.hero
 		m.global_position = p.pos
 		m.global_basis = Basis.looking_at(p.fwd, Vector3.UP).scaled(Vector3.ONE * p.size)
+		if p.flee > 0.0:
+			m.animate(dt, RUN, true, 0.0, 0.0)
+			continue
 		var moving := p.pause <= 0.0 and (p.arm < 0 or p.crossing)
 		m.animate(dt, CharacterModel.WALK_SPEED if moving else 0.0, true, 0.0, 0.0)
 		if moving:

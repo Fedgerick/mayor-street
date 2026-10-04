@@ -29,6 +29,9 @@ var net: RoadNet
 var traffic: Traffic
 var crowd: Crowd
 var signals: Signals
+var police: Police
+var want_garbage := 0
+var _garbage_timer := 0.0
 
 var car_weight := PackedFloat32Array()
 var ped_weight := PackedFloat32Array()
@@ -67,8 +70,14 @@ func setup(c: City, cam: Camera3D = null) -> void:
 	signals.name = "Signals"
 	add_child(signals)
 	signals.setup(net)
+	police = Police.new()
+	police.name = "Police"
+	add_child(police)
+	police.setup(city, net, traffic, crowd)
+	traffic.car_taken.connect(_on_car_taken)
 	traffic.camera = cam
 	crowd.camera = cam
+	police.camera = cam
 	city.cells_changed.connect(func(_r): _roads_dirty = true)
 	city.building_added.connect(func(id, _a): _add_building(id))
 	city.building_removed.connect(_remove_building)
@@ -83,6 +92,23 @@ func set_camera(cam: Camera3D) -> void:
 	camera = cam
 	traffic.camera = cam
 	crowd.camera = cam
+	police.camera = cam
+
+
+## The player's wanted system (see INTERFACE.md). Police chase it while it has stars.
+func set_suspect(s: Object) -> void:
+	police.set_suspect(s)
+
+
+## Something violent happened at pos (1 punch .. 3 gunfire): nearby people run.
+func report_crime(pos: Vector3, severity := 1) -> int:
+	return crowd.panic(pos, 12.0 + 12.0 * clampi(severity, 1, 3), 6.0 + 3.0 * severity)
+
+
+func _on_car_taken(pos: Vector3, fwd: Vector3) -> void:
+	# The driver bails out of the kerb side and runs.
+	crowd.spawn_fleeing(pos + Vector3(-fwd.z, 0, fwd.x) * 2.0, pos - fwd * 2.0)
+	report_crime(pos, 2)
 
 
 func _process(delta: float) -> void:
@@ -100,6 +126,7 @@ func step(dt: float) -> void:
 		traffic.validate()
 		crowd.validate()
 		signals.rebuild()
+		police.refresh_stations()
 		compute_weights()  # building contributions only land on road cells
 		_area_timer = 0.0
 	_update_view()
@@ -109,6 +136,8 @@ func step(dt: float) -> void:
 		_update_area()
 	_cull()
 	_fill(false)
+	_garbage(dt)
+	police.step(dt)
 	traffic.step(dt)
 	if cam_height < PED_HEIGHT:
 		crowd.step(dt)
@@ -118,9 +147,46 @@ func step(dt: float) -> void:
 	crowd.visible = cam_height < PED_HEIGHT
 	signals.visible = cam_height < 260.0
 	traffic.render()
+	police.render()
 	if crowd.visible:
 		crowd.update_heroes(dt)
 		crowd.render()
+
+
+# ---------------------------------------------------------------- garbage ---
+
+## Garbage trucks run in the morning, a few per city, starting from the depots.
+func _garbage(dt: float) -> void:
+	_garbage_timer -= dt
+	if _garbage_timer > 0.0:
+		return
+	_garbage_timer = 3.0
+	var h := city.time_of_day()
+	want_garbage = 0
+	if h >= 6.0 and h < 15.0:
+		want_garbage = clampi(city.buildings.size() / 250 + 1, 1, 4)
+	if traffic.garbage_count() >= want_garbage or _car_cells.is_empty():
+		return
+	var cell := -1
+	var depots := _service_cells("garbage")
+	if not depots.is_empty():
+		var d: Vector2i = depots[rng.randi() % depots.size()]
+		cell = police._nearest_road(d)
+		if cell >= 0 and net.junction[cell] == 1:
+			cell = -1
+	if cell < 0:
+		cell = _pick(_car_cells, _car_cum)
+		if cell >= 0 and _in_view(net.center(cell)):
+			return
+	if cell >= 0:
+		traffic.spawn_garbage(cell)
+
+
+func _service_cells(kind: String) -> Array:
+	for host in [city, city.get("services") if "services" in city else null]:
+		if host != null and host.has_method("service_sites"):
+			return host.service_sites(kind)
+	return []
 
 
 # ---------------------------------------------------------------- density ---
@@ -319,7 +385,7 @@ func _cull() -> void:
 	var removed := 0
 	for c in traffic.cars.duplicate():
 		var far: bool = Vector2(c.pos.x - focus.x, c.pos.z - focus.z).length() > cr
-		var extra: bool = traffic.cars.size() > want_cars * 1.2 + 4 and removed < 2 and not _in_view(c.pos)
+		var extra: bool = traffic.cars.size() > want_cars * 1.2 + 4 and removed < 2 and not _in_view(c.pos) and not c.garbage
 		if far or extra:
 			traffic.remove(c)
 			removed += 1 if extra else 0

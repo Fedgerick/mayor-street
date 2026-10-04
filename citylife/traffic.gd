@@ -34,6 +34,14 @@ class Car:
 	var aggr := 1.0      # per-driver multiplier on desired speed
 	var pos := Vector3.ZERO
 	var fwd := Vector3.FORWARD
+	var pull := 0.0      # 0 in lane .. 1 pulled over to the kerb for a siren
+	var garbage := false # a garbage truck: stops along the block to collect
+	var halt := 0.0      # seconds left standing at a pickup
+
+signal car_taken(pos: Vector3, fwd: Vector3)  # a driver was pulled out at pos
+
+const GARBAGE_TINT := Color(0.22, 0.5, 0.3)
+const SIREN_RANGE := 45.0
 
 var net: RoadNet
 var cars: Array[Car] = []
@@ -53,6 +61,8 @@ var _buf: Array[PackedFloat32Array] = []
 var red_runs := 0
 var despawned_stuck := 0
 var wait_reason := {}  # debug: why stopped cars are stopped
+var sirens: Array = []  # [pos, fwd] of emergency vehicles running sirens (set by Police)
+var garbage_cells := PackedInt32Array()  # depot road cells where garbage trucks start
 
 
 func setup(road_net: RoadNet, seed_value := 7) -> void:
@@ -83,6 +93,47 @@ func _fallback_mesh(length: float) -> Mesh:
 
 
 # ------------------------------------------------------------------ spawn ---
+
+func spawn_garbage(cell: int) -> Car:
+	var c := spawn_at(cell, false)
+	if c:
+		c.garbage = true
+		c.model = 3
+		c.tint = GARBAGE_TINT
+		c.aggr = 0.7
+	return c
+
+
+func garbage_count() -> int:
+	var n := 0
+	for c in cars:
+		if c.garbage:
+			n += 1
+	return n
+
+
+## The AI car nearest `pos` within `radius`, or null. For carjacking.
+func nearest_car(pos: Vector3, radius: float) -> Car:
+	var best: Car = null
+	var bd := radius * radius
+	for c in cars:
+		var d := c.pos.distance_squared_to(pos)
+		if d < bd:
+			bd = d
+			best = c
+	return best
+
+
+## Take a car out of traffic so the player can spawn a real one in its place.
+func take_car(c: Car) -> Dictionary:
+	var back := -c.fwd
+	var right := Vector3.UP.cross(back).normalized()
+	var xf := Transform3D(Basis(right, Vector3.UP, back), c.pos)
+	var out := {"xform": xf, "model": MODELS[c.model], "tint": c.tint}
+	remove(c)
+	car_taken.emit(c.pos, c.fwd)
+	return out
+
 
 func spawn_at(cell: int, rand_pos := true) -> Car:
 	if not net.is_road(cell) or net.junction[cell] == 1:
@@ -286,7 +337,24 @@ func _drive(c: Car, dt: float) -> void:
 				gap = stop
 				lead_v = 0.0
 	var v0 := _desired_speed(c)
-	var acc := ACCEL * (1.0 - pow(c.v / maxf(v0, 0.1), 4.0))
+	# Emergency vehicle close by: ease to the kerb and stop until it has passed.
+	var yield_now := false
+	for sr in sirens:
+		var to: Vector3 = c.pos - sr[0]
+		if to.length_squared() < SIREN_RANGE * SIREN_RANGE and (sr[1] as Vector3).dot(to) > -6.0:
+			yield_now = true
+			break
+	c.pull = move_toward(c.pull, 1.0 if yield_now else 0.0, dt * (1.2 if yield_now else 0.6))
+	if yield_now:
+		v0 = 0.0
+	if c.garbage:
+		if c.halt > 0.0:
+			c.halt -= dt
+			v0 = 0.0
+		elif net.junction[c.cell] == 0 and c.v > 2.0 and rng.randf() < dt * 0.08 \
+				and _zone_near(c.cell) != 0:
+			c.halt = rng.randf_range(4.0, 8.0)  # stop to empty the bins
+	var acc := ACCEL * (1.0 - pow(c.v / maxf(v0, 0.1), 4.0)) if v0 > 0.0 else -BRAKE * 1.2
 	if gap < INF:
 		var dv := c.v - lead_v
 		var s_star := MIN_GAP + maxf(0.0, c.v * HEADWAY + c.v * dv / (2.0 * sqrt(ACCEL * BRAKE)))
@@ -295,7 +363,7 @@ func _drive(c: Car, dt: float) -> void:
 	c.v = maxf(0.0, c.v + acc * dt)
 	if gap < 0.3:
 		c.v = 0.0
-	c.stuck = c.stuck + dt if c.v < 0.3 else 0.0
+	c.stuck = c.stuck + dt if c.v < 0.3 and not yield_now and c.halt <= 0.0 else 0.0
 	if c.v < 0.3 and OS.is_debug_build():
 		var why := "follow" if lead_v > 0.0 or gap == INF else "stopline"
 		if net.junction[c.cell] == 1:
@@ -381,8 +449,10 @@ func _advance(c: Car, dt: float) -> void:
 func _place(c: Car) -> void:
 	var m := c.din * 4 + c.dout
 	var smp := net.sample(m, c.s)
-	c.pos = net.center(c.cell) + smp[0] + Vector3(0, ROAD_Y, 0)
 	c.fwd = smp[1]
+	c.pos = net.center(c.cell) + smp[0] + Vector3(0, ROAD_Y, 0)
+	if c.pull > 0.0:
+		c.pos += Vector3(-c.fwd.z, 0, c.fwd.x) * (c.pull * 1.3)
 
 
 # ---------------------------------------------------------------- render ---

@@ -5,6 +5,18 @@ extends SceneTree
 var args := {}
 
 
+class Suspect:
+	extends RefCounted
+	var wanted_stars := 0
+	var pos := Vector3.ZERO
+	func suspect_position() -> Vector3:
+		return pos
+	func suspect_velocity() -> Vector3:
+		return Vector3(5, 0, 0)
+	func suspect_in_vehicle() -> bool:
+		return false
+
+
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
@@ -16,9 +28,11 @@ func _initialize() -> void:
 	var city: City = main.city
 	if args.has("hour"):
 		city.minutes = float(city.game_day()) * 1440.0 + float(args["hour"]) * 60.0
-	var life := CityLife.new()
-	main.add_child(life)
-	life.setup(city, main.cam)
+	var life: CityLife = main.get("life")
+	if life == null:
+		life = CityLife.new()
+		main.add_child(life)
+		life.setup(city, main.cam)
 	var cam := Camera3D.new()
 	cam.fov = 60.0
 	cam.near = 0.2
@@ -33,6 +47,13 @@ func _initialize() -> void:
 	cam.rotation_degrees = Vector3(v[4], v[3], 0)
 	cam.make_current()
 	life.set_camera(cam)
+	if args.has("stars"):
+		# A wanted suspect on the sidewalk ahead of the camera, for chase shots.
+		var sus := Suspect.new()
+		sus.wanted_stars = int(args["stars"])
+		sus.pos = cam.global_position - cam.global_basis.z * 28.0
+		sus.pos.y = 0.17
+		life.set_suspect(sus)
 	for i in int(args.get("frames", "240")):
 		await process_frame
 	var img := root.get_texture().get_image()
