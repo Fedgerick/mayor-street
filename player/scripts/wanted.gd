@@ -30,6 +30,7 @@ const CRIMES := {
 var level := 0
 var heat := 0.0
 var last_known_pos := Vector3.ZERO
+var fade_per_star := FADE_PER_STAR   # shorter under the -50 "chop_double" perk
 var witnessed_radius := 45.0     # crimes with nobody around count for half
 var _unseen := 0.0
 var _seen_timer := 0.0
@@ -98,7 +99,7 @@ func _process(delta: float) -> void:
 	if _seen_timer > 0.0:
 		return
 	_unseen += delta
-	if _unseen >= FADE_PER_STAR:
+	if _unseen >= fade_per_star:
 		_unseen = 0.0
 		var n := level - 1
 		heat = HEAT_FOR[n]
@@ -109,4 +110,4 @@ func _process(delta: float) -> void:
 
 func fade_progress() -> float:
 	## 0..1 toward losing the next star (for a flashing HUD).
-	return 0.0 if level == 0 or _seen_timer > 0.0 else _unseen / FADE_PER_STAR
+	return 0.0 if level == 0 or _seen_timer > 0.0 else _unseen / fade_per_star

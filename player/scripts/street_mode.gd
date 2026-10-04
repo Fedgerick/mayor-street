@@ -51,6 +51,7 @@ const CORPSE_SECONDS := 40.0
 const WASTED_FEE := [0.1, 100]   # fraction of cash, minimum
 const BUSTED_FEE := [0.2, 150]
 const BLAST_RADIUS := 8.0
+const MINOR_CRIMES: Array[StringName] = [&"vehicle_damage", &"car_theft", &"punch"]
 
 var city: City
 var player: StreetPlayer
@@ -530,6 +531,7 @@ func _label(size: int, align: HorizontalAlignment) -> Label:
 func _process(delta: float) -> void:
 	_hud.visible = active or down
 	_shot_report = maxf(_shot_report - delta, 0.0)
+	heat.fade_per_star = Wanted.FADE_PER_STAR * (0.6 if has_perk("chop_double") else 1.0)
 	_panic_report = maxf(_panic_report - delta, 0.0)
 	var police = life.get("police") if life else null
 	if police and wanted > 0 and police.seen:
@@ -611,9 +613,18 @@ func _on_escaped() -> void:
 		hud.note("Lost them")
 
 
-func _commit(kind: StringName, pos: Vector3) -> void:
-	heat.commit(kind, pos)
+func _commit(kind: StringName, pos: Vector3, weapon := &"") -> void:
+	# The +50 perk: cops ignore minor crimes (they still count for missions).
+	var minor := kind in MINOR_CRIMES or (kind == &"assault" and weapon == &"fists")
+	if not (minor and has_perk("minor_crimes_ignored")):
+		heat.commit(kind, pos)
 	crime.emit(kind)
+
+
+func has_perk(id: String) -> bool:
+	## A goodness perk from missions/ (Progress unlock "perk:<id>").
+	var p := _progress()
+	return p != null and p.has_method("is_unlocked") and p.is_unlocked("perk:" + id)
 
 
 func _witnessed(pos: Vector3) -> bool:
@@ -735,7 +746,7 @@ func hurt_person(p: Object, damage: float, dir: Vector3, weapon := &"fists") -> 
 		_hp[p] = hp
 		if p.get("hero"):
 			p.hero.play_hit()
-		_commit(&"assault", p.pos)
+		_commit(&"assault", p.pos, weapon)
 		goodness_action.emit(&"hit_person")
 	_scare(p.pos, 1 if weapon == &"fists" else 3)
 
@@ -925,9 +936,10 @@ func _on_player_died() -> void:
 	player.visual.set_dead(true)
 	camera.shake(0.5)
 	await _down_sequence("WASTED", Color(0.85, 0.08, 0.06))
-	var fee := _take_cash(WASTED_FEE, "hospital bill")
+	var free := has_perk("minor_crimes_ignored")   # +50: free hospital respawn
+	var fee := 0 if free else _take_cash(WASTED_FEE, "hospital bill")
 	await _respawn(_respawn_point(true))
-	hud.note("Hospital bill  -$%d" % fee)
+	hud.note("Hospital bill waived" if free else "Hospital bill  -$%d" % fee)
 
 
 func bust() -> void:
