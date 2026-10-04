@@ -17,7 +17,7 @@ One autoload, `Audio` (`audio_director.gd`), drives all sound. Hook-up: [INTEGRA
 
 - `sfx/` one-shots and short loops, `ambience/` 24 s beds, `music/` three 83 s stems (92 BPM, A minor).
 - `tools/synth_audio.py` regenerates all of them: `pip install numpy scipy soundfile`, then
-  `python3 audio/tools/synth_audio.py` (or `--only sfx|ambience|music`). About two minutes.
+  `python3 audio/tools/synth_audio.py` (or `--only sfx|missions|ambience|music`). About two minutes.
 - `tests/test_audio.gd` headless check: `godot --headless --path . --script res://audio/tests/test_audio.gd`
   (run on a scratch copy of the repo after `--import`).
 

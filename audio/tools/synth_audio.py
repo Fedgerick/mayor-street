@@ -469,6 +469,80 @@ def engine_loop(load=0.0, base_lp=1300, rough=0.15):
     return x
 
 
+def sfx_missions():
+    """Mission cues (missions/missions.gd). Own seed so regenerating them leaves the rest alone."""
+    global rng
+    keep, rng = rng, np.random.default_rng(777)
+
+    # Payphone: an old bell ringer, ring-ring ... ring-ring (about 4 s, played once).
+    x = np.zeros(n_of(4.2))
+    for start in (0.0, 0.6, 2.4, 3.0):
+        m = n_of(0.42)
+        t = tt(m)
+        clapper = 0.5 + 0.5 * signal.square(2 * np.pi * 20 * t)
+        bell = sum(a * np.sin(2 * np.pi * f * t) for f, a in [(1180, 1.0), (1470, 0.7), (2350, 0.4), (3300, 0.25)])
+        add_at(x, bell * clapper * adsr(m, 0.005, 0.05, 0.9, 0.08), n_of(start), wrap=False)
+    x = filt(x, "bandpass", [500, 5000])
+    write("sfx/phone_ring.ogg", fade(circ_reverb(x, 0.6, 0.15)), peak=0.6)
+
+    # Dispatch radio: squelch click, crackly band-limited static, a tone blip.
+    n = n_of(1.3)
+    t = tt(n)
+    st = filt(white(n), "bandpass", [600, 3200]) * (0.5 + 0.5 * (rng.random(n) > 0.6))
+    st *= 0.6 + 0.4 * np.sin(2 * np.pi * 7 * t) ** 2
+    crack = filt((rng.random(n) > 0.997) * rng.uniform(-1, 1, n), "highpass", 1500) * 3
+    blip = np.zeros(n)
+    m = n_of(0.12)
+    blip[n_of(0.05):n_of(0.05) + m] = np.sin(2 * np.pi * 1400 * tt(m)) * adsr(m, 0.005, 0.01, 1, 0.02)
+    e = adsr(n, 0.01, 0.1, 0.8, 0.25)
+    write("sfx/radio_static.ogg", fade(0.5 * st * e + crack * e + 0.6 * blip), peak=0.55)
+
+    def brass(f, dur, vel=1.0):
+        m = n_of(dur + 0.25)
+        tm = tt(m)
+        y = np.zeros(m)
+        for k in range(1, 9):
+            y += (1 / k) * np.sin(2 * np.pi * k * f * tm) * np.exp(-tm * k * 0.6)
+        return filt(y, "lowpass", 3500) * adsr(m, 0.03, 0.1, 0.8, 0.25) * vel
+
+    # Mission start: a rising three-note stab over a low hit.
+    x = np.zeros(n_of(1.6))
+    add_at(x, 0.8 * kick(1.0), 0, wrap=False)
+    for k, mm in enumerate([57, 60, 64]):
+        add_at(x, brass(midi(mm), 0.18 if k < 2 else 0.7, 0.6), n_of(0.12 * k), wrap=False)
+        add_at(x, brass(midi(mm + 12), 0.18 if k < 2 else 0.7, 0.3), n_of(0.12 * k), wrap=False)
+    write("sfx/mission_start.ogg", fade(circ_reverb(x, 1.2, 0.2)), peak=0.7)
+
+    # Checkpoint: a bright double ding.
+    x = np.zeros(n_of(0.8))
+    add_at(x, fm_bell(midi(88), 0.6, 2.0, 1.0, 0.18), 0, wrap=False)
+    add_at(x, 0.8 * fm_bell(midi(95), 0.6, 2.0, 1.0, 0.2), n_of(0.08), wrap=False)
+    write("sfx/checkpoint.ogg", fade(circ_reverb(x, 0.6, 0.15)), peak=0.6)
+
+    # Passed: major arpeggio up to a held chord, with a snare roll into a hit.
+    x = np.zeros(n_of(2.6))
+    for k, mm in enumerate([60, 64, 67]):
+        add_at(x, brass(midi(mm), 0.14, 0.55), n_of(0.11 * k), wrap=False)
+    for k in range(4):
+        add_at(x, 0.25 * snare(1.5), n_of(0.05 + 0.07 * k), wrap=False)
+    add_at(x, kick(1.0), n_of(0.36), wrap=False)
+    add_at(x, 0.6 * snare(), n_of(0.36), wrap=False)
+    for mm in [60, 64, 67, 72]:
+        add_at(x, brass(midi(mm), 1.3, 0.45), n_of(0.36), wrap=False)
+    add_at(x, 0.4 * fm_bell(midi(84), 1.5, 2.0, 0.8, 0.5), n_of(0.36), wrap=False)
+    write("sfx/mission_passed.ogg", fade(circ_reverb(x, 1.6, 0.22), 0.002, 0.3), peak=0.75)
+
+    # Failed: a sagging minor descent over a dull low hit.
+    x = np.zeros(n_of(2.4))
+    add_at(x, kick(0.6), 0, wrap=False)
+    for k, mm in enumerate([64, 63, 60]):
+        add_at(x, brass(midi(mm), 0.3 if k < 2 else 1.2, 0.5), n_of(0.32 * k), wrap=False)
+        add_at(x, brass(midi(mm - 12), 0.3 if k < 2 else 1.2, 0.35), n_of(0.32 * k), wrap=False)
+    x = filt(x, "lowpass", 2200)
+    write("sfx/mission_failed.ogg", fade(circ_reverb(x, 1.4, 0.2), 0.002, 0.3), peak=0.7)
+    rng = keep
+
+
 # ---------------------------------------------------------------- ambience ---
 
 AMB_SEC = 24.0
@@ -860,7 +934,7 @@ def ambience():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", choices=["sfx", "ambience", "music"])
+    ap.add_argument("--only", choices=["sfx", "missions", "ambience", "music"])
     a = ap.parse_args()
     if a.only in (None, "sfx"):
         print("sfx")
@@ -869,6 +943,9 @@ def main():
         sfx_transitions()
         sfx_street()
         sfx_loops()
+    if a.only in (None, "sfx", "missions"):
+        print("missions")
+        sfx_missions()
     if a.only in (None, "ambience"):
         print("ambience")
         ambience()

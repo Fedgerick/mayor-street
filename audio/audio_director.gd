@@ -29,6 +29,7 @@ const SFX := [
 	"door_open", "door_close", "engine_start", "crash", "horn_distant",
 	"horn_loop", "engine_idle_loop", "engine_load_loop", "road_roll_loop", "skid_loop",
 	"traffic_car_loop", "siren_loop",
+	"phone_ring", "radio_static", "mission_start", "checkpoint", "mission_passed", "mission_failed",
 ]
 const AMBIENCE := ["amb_city_day", "amb_city_night", "amb_birds", "amb_crickets", "amb_wind", "amb_crowd", "amb_sea"]
 const MUSIC := ["music_mayor", "music_street", "music_drive"]
