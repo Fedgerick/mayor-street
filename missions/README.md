@@ -60,6 +60,12 @@ of quest_engine.gd; `unless` drops a quest that is still active.
 Story quests have `"story": true`, an `act` (1-3, opened by the Small city, City and Metropolis tiers) and a
 `contact`. Their jobs get the fly-by intro and a medal, and show up in the quest log for replay (1-9).
 
+## Minimap and GPS
+
+When navigation/ is wired (a node in group `city_nav`), missions marks its own targets there: `mission:goal`
+(the next objective, the ringing payphone, or the car being chased, priority 10), `mission:pileN` for collect
+piles, and `mission:special:<id>` for spawned specials. Without it nothing changes.
+
 ## City effects for services/
 
 `CityEffects` sits on the City as meta `street_effects`. Casino losses come out of city funds here; crime and

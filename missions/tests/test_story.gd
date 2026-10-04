@@ -5,6 +5,20 @@ extends SceneTree
 var failures := 0
 
 
+class FakeNav extends Node:
+	var marks := {}
+	func mark(id: String, where: Variant, opts := {}) -> void:
+		marks[id] = [where, opts]
+	func unmark(id: String) -> void:
+		marks.erase(id)
+	func unmark_prefix(prefix: String) -> void:
+		for id in marks.keys():
+			if id.begins_with(prefix):
+				marks.erase(id)
+	func has_mark(id: String) -> bool:
+		return marks.has(id)
+
+
 func check(cond: bool, what: String) -> void:
 	if cond:
 		print("  ok   ", what)
@@ -264,6 +278,25 @@ func _initialize() -> void:
 	check(ms.intro.playing and paused, "the intro pauses the game")
 	ms.intro.finish()
 	check(done[0] and not paused, "skipping it unpauses and starts the job")
+
+	# ---------------------------------------------------------------- minimap/GPS ---
+	var nav := FakeNav.new()
+	nav.add_to_group("city_nav")
+	root.add_child(nav)
+	var job := d.generate("runway_cargo", ms.link.fake_pos)
+	d.start(job)
+	ms._sync_nav(job, job.step_pos(), MissionHud.BAD)
+	check(nav.marks.has("mission:goal") and nav.marks["mission:goal"][1].kind == "job", "the next objective is the GPS target")
+	ms.link.fake_pos = job.step_pos()
+	ms.link.fake_car = RefCounted.new()
+	d.tick(0.5)
+	ms._sync_nav(job, job.points[0], MissionHud.BAD)
+	check(nav.marks.has("mission:pile0") and nav.marks.size() == 1 + job.points.size(), "crates show on the minimap (%d)" % job.points.size())
+	d.abandon()
+	ms._sync_nav(null, Vector3.INF, MissionHud.GOOD)
+	check(not nav.marks.has("mission:goal") and not nav.marks.has("mission:pile0"), "marks clear when the job ends")
+	ms.specials.spawn("film_shoot", city.buildings.values()[5])
+	check(nav.marks.keys().any(func(k): return k.begins_with("mission:special:")), "spawned specials get a blip")
 
 	ms.queue_free()
 	ms2.queue_free()

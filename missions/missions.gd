@@ -70,6 +70,10 @@ var _council_offer: Mission = null
 var _council_t := 0.0
 var _council_show := 0.0
 var _council_wait := 30.0
+var _nav_goal := Vector3.INF     # last target sent to navigation/
+var _nav_kind := ""
+var _nav_piles := 0
+var _nav_step := -1
 var _rng := RandomNumberGenerator.new()
 
 
@@ -146,10 +150,16 @@ func setup(c: City, s: Node) -> void:
 	specials.name = "Specials"
 	add_child(specials)
 	specials.setup(c, director.tags, director.router, progress)
-	specials.spawned.connect(func(sp): _news("Reported: " + sp.name, 5.0))
+	specials.spawned.connect(func(sp):
+		_news("Reported: " + sp.name, 5.0)
+		_mark_special(sp))
 	specials.ended.connect(func(sp, ok):
+		var nav = _nav()  # CityNav, untyped so missions/ loads without navigation/
+		if nav:
+			nav.unmark("mission:special:%d" % sp.id)
 		if not ok and sp.kind == "burning_building":
 			_news(sp.name.replace("Fire at", "Burned down:"), 5.0))
+	_mark_specials.call_deferred()
 	_sync_perks()
 	if progress.store:
 		progress.store.register_section("missions", self)
@@ -662,6 +672,7 @@ func _update_markers() -> void:
 		_sync_piles(null)
 		if _ringing >= 0:
 			goal = phones[_ringing]
+	_sync_nav(m, goal, col)
 	if goal == Vector3.INF:
 		_beacon.visible = false
 		hud.arrow_dist = -1.0
@@ -682,6 +693,56 @@ func _update_markers() -> void:
 		var f := -cam.global_basis.z
 		var to := goal - me
 		hud.arrow_angle = atan2(f.x * to.z - f.z * to.x, f.x * to.x + f.z * to.z)
+
+
+# ---------------------------------------------------------- minimap and GPS ---
+
+func _nav() -> Node:
+	## navigation/CityNav when main.gd has one (found by group, so missions/ loads without it).
+	return get_tree().get_first_node_in_group("city_nav") if is_inside_tree() else null
+
+
+func _sync_nav(m: Mission, goal: Vector3, col: Color) -> void:
+	## The next objective (or the ringing payphone) as the minimap target with the GPS line,
+	## and collect piles as pickups. Only re-marked when something changes.
+	var nav = _nav()  # CityNav, untyped so missions/ loads without navigation/
+	if nav == null:
+		return
+	var doing: String = m.step().get("do", "") if m else ""
+	var kind := "phone" if m == null else ("car" if doing in ["chase", "vehicle"] else "job")
+	if goal == Vector3.INF:
+		if _nav_goal != Vector3.INF:
+			nav.unmark("mission:goal")
+	elif kind != _nav_kind or _nav_goal == Vector3.INF or (m and m.step_i != _nav_step) \
+			or (kind in ["job", "phone"] and goal.distance_to(_nav_goal) > 2.0):
+		var where: Variant = goal
+		if doing == "chase" and m.target and is_instance_valid(m.target):
+			where = m.target  # the minimap follows the car itself
+		elif doing == "vehicle" and m.mission_car is Node3D and is_instance_valid(m.mission_car):
+			where = m.mission_car
+		nav.mark("mission:goal", where, {"color": col, "kind": kind, "priority": 10,
+			"label": m.title if m else "Ringing payphone"})
+	_nav_goal = goal
+	_nav_kind = kind
+	_nav_step = m.step_i if m else -1
+	var piles: int = m.points.size() if m and doing == "collect" else 0
+	if piles != _nav_piles:
+		nav.unmark_prefix("mission:pile")
+		for i in piles:
+			nav.mark("mission:pile%d" % i, m.points[i], {"kind": "pickup", "gps": false, "color": col})
+		_nav_piles = piles
+
+
+func _mark_specials() -> void:
+	for sp in specials.active:
+		_mark_special(sp)
+
+
+func _mark_special(sp: Dictionary) -> void:
+	var nav = _nav()  # CityNav, untyped so missions/ loads without navigation/
+	if nav:
+		nav.mark("mission:special:%d" % sp.id, city.building_center(sp.b), {"kind": "place", "gps": false,
+			"label": sp.name, "color": Color(1.0, 0.55, 0.2)})
 
 
 func _sync_piles(m: Mission) -> void:
