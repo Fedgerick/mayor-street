@@ -41,4 +41,19 @@ func _run() -> void:
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png(dir.path_join(s[0] + ".png"))
 		print("saved ", s[0])
+	cc.queue_free()
+	var shop := CharacterCreator.new()
+	shop.mode = CharacterCreator.Mode.SHOP
+	shop.cash = 240
+	var sp := ResidentProfile.new()
+	sp.look = CharacterLook.from_dict({"hair": "bun", "skin": 2, "hair_color": 0, "top": 17, "bottom": 1, "shoes": 13})
+	sp.owned.append("cloth:13")
+	shop.profile = sp
+	root.add_child(shop)
+	shop._yaw = 0.35
+	for i in 40:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(dir.path_join("shop.png"))
+	print("saved shop")
 	quit()

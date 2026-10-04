@@ -25,6 +25,9 @@ screenshot flags skip it.
 
 Optional:
 - `resident.open_wardrobe()` from a HUD button, and `resident.pick_home()` to move.
+- Clothing shop: `await resident.open_shop()` opens the shop screen (try on, pay from
+  `Progress.cash`, returns dollars spent). Call it from the clothing shop's counter once
+  that interior and catalog entry exist. Stock and prices: `scripts/clothing_stock.gd`.
 - Going to the street the first time: `street.enter_street(cam, resident.home.door_position())`
   starts you outside your home (check `resident.profile.has_home()` first).
 - Wasted respawn (player/): `resident.respawn_point()` is a Transform3D outside the front

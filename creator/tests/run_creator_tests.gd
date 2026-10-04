@@ -207,5 +207,49 @@ func _run() -> void:
 	else:
 		print("  skip character dressing (character.glb not imported)")
 
+	# Clothing shop: the bill, the screen, and paying from Progress.
+	var sl := CharacterLook.new()
+	sl.top = 17
+	sl.bottom = 17
+	sl.shoes = 19
+	var bill := ClothingStock.unpaid(sl, PackedStringArray(["cloth:19"]))
+	check(bill.total == ClothingStock.price("cloth:17") and bill.ids == ["cloth:17"], "bill counts each unowned color once")
+	check(ClothingStock.unpaid(CharacterLook.new(), PackedStringArray()).total == 0, "free colors cost nothing")
+	for i in range(CharacterLook.CLOTH_FREE, CharacterLook.CLOTH.size()):
+		check(ClothingStock.price(ClothingStock.cloth_id(i)) > 0, "shop color %d has a price" % i)
+	if CharacterModel.available():
+		var shop := CharacterCreator.new()
+		shop.mode = CharacterCreator.Mode.SHOP
+		shop.cash = 100
+		root.add_child(shop)
+		await process_frame
+		shop.profile.look.top = 17   # gold, $150
+		shop._changed()
+		check(shop._done.disabled and shop._done.text.contains("150"), "can't buy what you can't afford")
+		shop.profile.look.top = 15   # teal, $75
+		shop._changed()
+		check(not shop._done.disabled, "can buy what you can afford")
+		shop.queue_free()
+		var prog: Node = root.get_node_or_null("Progress")
+		var buyer := Resident.new()
+		root.add_child(buyer)
+		buyer.setup(c, null, null)
+		if prog:
+			prog.add_cash(1000, "test")
+			var before: int = prog.cash
+			var spent_box := [-1]
+			var run := func(): spent_box[0] = await buyer.open_shop()
+			run.call()
+			await process_frame
+			var screen: CharacterCreator = buyer.find_children("*", "CharacterCreator", true, false)[0]
+			screen.profile.look.shoes = 16
+			screen._done.pressed.emit()
+			await process_frame
+			check(spent_box[0] == ClothingStock.price("cloth:16"), "shop charges for the new shoes (%d)" % spent_box[0])
+			check(prog.cash == before - spent_box[0], "cash went down")
+			check(buyer.profile.owned.has("cloth:16") and buyer.profile.look.shoes == 16, "bought shoes are owned and worn")
+			check(not paused, "game unpaused after the shop")
+		buyer.queue_free()
+
 	print("%d failures" % failures)
 	quit(1 if failures else 0)

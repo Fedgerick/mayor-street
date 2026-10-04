@@ -152,6 +152,39 @@ func open_wardrobe() -> void:
 		dress()
 
 
+## The clothing shop screen: try on shop colors, pay from Progress.cash for what you wear
+## out. Returns the dollars spent (0 when you leave or buy nothing).
+func open_shop() -> int:
+	if _busy:
+		return 0
+	_busy = true
+	var was_paused := get_tree().paused
+	get_tree().paused = true
+	var prog := progress()
+	var cc := CharacterCreator.new()
+	cc.mode = CharacterCreator.Mode.SHOP
+	cc.profile = profile
+	cc.cash = int(prog.cash) if prog else -1
+	add_child(cc)
+	var p: ResidentProfile = await cc.finished
+	var spent := 0
+	if p:
+		var bill := ClothingStock.unpaid(p.look, profile.owned)
+		if bill.total == 0 or prog == null or prog.spend_cash(bill.total, "clothes"):
+			spent = bill.total
+			for id in bill.ids:
+				profile.owned.append(id)
+			profile.look = p.look
+			dress()
+			if spent > 0:
+				_flash("Bought for $%d." % spent)
+		else:
+			_flash("Not enough cash.")
+	get_tree().paused = was_paused
+	_busy = false
+	return spent
+
+
 ## Dress the street character in the profile's look.
 func dress() -> void:
 	if street and street.player and street.player.visual and street.player.visual.model:

@@ -3,6 +3,7 @@ extends CanvasLayer
 ## The new-game character creator, and the same screen as the wardrobe at home.
 ##   var cc := CharacterCreator.new()          # mode CREATE: name, background, look, clothes
 ##   cc.mode = CharacterCreator.Mode.WARDROBE  # look, clothes and saved outfits only
+##   cc.mode = CharacterCreator.Mode.SHOP      # clothing shop: try on and buy (cc.cash = wallet)
 ##   cc.profile = existing_profile             # optional; edited on a copy
 ##   add_child(cc)
 ##   var p: ResidentProfile = await cc.finished   # null when cancelled
@@ -11,12 +12,13 @@ extends CanvasLayer
 
 signal finished(profile: ResidentProfile)
 
-enum Mode { CREATE, WARDROBE }
+enum Mode { CREATE, WARDROBE, SHOP }
 
 const GOLD := Color(1.0, 0.85, 0.45)
 const SUB := Color(0.62, 0.68, 0.78)
 
 var mode := Mode.CREATE
+var cash := -1          # SHOP: what the Resident can spend; -1 = no limit
 var profile: ResidentProfile
 
 var _rng := RandomNumberGenerator.new()
@@ -48,7 +50,7 @@ func _ready() -> void:
 	else:
 		profile = ResidentProfile.parse(profile.to_dict())
 	_build()
-	_show_page("You" if mode == Mode.CREATE else "Look")
+	_show_page({Mode.CREATE: "You", Mode.WARDROBE: "Look", Mode.SHOP: "Shop"}[mode])
 	_refresh_model()
 
 
@@ -80,19 +82,21 @@ func _build() -> void:
 	left.add_theme_constant_override("separation", 12)
 	panel.add_child(left)
 	var title := Label.new()
-	title.text = "WHO ARE YOU?" if mode == Mode.CREATE else "WARDROBE"
+	title.text = {Mode.CREATE: "WHO ARE YOU?", Mode.WARDROBE: "WARDROBE", Mode.SHOP: "CLOTHING SHOP"}[mode]
 	title.add_theme_font_size_override("font_size", 34)
 	title.add_theme_color_override("font_color", GOLD)
 	left.add_child(title)
 	var sub := Label.new()
-	sub.text = "The Mayor builds the city. You live in it." if mode == Mode.CREATE \
-		else "Change your look, or save outfits to switch between."
+	sub.text = {Mode.CREATE: "The Mayor builds the city. You live in it.",
+		Mode.WARDROBE: "Change your look, or save outfits to switch between.",
+		Mode.SHOP: "Try anything on. You only pay for what you walk out wearing."}[mode]
 	sub.add_theme_color_override("font_color", SUB)
 	left.add_child(sub)
 	_tabs = HBoxContainer.new()
 	_tabs.add_theme_constant_override("separation", 6)
 	left.add_child(_tabs)
-	var names := ["You", "Look", "Clothes"] if mode == Mode.CREATE else ["Look", "Clothes", "Outfits"]
+	var names: Array = {Mode.CREATE: ["You", "Look", "Clothes"], Mode.WARDROBE: ["Look", "Clothes", "Outfits"],
+		Mode.SHOP: ["Shop"]}[mode]
 	for n in names:
 		var b := Button.new()
 		b.text = n
@@ -115,10 +119,11 @@ func _build() -> void:
 	rnd.text = "Randomize"
 	rnd.custom_minimum_size = Vector2(0, 48)
 	rnd.pressed.connect(_randomize)
-	bottom.add_child(rnd)
-	if mode == Mode.WARDROBE:
+	if mode != Mode.SHOP:
+		bottom.add_child(rnd)
+	if mode != Mode.CREATE:
 		var cancel := Button.new()
-		cancel.text = "Cancel"
+		cancel.text = "Cancel" if mode == Mode.WARDROBE else "Leave"
 		cancel.custom_minimum_size = Vector2(0, 48)
 		cancel.pressed.connect(func(): _close(null))
 		bottom.add_child(cancel)
@@ -130,6 +135,7 @@ func _build() -> void:
 	_done.add_theme_stylebox_override("hover", Hud.panel_style(Color(0.26, 0.6, 0.36, 1.0), 10))
 	_done.pressed.connect(func(): _close(profile))
 	bottom.add_child(_done)
+	_update_done()
 
 	# Right: the live preview.
 	var box := SubViewportContainer.new()
@@ -241,7 +247,7 @@ func _preview_input(e: InputEvent) -> void:
 
 func _unhandled_input(e: InputEvent) -> void:
 	# Keep the game underneath from reacting while the creator is up.
-	if e is InputEventKey and e.pressed and e.keycode == KEY_ESCAPE and mode == Mode.WARDROBE:
+	if e is InputEventKey and e.pressed and e.keycode == KEY_ESCAPE and mode != Mode.CREATE:
 		_close(null)
 	get_viewport().set_input_as_handled()
 
@@ -283,6 +289,8 @@ func _show_page(n: String) -> void:
 		"Look": _page_look()
 		"Clothes": _page_clothes()
 		"Outfits": _page_outfits()
+		"Shop": _page_shop()
+	_update_done()
 	Hud.no_keyboard_focus(_page)
 	for le in _page.find_children("*", "LineEdit", true, false):
 		(le as LineEdit).focus_mode = Control.FOCUS_ALL
@@ -363,13 +371,18 @@ func _swatches(colors: Array, selected: int, on_pick: Callable, locked := -1) ->
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(42, 42)
 		var is_locked: bool = locked >= 0 and not CharacterLook.cloth_owned(i, profile.owned)
-		var st := Hud.panel_style(colors[i] if not is_locked else colors[i].darkened(0.6), 8)
+		var for_sale := is_locked and mode == Mode.SHOP
+		var st := Hud.panel_style(colors[i] if not is_locked or for_sale else colors[i].darkened(0.6), 8)
 		if i == selected:
 			st.set_border_width_all(3)
 			st.border_color = Color.WHITE
 		for s in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
 			b.add_theme_stylebox_override(s, st)
-		if is_locked:
+		if for_sale:
+			var id := ClothingStock.cloth_id(i)
+			b.text = "$"
+			b.tooltip_text = "%s, $%d" % [ClothingStock.item_name(id), ClothingStock.price(id)]
+		elif is_locked:
 			b.disabled = true
 			b.text = "$"
 			b.tooltip_text = "Sold in clothing shops"
@@ -462,3 +475,47 @@ func _page_outfits() -> void:
 			profile.save_outfit(slot)
 			_show_page("Outfits"))
 		h.add_child(save)
+
+
+func _update_done() -> void:
+	if _done == null:
+		return
+	if mode == Mode.CREATE:
+		_done.text = "Next: choose a home"
+		return
+	var bill := ClothingStock.unpaid(profile.look, profile.owned)
+	if bill.total == 0:
+		_done.text = "Wear this"
+		_done.disabled = false
+		return
+	# Only a shop can sell; elsewhere a look with unpaid colors can't be worn.
+	_done.disabled = mode != Mode.SHOP or (cash >= 0 and bill.total > cash)
+	_done.text = ("Buy and wear ($%d)" % bill.total) if mode == Mode.SHOP else "Not owned"
+
+
+func _page_shop() -> void:
+	var l := profile.look
+	if cash >= 0:
+		var c := Label.new()
+		c.text = "Cash: $%d" % cash
+		c.add_theme_font_size_override("font_size", 22)
+		c.add_theme_color_override("font_color", Color(0.55, 0.9, 0.6))
+		_page.add_child(c)
+	_heading("Top")
+	_swatches(CharacterLook.CLOTH, l.top, func(i): l.top = i, 1)
+	_heading("Bottom")
+	_swatches(CharacterLook.CLOTH, l.bottom, func(i): l.bottom = i, 1)
+	_heading("Shoes")
+	_swatches(CharacterLook.CLOTH, l.shoes, func(i): l.shoes = i, 1)
+	_heading("In the basket")
+	var bill := ClothingStock.unpaid(l, profile.owned)
+	var lines := []
+	for id in bill.ids:
+		lines.append("%s  $%d" % [ClothingStock.item_name(id), ClothingStock.price(id)])
+	var b := Label.new()
+	b.text = "\n".join(lines) if not lines.is_empty() else "Nothing new. Pick a color marked $ to try it on."
+	if cash >= 0 and bill.total > cash:
+		b.text += "\nYou're $%d short." % (bill.total - cash)
+	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	b.add_theme_color_override("font_color", SUB if lines.is_empty() else Color(0.93, 0.95, 0.98))
+	_page.add_child(b)
