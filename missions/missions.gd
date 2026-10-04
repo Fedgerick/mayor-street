@@ -146,8 +146,11 @@ func _process(delta: float) -> void:
 
 func _tick_phone(delta: float) -> void:
 	if _ringing >= 0:
+		var before := _ring_t
 		_ring_t -= delta
 		var p := phones[_ringing]
+		if fmod(before, 5.0) < fmod(_ring_t, 5.0):  # the ring sound is one 4 s burst
+			_play_at("phone_ring", p, "notify")
 		if link.car() == null and MissionDirector.flat_dist(link.position(), p) < PHONE_RADIUS:
 			_answer_phone()
 		elif _ring_t <= 0.0:
