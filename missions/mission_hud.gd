@@ -4,7 +4,7 @@ extends Control
 ## corner: stars, cash, health). This draws:
 ##   top centre   the objective, the timer and what the job pays, plus an arrow and the
 ##                distance to the next marker
-##   top left     the goodness bar, from Kingpin to Hero, with the perk lines marked
+##   top left     the goodness bar (under main's key hint row), from Kingpin to Hero, with the perk lines marked
 ##   lower centre a call or radio offer, and quest news
 ##   mid screen   MISSION PASSED / FAILED
 ## The quest log (J) is a separate panel, QuestLog.
@@ -70,7 +70,7 @@ func _draw() -> void:
 	var m := d.active
 	if m:
 		var col := GOOD if m.side == "good" else BAD
-		var y := 40.0 * s
+		var y := 74.0 * s  # below the key hint row
 		_text(Vector2(0, y), m.title.to_upper(), int(17 * s), col, HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 		y += 32.0 * s
 		_text(Vector2(0, y), m.objective(), int(26 * s), Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, vp.x)
@@ -92,7 +92,7 @@ func _draw() -> void:
 			_draw_arrow(Vector2(vp.x * 0.5, y + 46.0 * s), s, col)
 	_draw_offer(vp, s)
 	if _news_t > 0.0:
-		_text(Vector2(0, vp.y * 0.66), _news, int(22 * s), Color(1, 1, 1, minf(_news_t, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, vp.x)
+		_text(Vector2(0, vp.y * 0.79), _news, int(22 * s), Color(1, 1, 1, minf(_news_t, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 	if _banner_t < 4.0:
 		var a := clampf(_banner_t * 3.0, 0.0, 1.0) * clampf((4.0 - _banner_t) * 1.5, 0.0, 1.0)
 		var big := int(64 * s)
@@ -119,8 +119,8 @@ func _draw_arrow(c: Vector2, s: float, col: Color) -> void:
 
 func _draw_goodness(s: float) -> void:
 	var g: Goodness = missions.goodness
-	var x := 28.0 * s
-	var y := 30.0 * s
+	var x := 24.0 * s
+	var y := 64.0 * s  # below the key hint row
 	var w := 240.0 * s
 	var h := 12.0 * s
 	var r := Rect2(x, y, w, h)
@@ -151,7 +151,19 @@ func _draw_offer(vp: Vector2, s: float) -> void:
 	var h := lines.y + 26.0 * s
 	var r := Rect2(vp.x * 0.5 - w * 0.5, vp.y * 0.86 - h, w, h)
 	var col := BAD if missions.offer_side() == "bad" else GOOD
-	draw_style_box(Hud.panel_style(Color(0.05, 0.07, 0.1, 0.86), int(12 * s)), r)
+	draw_style_box(panel_style(Color(0.05, 0.07, 0.1, 0.86), int(12 * s)), r)
 	draw_rect(Rect2(r.position, Vector2(5.0 * s, r.size.y)), col)
 	draw_multiline_string(_font, r.position + Vector2(18.0 * s, 28.0 * s), text, HORIZONTAL_ALIGNMENT_LEFT,
 		w - 32.0 * s, int(20 * s), -1, Color(0.95, 0.96, 0.98))
+
+
+static func panel_style(c: Color, radius: int) -> StyleBoxFlat:
+	## Same look as scripts/hud.gd panels; kept here so missions/ loads without the main HUD.
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c
+	sb.set_corner_radius_all(radius)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	return sb

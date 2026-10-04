@@ -134,6 +134,8 @@ func _generate(t: Dictionary, from: Vector3) -> Mission:
 	m.risk = _risk(m, route) if m.side == "bad" else 1.0
 	var p: Dictionary = t.get("pay", {})
 	var raw: float = (p.get("base", 0.0) + p.get("per_km", 0.0) * m.km()) * m.risk * goodness.pay_multiplier(m.side)
+	if t.get("stolen_goods", false):
+		raw *= progress.resident_perk("stolen_goods_price", 1.0)  # Hustler sells for more
 	m.pay = int(round(raw / 10.0)) * 10
 	m.city_bonus = t.get("city_bonus", 0)
 	m.goodness = t.get("goodness", 0)

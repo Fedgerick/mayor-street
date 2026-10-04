@@ -8,7 +8,7 @@ var _box: VBoxContainer
 
 
 func _ready() -> void:
-	theme = Hud.make_theme()
+	add_theme_stylebox_override("panel", MissionHud.panel_style(Color(0.07, 0.09, 0.13, 0.9), 14))
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	custom_minimum_size = Vector2(460, 0)
 	var scroll := VBoxContainer.new()
@@ -37,11 +37,11 @@ func refresh() -> void:
 			"active":
 				any = true
 				_line(q.title, 19, MissionHud.BAD if q.role == "bad" else (MissionHud.GOOD if q.role == "good" else Color(0.6, 0.95, 0.6)))
-				_line(q.desc, 14, Color(0.75, 0.78, 0.84))
+				_line(q.desc, 15, Color(0.75, 0.78, 0.84))
 				_line("> " + qe.step_text(q), 16, Color.WHITE)
 				var w := qe.waiting_on(q)
 				if w != "":
-					_line("   " + w, 14, Color(0.7, 0.85, 1.0))
+					_line("   " + w, 15, Color(0.7, 0.85, 1.0))
 			"done":
 				done.append(q)
 	if not any:
@@ -56,13 +56,13 @@ func refresh() -> void:
 	_line("", 8, Color.WHITE)
 	_line("Goodness: %s (%+d)" % [g.title(), int(round(g.value))], 17, Color(1, 1, 1))
 	for p in perks:
-		_line("  * " + p, 14, Color(0.85, 0.9, 0.7))
+		_line("  * " + p, 15, Color(0.85, 0.9, 0.7))
 	var next_good := g.next_line("good")
 	var next_bad := g.next_line("bad")
 	_line("Next perk at %s or %s.   J closes" % [("%+d" % next_good) if next_good else "-", ("%+d" % next_bad) if next_bad else "-"],
 		13, Color(0.6, 0.64, 0.7))
 	var d: MissionDirector = missions.director
-	_line("Jobs done: %d good, %d bad.  Failed: %d" % [d.stats.good, d.stats.bad, d.stats.failed], 13, Color(0.6, 0.64, 0.7))
+	_line("Jobs done: %d good, %d bad.  Failed: %d" % [d.stats.good, d.stats.bad, d.stats.failed], 14, Color(0.6, 0.64, 0.7))
 
 
 func _line(text: String, size: int, col: Color) -> void:
@@ -78,4 +78,4 @@ func _line(text: String, size: int, col: Color) -> void:
 func _process(_delta: float) -> void:
 	if visible:
 		var vs := get_viewport_rect().size
-		position = Vector2(vs.x * 0.5 - size.x * 0.5, vs.y * 0.14)
+		position = Vector2(vs.x * 0.5 - size.x * 0.5, vs.y * 0.2)

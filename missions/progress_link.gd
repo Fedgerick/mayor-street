@@ -120,5 +120,11 @@ func stat(key: String, default := 0.0) -> float:
 	return float(store.stats.get(key, default)) if store else default
 
 
+func resident_perk(key: String, default := 1.0) -> float:
+	## The Resident's background perk (creator/), e.g. Hustler's stolen_goods_price 1.25.
+	var r: Object = store.get_section("resident") if store else null
+	return float(r.perk(key, default)) if r and r.has_method("perk") else default
+
+
 func find_tagged(tag: String) -> Array:
 	return city.find_tagged(tag) if city.has_method("find_tagged") else []

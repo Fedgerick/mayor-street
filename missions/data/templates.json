@@ -154,7 +154,7 @@
 			"route": ["lot", "start"],
 			"pay": {"base": 200, "per_km": 160},
 			"time": {"base": 60, "per_km": 110},
-			"goodness": -4, "city_bonus": -30, "crime": 1
+			"goodness": -4, "city_bonus": -30, "stolen_goods": true, "crime": 1
 		},
 		{
 			"id": "getaway", "side": "bad", "giver": "payphone", "lean": 0,
@@ -192,7 +192,7 @@
 			"max_wanted": 1,
 			"pay": {"base": 350, "per_km": 260},
 			"time": {"base": 40, "per_km": 100},
-			"goodness": -6, "city_bonus": -40, "crime": 2
+			"goodness": -6, "city_bonus": -40, "stolen_goods": true, "crime": 2
 		},
 		{
 			"id": "racket", "side": "bad", "giver": "payphone", "lean": 50,
@@ -256,7 +256,7 @@
 			"route": ["lot", "end"],
 			"pay": {"base": 250, "per_km": 150},
 			"time": {"base": 60, "per_km": 110},
-			"goodness": -4, "city_bonus": -20, "crime": 1
+			"goodness": -4, "city_bonus": -20, "stolen_goods": true, "crime": 1
 		},
 		{
 			"id": "case_the_bank", "side": "bad", "giver": "payphone", "lean": 0, "quest_only": true,
