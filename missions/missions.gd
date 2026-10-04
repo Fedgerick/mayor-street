@@ -8,7 +8,8 @@ extends Node3D
 ##     add_child(missions)
 ##     missions.setup(city, street)
 ##
-## Keys: J quest log (either view); at street level Y takes a radio job, K abandons a job.
+## Keys: J quest log (either view); at street level Y takes a radio job, K abandons a job,
+## B bribes a nearby cop (bribe.gd).
 
 const PHONE_RADIUS := 2.6        # walk this close to a ringing phone to answer it
 const PHONE_MIN_M := 50.0        # a phone rings somewhere this far ...
@@ -28,6 +29,7 @@ var director: MissionDirector
 var quests: QuestEngine
 var hud: MissionHud
 var log_panel: QuestLog
+var bribe := Bribe.new()
 var phones: Array[Vector3] = []   # payphone handsets on the sidewalk
 
 var _layer: CanvasLayer
@@ -47,6 +49,7 @@ var _brief_side := ""
 var _brief_t := 0.0
 var _quest_t := 0.0
 var _phones_dirty := true
+var _bribe_state := ""           # Bribe.status() for the HUD hint
 var _rng := RandomNumberGenerator.new()
 
 
@@ -137,6 +140,9 @@ func _process(delta: float) -> void:
 		if not at_street:
 			return
 	_brief_t = maxf(0.0, _brief_t - delta)
+	bribe.tick(delta)
+	_bribe_state = bribe.status(link.wanted(), Bribe.cop_near(_police(), link.position()),
+		progress.cash(), city.game_day(), _free_bribes())
 	if director.active == null:
 		_tick_phone(delta)
 		_tick_radio(delta)
@@ -251,9 +257,58 @@ func _unhandled_input(e: InputEvent) -> void:
 		_radio_offer = null
 		director.start(m)
 		get_viewport().set_input_as_handled()
+	elif k.keycode == KEY_B and _bribe_state != "":
+		_try_bribe()
+		get_viewport().set_input_as_handled()
 	elif k.keycode == KEY_K and director.active:
 		director.abandon()
 		get_viewport().set_input_as_handled()
+
+
+# --------------------------------------------------------------------- bribe ---
+
+func _police() -> Object:
+	var life: Object = street.get("life") if street else null
+	return life.get("police") if life else null
+
+
+func _free_bribes() -> int:
+	return int(progress.resident_perk("free_bribes_per_day", 0.0))  # Ex-cop: 1
+
+
+func _try_bribe() -> void:
+	var stars := link.wanted()
+	match _bribe_state:
+		"too_hot":
+			hud.news("Nobody takes a bribe at %d stars" % stars, 2.5)
+		"cooldown":
+			hud.news("The cops are watching you too closely to try that again yet", 2.5)
+		"broke":
+			hud.news("Not enough cash for that ($%d)" % bribe.price(stars), 2.5)
+		"ok":
+			var free := bribe.free_left(city.game_day(), _free_bribes()) > 0
+			var cost := bribe.pay(stars, city.game_day(), _free_bribes())
+			progress.add_cash(-cost, "bribe")
+			link.set_wanted(0)
+			goodness.add(Bribe.GOODNESS, "bribe")
+			_play_ui("cash", "ui_select")
+			hud.news("An old friend on the force lets it slide" if free else
+				"The officer pockets $%d and looks the other way" % cost, 3.5)
+
+
+func bribe_hint() -> String:
+	## One line for the HUD while a bribe is possible.
+	var stars := link.wanted()
+	match _bribe_state:
+		"ok":
+			if bribe.free_left(city.game_day(), _free_bribes()) > 0:
+				return "B  Call in a favor (free, ex-cop)"
+			return "B  Bribe the cop  $%d" % bribe.price(stars)
+		"broke":
+			return "Bribe: $%d (not enough cash)" % bribe.price(stars)
+		"cooldown":
+			return "Bribe: wait %d s" % int(ceil(bribe.cooldown))
+	return ""
 
 
 # -------------------------------------------------------------------- events ---
@@ -547,9 +602,10 @@ func _make_phone(pos: Vector3, yaw: float) -> Node3D:
 
 func to_dict() -> Dictionary:
 	## Section "missions" in the save. Goodness, quests and counters live in Progress.
-	return {"director": director.to_dict(), "stand_ins": director.tags.to_dict()}
+	return {"director": director.to_dict(), "stand_ins": director.tags.to_dict(), "bribe": bribe.to_dict()}
 
 
 func from_dict(d: Dictionary) -> void:
 	director.from_dict(d.get("director", {}))
 	director.tags.from_dict(d.get("stand_ins", {}))
+	bribe.from_dict(d.get("bribe", {}))

@@ -7,6 +7,7 @@ extends Control
 ##   top left     the goodness bar (under main's key hint row), from Kingpin to Hero, with the perk lines marked
 ##   lower centre a call or radio offer, and quest news
 ##   mid screen   MISSION PASSED / FAILED
+##   bottom       the bribe hint (B) while a cop is close and you have 1 to 3 stars
 ## The quest log (J) is a separate panel, QuestLog.
 
 const GOOD := Color(0.35, 0.75, 1.0)
@@ -91,6 +92,10 @@ func _draw() -> void:
 		if arrow_dist >= 0.0:
 			_draw_arrow(Vector2(vp.x * 0.5, y + 46.0 * s), s, col)
 	_draw_offer(vp, s)
+	var bh: String = missions.bribe_hint()
+	if bh != "":
+		_text(Vector2(0, vp.y * 0.92), bh, int(22 * s), GOLD if bh.begins_with("B ") else Color(0.85, 0.85, 0.85),
+			HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 	if _news_t > 0.0:
 		_text(Vector2(0, vp.y * 0.79), _news, int(22 * s), Color(1, 1, 1, minf(_news_t, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 	if _banner_t < 4.0:

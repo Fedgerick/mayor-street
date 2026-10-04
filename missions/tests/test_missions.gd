@@ -4,6 +4,17 @@ extends SceneTree
 var failures := 0
 
 
+class FakeCop:
+	var pos: Vector3
+	func _init(p: Vector3) -> void:
+		pos = p
+
+
+class FakePolice:
+	var officers: Array = []
+	var cars: Array = []
+
+
 func check(cond: bool, what: String) -> void:
 	if cond:
 		print("  ok   ", what)
@@ -175,6 +186,25 @@ func _initialize() -> void:
 		m.target.take_hit()
 	d.tick(0.1)
 	check(m.state == Mission.State.PASSED, "wrecking the suspect passes")
+
+	# Bribes: price by stars, none at 4+, Ex-cop's one free a day, cooldown.
+	var br := Bribe.new()
+	check(br.status(0, true, 5000, 1, 0) == "", "no stars, no bribe")
+	check(br.status(2, false, 5000, 1, 0) == "", "no cop nearby, no bribe")
+	check(br.status(4, true, 5000, 1, 0) == "too_hot", "nobody takes a bribe at 4 stars")
+	check(br.status(3, true, 100, 1, 0) == "broke", "too poor for 3 stars")
+	check(br.status(2, true, 1000, 1, 0) == "ok" and br.pay(2, 1, 0) == 600, "2 stars cost $600")
+	check(br.status(1, true, 1000, 1, 0) == "cooldown", "a minute between bribes")
+	br.tick(61.0)
+	check(br.status(1, true, 0, 2, 1) == "ok", "ex-cop with no cash can still call in a favor")
+	check(br.pay(3, 2, 1) == 0, "the ex-cop favor is free")
+	br.tick(61.0)
+	check(br.status(1, true, 0, 2, 1) == "broke" and br.pay(1, 2, 1) == 250, "only one free bribe a day")
+	br.tick(61.0)
+	check(br.free_left(3, 1) == 1, "a new day brings a new favor")
+	var pol := FakePolice.new()
+	pol.officers = [FakeCop.new(Vector3(10, 0, 0))]
+	check(Bribe.cop_near(pol, Vector3.ZERO) and not Bribe.cop_near(pol, Vector3(30, 0, 0)), "cop within 12 m counts")
 
 	d.queue_free()
 	print("FAILED: %d" % failures if failures else "All missions tests passed")
