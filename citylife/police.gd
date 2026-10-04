@@ -49,6 +49,7 @@ class Officer:
 	var model: CharacterModel
 	var returning := false
 	var near := 0.0            # seconds spent next to a slow suspect
+	var shoot := 1.5           # seconds until the next shot (3+ stars)
 
 var city: City
 var net: RoadNet
@@ -75,6 +76,7 @@ var _car_mmi: MultiMeshInstance3D
 var _bar_mmi: MultiMeshInstance3D
 var _time := 0.0
 var _panic_timer := 0.0
+var _next_shot := 0.0
 
 const BAR_SHADER := """
 shader_type spatial;
@@ -513,6 +515,19 @@ func _run(o: Officer, dt: float) -> void:
 				busted.emit()
 		else:
 			o.near = 0.0
+	# From three stars, officers with a clear view shoot back.
+	if not o.returning and seen and _stars >= 3 and suspect and suspect.has_method("damage_player"):
+		o.shoot -= dt
+		var dist := o.pos.distance_to(sp)
+		# Shots across all officers are spaced out, so a crowd of cops doesn't melt you.
+		if o.shoot <= 0.0 and _time >= _next_shot and dist < 24.0 and has_line_of_sight(o.pos, sp):
+			o.shoot = rng.randf_range(1.6, 2.8)
+			_next_shot = _time + 0.9 - 0.1 * _stars
+			o.speed = 0.0
+			if rng.randf() < 0.45 - dist * 0.012:
+				suspect.damage_player(3.0 + _stars, o.pos)
+			if crowd:
+				crowd.panic(o.pos, 25.0, 8.0)
 	if o.model:
 		o.model.global_position = o.pos
 		if o.fwd.length_squared() > 0.01:

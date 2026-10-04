@@ -12,6 +12,9 @@ class Suspect:
 	var pos := Vector3.ZERO
 	var vel := Vector3.ZERO
 	var in_car := false
+	var hurt := 0.0
+	func damage_player(amount: float, _from := Vector3.ZERO) -> void:
+		hurt += amount
 	func suspect_position() -> Vector3:
 		return pos
 	func suspect_velocity() -> Vector3:
@@ -97,6 +100,7 @@ func _initialize() -> void:
 		max_off = maxi(max_off, life.police.officer_count())
 	check(max_cars <= Police.MAX_CARS and max_cars >= 5, "five stars: %d cop cars (cap 6)" % max_cars)
 	check(max_off <= Police.MAX_OFFICERS, "officers capped (%d of 8)" % max_off)
+	check(s.hurt > 0.0, "officers shoot back at five stars (%.0f damage)" % s.hurt)
 
 	# --- breaking line of sight -------------------------------------------------------
 	var hidden := false
