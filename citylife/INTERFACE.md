@@ -41,13 +41,13 @@ The suspect object needs `wanted_stars: int`, `suspect_position() -> Vector3`, `
 - `signal sighting_changed(seen: bool)`: a cop has, or lost, line of sight. Fade stars only while not seen.
 - `signal busted()`: an officer held a slow or stopped suspect for 1.2 s.
 - `seen`, `last_seen`, `cop_count()`, `officer_count()`, `siren_list()` (for siren audio: `[pos, fwd]` per car).
-- Dispatch: cars by stars `[0, 1, 2, 3, 5, 6]`, at most 6 cars and 8 officers. Cars come from the nearest station (`City.service_sites("police")` or `("police_hq")` when the services thread provides it; until then one stub station at the city centre). If no station is within 520 m, a patrol car turns up out of sight nearby.
+- Dispatch: cars by stars `[0, 1, 2, 3, 5, 6]`, at most 6 cars and 8 officers. Cars come from the nearest station: `CityServices.police_stations()` (each station's `road` point), read from `Progress.get_section("services")` or handed over with `life.set_services(services)`; else catalog buildings tagged `police`; else one stub station at the city centre. Stations are re-read every 2 s. If no station is within 520 m, a patrol car turns up out of sight nearby.
 - Line of sight is grid-based: any building tile between a cop and the suspect blocks it; range 75 m.
 
 Crowd and traffic:
 - `life.report_crime(pos, severity)`, with severity 1 for a punch up to 3 for gunfire: people nearby run away.
 - `life.traffic.nearest_car(pos, radius)` and `life.traffic.take_car(car) -> {xform, model, tint}` for carjacking; the driver jumps out and runs.
 - Traffic pulls over and stops for cop cars running sirens; cop cars drive down the centre line.
-- Garbage trucks (green, `car_truck`) run 6:00 to 15:00, 1 to 4 per city, starting at `service_sites("garbage")` depots when they exist, and stop along blocks to collect.
+- Garbage trucks (green, `car_truck`) run 6:00 to 15:00, 1 to 4 per city, starting at `CityServices.garbage_depots()` (else buildings tagged `garbage_depot`) when they exist, and stop along blocks to collect.
 
 Tests: `res://citylife/tests/test_police.gd`.

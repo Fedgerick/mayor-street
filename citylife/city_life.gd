@@ -183,16 +183,26 @@ func _garbage(dt: float) -> void:
 
 
 func _service_cells(kind: String) -> Array:
-	if kind == "garbage" and city.has_method("find_tagged"):
-		var out := []
-		for b in city.find_tagged("garbage_depot"):
-			out.append(Vector2i(b.x, b.y))
+	var out := []
+	var sv := police.services_object() if police else null
+	if kind == "garbage" and sv != null and sv.has_method("garbage_depots"):
+		for st in sv.garbage_depots():
+			var p = st.get("road", st.get("center"))
+			if p is Vector3:
+				out.append(city.world_to_cell(p))
 		if not out.is_empty():
 			return out
-	for host in [city, city.get("services") if "services" in city else null]:
-		if host != null and host.has_method("service_sites"):
-			return host.service_sites(kind)
-	return []
+	if kind == "garbage" and city.has_method("find_tagged"):
+		for b in city.find_tagged("garbage_depot"):
+			out.append(Vector2i(b.x, b.y))
+	return out
+
+
+## Optional: hand over the CityServices object (otherwise read from Progress).
+func set_services(s: Object) -> void:
+	if police:
+		police.services = s
+		police.refresh_stations()
 
 
 # ---------------------------------------------------------------- density ---

@@ -5,6 +5,15 @@ extends SceneTree
 var failures := 0
 
 
+class StubServices:
+	extends RefCounted
+	var spot := Vector3.ZERO
+	func police_stations() -> Array[Dictionary]:
+		return [{"id": 1, "kind": "police_station", "road": spot, "center": spot}]
+	func garbage_depots() -> Array[Dictionary]:
+		return [{"id": 2, "kind": "garbage_depot", "road": spot, "center": spot}]
+
+
 class Suspect:
 	extends RefCounted
 	signal wanted_changed(stars: int)
@@ -145,6 +154,18 @@ func _initialize() -> void:
 	var info: Dictionary = life.traffic.take_car(car)
 	check(life.traffic.cars.size() == before - 1 and info.has("xform") and info.model != "", "take_car hands the car over")
 	check(life.crowd.peds.size() == peds_before + 1, "the driver runs off as a pedestrian")
+
+	# --- stations from CityServices ------------------------------------------------
+	var sv := StubServices.new()
+	var road_i := -1
+	for i in life.net.mask.size():
+		if life.net.is_road(i) and life.net.junction[i] == 0:
+			road_i = i
+	sv.spot = life.net.center(road_i)
+	life.set_services(sv)
+	var want := life.city.world_to_cell(sv.spot)
+	check(life.police.stations == [want], "police stations come from CityServices")
+	check(life._service_cells("garbage") == [want], "garbage depots come from CityServices")
 
 	print("police: %s" % ("PASS" if failures == 0 else "%d FAILED" % failures))
 	quit(1 if failures > 0 else 0)

@@ -130,23 +130,40 @@ func setup(c: City, road_net: RoadNet, tr: Traffic, cr: Crowd) -> void:
 	refresh_stations()
 
 
-## Re-read police station cells: buildings tagged `police` in the catalog, else
-## service_sites("police") if a services object offers it, else one stub station near
-## the middle of the city.
+## Re-read police station cells: CityServices.police_stations() (the road tile each
+## station's cars leave from) when services exist, else buildings tagged `police` in the
+## catalog, else one stub station near the middle of the city.
 func refresh_stations() -> void:
 	stations.clear()
+	var sv := services_object()
+	if sv != null and sv.has_method("police_stations"):
+		for st in sv.police_stations():
+			var p = st.get("road", st.get("center"))
+			if p is Vector3:
+				stations.append(city.world_to_cell(p))
+			elif st.get("cell") is Vector2i:
+				stations.append(st.cell)
+		if not stations.is_empty():
+			return
 	if city.has_method("find_tagged"):
 		for b in city.find_tagged("police"):
 			stations.append(Vector2i(b.x, b.y))
 		if not stations.is_empty():
 			return
-	for host in [city, city.get("services") if "services" in city else null]:
-		if host != null and host.has_method("service_sites"):
-			for kind in ["police", "police_hq"]:
-				for cell in host.service_sites(kind):
-					stations.append(cell)
-			return
 	stations.append(city.center_cell())
+
+
+## The CityServices object: set explicitly, else Progress.get_section("services").
+var services: Object = null
+
+
+func services_object() -> Object:
+	if services != null and is_instance_valid(services):
+		return services
+	var prog := get_tree().root.get_node_or_null("Progress") if is_inside_tree() else null
+	if prog != null and prog.has_method("get_section"):
+		return prog.get_section("services")
+	return null
 
 
 func set_suspect(s: Object) -> void:
