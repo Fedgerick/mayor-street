@@ -6,7 +6,8 @@ Writes player/assets/character.glb.
 
 The body is sculpted from metaballs (soft, chunky shapes in the spirit of the city kit),
 skinned to a 16-bone armature with automatic weights, and given keyframed actions:
-Idle, Walk, Run, Jump, Fall, Sit, EnterCar, ExitCar. Materials are named slots
+Idle, Walk, Run, Jump, Fall, Sit, EnterCar, ExitCar,
+Punch, AimPistol, AimShotgun, Hit, Die, Carjack. Materials are named slots
 (Skin, Shirt, Pants, Shoes, Hair, Eyes) so the game can recolour each person.
 
 Conventions: the character faces -Y in Blender (glTF/Godot -Z), Z up, feet at Z = 0.
@@ -462,6 +463,112 @@ def exit_car(t):
     return p, off
 
 
+def smooth(x):
+    x = min(max(x, 0.0), 1.0)
+    return x * x * (3 - 2 * x)
+
+
+def punch(t):
+    """Right jab: wind up, snap out, recover."""
+    p = relaxed(base_pose())
+    if t < 0.3:
+        k = smooth(t / 0.3)
+        out = 0.0
+    elif t < 0.5:
+        k = 1.0
+        out = smooth((t - 0.3) / 0.2)
+    else:
+        k = 1.0 - smooth((t - 0.5) / 0.5)
+        out = k
+    guard = max(k, out)
+    p["UpperArm.L"] = Y(ARM_DOWN) @ X(-55 * guard)
+    p["LowerArm.L"] = X(-12 - 100 * guard)
+    p["UpperArm.R"] = Y(-ARM_DOWN + 25 * guard - 20 * out) @ X(-45 * guard - 45 * out)
+    p["LowerArm.R"] = X(-12 - 110 * guard * (1 - out) - 8 * out)
+    p["Chest"] = Z(-18 * k * (1 - out) + 22 * out)
+    p["Spine"] = X(6 * guard) @ Z(8 * out)
+    p["UpperLeg.L"] = X(-18 * guard)
+    p["LowerLeg.L"] = X(14 * guard)
+    p["UpperLeg.R"] = X(10 * guard)
+    return p, Vector((0, 0, -0.04 * guard))
+
+
+def aim_pistol(t):
+    w = math.sin(t * math.tau) * 0.8
+    p = relaxed(base_pose())
+    p["UpperArm.R"] = Y(-ARM_DOWN + 8) @ X(-86 + w)
+    p["LowerArm.R"] = X(-4)
+    p["Hand.R"] = X(4)
+    p["UpperArm.L"] = Y(ARM_DOWN - 30) @ X(-70 + w)
+    p["LowerArm.L"] = X(-55) @ Y(30)
+    p["Chest"] = Z(6)
+    p["Head"] = Z(-4)
+    return p, Vector()
+
+
+def aim_shotgun(t):
+    w = math.sin(t * math.tau) * 0.8
+    p = relaxed(base_pose())
+    p["UpperArm.R"] = Y(-ARM_DOWN + 2) @ X(-40 + w)
+    p["LowerArm.R"] = X(-70)
+    p["UpperArm.L"] = Y(ARM_DOWN - 26) @ X(-75 + w)
+    p["LowerArm.L"] = X(-15) @ Y(20)
+    p["Chest"] = Z(14)
+    p["Spine"] = Z(6)
+    p["Head"] = Z(-14)
+    return p, Vector()
+
+
+def hit(t):
+    k = math.sin(min(t / 0.9, 1.0) * math.pi)
+    p = relaxed(base_pose())
+    p["Spine"] = X(-14 * k)
+    p["Chest"] = X(-10 * k)
+    p["Head"] = X(-22 * k)
+    p["UpperArm.L"] = Y(ARM_DOWN - 25 * k) @ X(-20 * k)
+    p["UpperArm.R"] = Y(-ARM_DOWN + 25 * k) @ X(-20 * k)
+    p["UpperLeg.R"] = X(-15 * k)
+    p["LowerLeg.R"] = X(20 * k)
+    return p, Vector((0, 0.04 * k, -0.03 * k))
+
+
+def die(t):
+    """Stagger, fold at the knees and fall onto the back."""
+    k = smooth(t / 0.85)
+    knees = math.sin(min(t / 0.6, 1.0) * math.pi * 0.5) * (1 - smooth((t - 0.6) / 0.3))
+    p = relaxed(base_pose())
+    p["Hips"] = X(-88 * k)
+    p["Spine"] = X(10 * knees - 4 * k)
+    p["Head"] = X(30 * knees - 10 * k) @ Z(18 * k)
+    p["UpperLeg.L"] = X(-60 * knees + 75 * k - 10)
+    p["UpperLeg.R"] = X(-40 * knees + 85 * k)
+    p["LowerLeg.L"] = X(90 * knees + 15 * k)
+    p["LowerLeg.R"] = X(70 * knees + 5 * k)
+    p["UpperArm.L"] = Y(ARM_DOWN - 70 * k) @ X(-30 * knees)
+    p["UpperArm.R"] = Y(-ARM_DOWN + 55 * k) @ X(-40 * knees + 20 * k)
+    p["LowerArm.L"] = X(-30 * k)
+    p["LowerArm.R"] = X(-50 * k)
+    off = Vector((0, 0.35 * k, -0.35 * knees * (1 - k) - 0.78 * k))
+    return p, off
+
+
+def carjack(t):
+    """Reach for the door and haul the driver out."""
+    reach = smooth(t / 0.35)
+    pull = smooth((t - 0.35) / 0.4)
+    back = 1.0 - smooth((t - 0.8) / 0.2)
+    p = relaxed(base_pose())
+    for side, sg in (("L", 1), ("R", -1)):
+        p["UpperArm." + side] = Y((ARM_DOWN - 15 * reach) * sg) @ X(-80 * reach + 45 * pull * back)
+        p["LowerArm." + side] = X(-10 - 70 * pull * back)
+    p["Spine"] = X(20 * reach * (1 - pull) - 15 * pull * back)
+    p["Chest"] = Z(-25 * pull * back)
+    p["UpperLeg.L"] = X(-25 * reach)
+    p["LowerLeg.L"] = X(20 * reach)
+    p["UpperLeg.R"] = X(15 * pull * back)
+    return p, Vector((0, 0.08 * pull * back, -0.05 * reach))
+
+
 def build_actions(rig):
     make_action(rig, "Idle", 60, idle)
     make_action(rig, "Walk", 30, lambda t: gait(t, 0.0))
@@ -471,6 +578,12 @@ def build_actions(rig):
     make_action(rig, "Sit", 60, sit)
     make_action(rig, "EnterCar", 21, enter_car, loop=False)
     make_action(rig, "ExitCar", 21, exit_car, loop=False)
+    make_action(rig, "Punch", 13, punch, loop=False)
+    make_action(rig, "AimPistol", 40, aim_pistol)
+    make_action(rig, "AimShotgun", 40, aim_shotgun)
+    make_action(rig, "Hit", 11, hit, loop=False)
+    make_action(rig, "Die", 31, die, loop=False)
+    make_action(rig, "Carjack", 27, carjack, loop=False)
 
 
 # --------------------------------------------------------------------- main ---

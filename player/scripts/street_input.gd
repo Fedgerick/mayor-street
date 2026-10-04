@@ -17,6 +17,17 @@ const KEYS := {
 	"street_reset": [KEY_R],
 	"street_horn": [KEY_H],
 	"street_lights": [KEY_L],
+	"street_next_weapon": [KEY_Q],
+	"street_weapon_1": [KEY_1],
+	"street_weapon_2": [KEY_2],
+	"street_weapon_3": [KEY_3],
+}
+
+const MOUSE := {
+	"street_fire": [MOUSE_BUTTON_LEFT],
+	"street_aim": [MOUSE_BUTTON_RIGHT],
+	"street_next_weapon": [MOUSE_BUTTON_WHEEL_UP],
+	"street_prev_weapon": [MOUSE_BUTTON_WHEEL_DOWN],
 }
 
 const BUTTONS := {
@@ -27,6 +38,8 @@ const BUTTONS := {
 	"street_toggle_view": [JOY_BUTTON_BACK],
 	"street_reset": [JOY_BUTTON_X],
 	"street_horn": [JOY_BUTTON_LEFT_SHOULDER],
+	"street_next_weapon": [JOY_BUTTON_RIGHT_SHOULDER],
+	"street_prev_weapon": [JOY_BUTTON_DPAD_LEFT],
 }
 
 # action: [axis, sign]
@@ -37,6 +50,8 @@ const AXES := {
 	"street_right": [JOY_AXIS_LEFT_X, 1.0],
 	"street_throttle": [JOY_AXIS_TRIGGER_RIGHT, 1.0],
 	"street_brake": [JOY_AXIS_TRIGGER_LEFT, 1.0],
+	"street_fire": [JOY_AXIS_TRIGGER_RIGHT, 1.0],
+	"street_aim": [JOY_AXIS_TRIGGER_LEFT, 1.0],
 }
 
 static var _done := false
@@ -56,6 +71,12 @@ static func ensure() -> void:
 		_add(action)
 		for b in BUTTONS[action]:
 			var e := InputEventJoypadButton.new()
+			e.button_index = b
+			InputMap.action_add_event(action, e)
+	for action in MOUSE:
+		_add(action)
+		for b in MOUSE[action]:
+			var e := InputEventMouseButton.new()
 			e.button_index = b
 			InputMap.action_add_event(action, e)
 	for action in AXES:

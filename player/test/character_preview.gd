@@ -3,7 +3,7 @@ extends Node3D
 ##   godot --rendering-driver vulkan -w res://player/test/character_preview.tscn -- --out=preview.png [--t=0.25] [--side]
 
 const CHAR := preload("res://player/assets/character.glb")
-const ANIMS := ["Idle", "Walk", "Run", "Jump", "Fall", "Sit", "EnterCar", "ExitCar"]
+const ANIMS := ["Idle", "Walk", "Run", "Jump", "Fall", "Sit", "EnterCar", "ExitCar", "Punch", "AimPistol", "AimShotgun", "Hit", "Die", "Carjack"]
 
 
 func _ready() -> void:
@@ -35,7 +35,7 @@ func _ready() -> void:
 	for i in ANIMS.size():
 		var c: Node3D = CHAR.instantiate()
 		add_child(c)
-		c.position = Vector3((i - 3.5) * 1.3, 0, 0)
+		c.position = Vector3((i - 6.5) * 1.1, 0, 0)
 		if args.has("side"):
 			c.rotation.y = -PI * 0.5
 		var ap: AnimationPlayer = c.find_children("*", "AnimationPlayer", true, false)[0]
@@ -44,11 +44,11 @@ func _ready() -> void:
 		ap.pause()
 		var l := Label3D.new()
 		l.text = ANIMS[i]
-		l.position = Vector3((i - 3.5) * 1.3, 2.15, 0)
+		l.position = Vector3((i - 6.5) * 1.1, 2.15, 0)
 		l.pixel_size = 0.004
 		add_child(l)
 	var cam := Camera3D.new()
-	cam.position = Vector3(0, 1.4, 7.5)
+	cam.position = Vector3(0, 1.4, 10.5)
 	cam.rotation_degrees = Vector3(-6, 0, 0)
 	cam.fov = 55
 	add_child(cam)

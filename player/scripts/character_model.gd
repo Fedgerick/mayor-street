@@ -9,7 +9,9 @@ extends Node3D
 const SCENE := "res://player/assets/character.glb"
 const WALK_SPEED := 3.6     # m/s the Walk clip was authored for
 const RUN_SPEED := 7.2
-const LOOPS := ["Idle", "Walk", "Run", "Jump", "Fall", "Sit"]
+const LOOPS := ["Idle", "Walk", "Run", "Jump", "Fall", "Sit", "AimPistol", "AimShotgun"]
+const UPPER := ["Chest", "Neck", "Head", "UpperArm.L", "LowerArm.L", "Hand.L", "UpperArm.R", "LowerArm.R", "Hand.R"]
+enum Aim { NONE, PISTOL, SHOTGUN }
 
 const SKIN := [Color(0.98, 0.8, 0.66), Color(0.89, 0.66, 0.5), Color(0.7, 0.48, 0.34), Color(0.47, 0.31, 0.21), Color(0.99, 0.87, 0.76)]
 const SHIRT := [Color(0.9, 0.28, 0.22), Color(0.2, 0.47, 0.86), Color(0.98, 0.78, 0.2), Color(0.24, 0.68, 0.45), Color(0.95, 0.95, 0.93), Color(0.55, 0.3, 0.72), Color(0.13, 0.14, 0.17), Color(0.98, 0.55, 0.2)]
@@ -26,6 +28,10 @@ var _air := 0.0
 var _sit := 0.0
 var _sitting := false
 var _lean := 0.0
+var _aim := 0.0
+var _aim_kind := Aim.NONE
+var _dead := false
+var _dead_amt := 0.0
 
 
 static func available() -> bool:
@@ -110,7 +116,47 @@ func _build_tree() -> void:
 	bt.connect_node("EnterCar", 1, "EnterCar_clip")
 	bt.connect_node("ExitCar", 0, "EnterCar")
 	bt.connect_node("ExitCar", 1, "ExitCar_clip")
-	bt.connect_node("output", 0, "ExitCar")
+	# Weapons: an upper-body aim layer over whatever the legs are doing.
+	bt.add_node("aim_pistol", _clip("AimPistol"), Vector2(800, 300))
+	bt.add_node("aim_shotgun", _clip("AimShotgun"), Vector2(800, 400))
+	bt.add_node("aim_pick", AnimationNodeBlend2.new(), Vector2(1000, 350))
+	bt.connect_node("aim_pick", 0, "aim_pistol")
+	bt.connect_node("aim_pick", 1, "aim_shotgun")
+	var aim := AnimationNodeBlend2.new()
+	_upper_filter(aim)
+	bt.add_node("aim", aim, Vector2(1200, 100))
+	bt.connect_node("aim", 0, "ExitCar")
+	bt.connect_node("aim", 1, "aim_pick")
+	# Upper-body one-shots: punch and flinch.
+	var last := "aim"
+	var x := 1400
+	for k in ["Punch", "Hit"]:
+		var shot := AnimationNodeOneShot.new()
+		shot.fadein_time = 0.05
+		shot.fadeout_time = 0.12
+		_upper_filter(shot)
+		bt.add_node(k, shot, Vector2(x, 100))
+		bt.add_node(k + "_clip", _clip(k), Vector2(x - 200, 300))
+		bt.connect_node(k, 0, last)
+		bt.connect_node(k, 1, k + "_clip")
+		last = k
+		x += 200
+	# Full-body one-shot: hauling a driver out of a car.
+	var cj := AnimationNodeOneShot.new()
+	cj.fadein_time = 0.08
+	cj.fadeout_time = 0.15
+	bt.add_node("Carjack", cj, Vector2(x, 100))
+	bt.add_node("Carjack_clip", _clip("Carjack"), Vector2(x - 200, 300))
+	bt.connect_node("Carjack", 0, last)
+	bt.connect_node("Carjack", 1, "Carjack_clip")
+	# Death holds its last frame; the seek restarts it.
+	bt.add_node("die_clip", _clip("Die"), Vector2(x, 300))
+	bt.add_node("die_seek", AnimationNodeTimeSeek.new(), Vector2(x + 200, 300))
+	bt.connect_node("die_seek", 0, "die_clip")
+	bt.add_node("dead", AnimationNodeBlend2.new(), Vector2(x + 400, 100))
+	bt.connect_node("dead", 0, "Carjack")
+	bt.connect_node("dead", 1, "die_seek")
+	bt.connect_node("output", 0, "dead")
 	tree = AnimationTree.new()
 	tree.tree_root = bt
 	model.add_child(tree)
@@ -133,6 +179,12 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, turn: float)
 	tree.set("parameters/airmix/blend_amount", clampf(-vy / 3.0 + 0.3, 0.0, 1.0))
 	tree.set("parameters/air/blend_amount", _air)
 	tree.set("parameters/sit/blend_amount", _sit)
+	_aim = move_toward(_aim, 0.0 if _aim_kind == Aim.NONE else 1.0, delta * 8.0)
+	tree.set("parameters/aim/blend_amount", _aim)
+	if _aim_kind != Aim.NONE:
+		tree.set("parameters/aim_pick/blend_amount", 1.0 if _aim_kind == Aim.SHOTGUN else 0.0)
+	_dead_amt = move_toward(_dead_amt, 1.0 if _dead else 0.0, delta * 10.0)
+	tree.set("parameters/dead/blend_amount", _dead_amt)
 	# Bank into turns a little.
 	_lean = lerpf(_lean, clampf(-turn * speed * 0.02, -0.25, 0.25), 1.0 - exp(-8.0 * delta))
 	model.rotation.z = _lean
@@ -144,6 +196,51 @@ func set_sitting(on: bool) -> void:
 
 func play_enter_car() -> void:
 	tree.set("parameters/EnterCar/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+
+
+func _upper_filter(n: AnimationNode) -> void:
+	n.filter_enabled = true
+	for b in UPPER:
+		n.set_filter_path(NodePath("Rig/Skeleton3D:" + b), true)
+
+
+func set_aim(kind: int) -> void:
+	## Aim.NONE, Aim.PISTOL or Aim.SHOTGUN: raises the arms over the locomotion.
+	_aim_kind = kind
+
+
+func play_punch() -> void:
+	tree.set("parameters/Punch/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+
+
+func play_hit() -> void:
+	tree.set("parameters/Hit/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+
+
+func play_carjack() -> void:
+	tree.set("parameters/Carjack/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+
+
+func set_dead(on: bool) -> void:
+	## Falls down and stays down until set_dead(false).
+	if on and not _dead:
+		tree.set("parameters/die_seek/seek_request", 0.0)
+	_dead = on
+	if on:
+		_dead_amt = 1.0
+		tree.set("parameters/dead/blend_amount", 1.0)
+
+
+## Hand bone attachment for held items (weapons). Created on first use.
+func hand_socket() -> Node3D:
+	var skel: Skeleton3D = model.find_children("*", "Skeleton3D", true, false)[0]
+	if skel.has_node("HandSocket"):
+		return skel.get_node("HandSocket")
+	var ba := BoneAttachment3D.new()
+	ba.name = "HandSocket"
+	ba.bone_name = "Hand.R"
+	skel.add_child(ba)
+	return ba
 
 
 func play_exit_car() -> void:

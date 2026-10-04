@@ -8,9 +8,15 @@ extends VehicleBody3D
 ## layout are turned 180 degrees inside the body and `forward()` returns +Z.
 
 signal driver_changed(driver: Node)
+signal damaged(amount: float)
+signal exploded(car: DrivableCar)
 
 const LAYER := 2    # cars live on physics layer 2
 const SAG := 0.15   # expected suspension compression at rest, so the kit wheels sit on the road
+const MAX_HEALTH := 1000.0
+const SMOKE_AT := 400.0     # engine smokes below this
+const BURN_SECONDS := 4.5   # on fire this long before it blows
+const CRASH_DV := 7.0       # a sudden speed change above this (m/s) dents the car
 
 const MODELS := {
 	# model: [wheel radius, front axle z, rear axle z, half track, mass, max engine force, top speed m/s]
@@ -39,6 +45,14 @@ var _upside_down := 0.0
 var _brake_lights: Array[MeshInstance3D] = []
 var _lights: Array[Light3D] = []
 var _aabb := AABB()
+var health := MAX_HEALTH
+var burning := false
+var wrecked := false
+var _burn := 0.0
+var _last_vel := Vector3.ZERO
+var _smoke: CPUParticles3D
+var _fire: CPUParticles3D
+var _mm: MultiMesh
 
 
 func _ready() -> void:
@@ -99,6 +113,7 @@ func _build_visual() -> void:
 	mm.set_instance_transform(0, Transform3D.IDENTITY)
 	mm.set_instance_color(0, tint)
 	mm.set_instance_custom_data(0, Color(0, 0, 0, randf()))
+	_mm = mm
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = "Body"
 	mmi.multimesh = mm
@@ -230,7 +245,63 @@ func exit_point() -> Vector3:
 	return global_position + left * (_aabb.size.x * 0.5 + 0.7) + forward() * (0.3 if model != "car_truck" else 2.2) + Vector3.UP * 0.2
 
 
+func take_hit(amount: float, _from_pos := Vector3.ZERO, _dir := Vector3.ZERO) -> void:
+	## Bullets, crashes and blasts. Below SMOKE_AT it smokes; at 0 it catches fire and
+	## explodes a few seconds later.
+	if wrecked or amount <= 0.0:
+		return
+	health = maxf(health - amount, 0.0)
+	damaged.emit(amount)
+	if health < SMOKE_AT and _smoke == null:
+		_smoke = StreetFx.smoke(health < SMOKE_AT * 0.5)
+		add_child(_smoke)
+		_smoke.position = Vector3(0, _aabb.size.y * 0.6, _aabb.size.z * 0.38)
+	if health <= 0.0 and not burning:
+		burning = true
+		_burn = 0.0
+		_fire = StreetFx.fire()
+		add_child(_fire)
+		_fire.position = Vector3(0, _aabb.size.y * 0.55, _aabb.size.z * 0.35)
+
+
+func explode() -> void:
+	if wrecked:
+		return
+	wrecked = true
+	burning = false
+	health = 0.0
+	if _fire:
+		_fire.emitting = false
+	if _smoke == null:
+		_smoke = StreetFx.smoke(true)
+		add_child(_smoke)
+		_smoke.position = Vector3(0, _aabb.size.y * 0.6, 0)
+	StreetFx.explosion(get_parent(), global_position)
+	_mm.set_instance_color(0, Color(0.06, 0.055, 0.05))
+	for l in _lights:
+		l.visible = false
+	for w in _wheels:
+		w.engine_force = 0.0
+		w.brake = brake_force
+	apply_central_impulse(Vector3.UP * mass * 4.5)
+	apply_torque_impulse(Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * mass * 1.2)
+	exploded.emit(self)
+
+
 func _physics_process(delta: float) -> void:
+	# Crash damage from sudden changes in velocity.
+	var dv := (linear_velocity - _last_vel).length()
+	_last_vel = linear_velocity
+	if dv > CRASH_DV and delta > 0.0:
+		take_hit((dv - CRASH_DV) * 28.0)
+	if burning:
+		_burn += delta
+		if _burn >= BURN_SECONDS:
+			explode()
+	if wrecked:
+		for b in _brake_lights:
+			b.visible = false
+		return
 	var v := speed()
 	var hb := false
 	if driver != null:
@@ -288,4 +359,5 @@ func reset_upright() -> void:
 	global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(p.x, maxf(p.y, 0.0) + 1.0, p.z))
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
+	_last_vel = Vector3.ZERO
 	_upside_down = 0.0

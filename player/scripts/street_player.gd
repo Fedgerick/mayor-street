@@ -4,6 +4,8 @@ extends CharacterBody3D
 ## input buffering, curb step-up, and a third-person boom (OrbitRig).
 
 signal interact_requested
+signal damaged(amount: float, from_pos: Vector3)
+signal died
 
 @export var walk_speed := 3.6
 @export var sprint_speed := 7.2
@@ -14,6 +16,10 @@ signal interact_requested
 @export var step_height := 0.32
 @export var look_seed := 7
 
+const MAX_HEALTH := 100.0
+const MAX_ARMOR := 100.0
+const ARMOR_SHARE := 0.66   # armor soaks this much of each hit while it lasts
+
 const COYOTE := 0.12
 const JUMP_BUFFER := 0.14
 
@@ -22,6 +28,11 @@ var in_vehicle := false
 var rig: OrbitRig
 var visual: CharacterModel
 var puppet := false   # visible but driven by StreetMode (getting in or out of a car)
+var health := MAX_HEALTH
+var armor := 0.0
+var dead := false
+var aiming := false   # set by StreetCombat: face where the camera looks, walk only
+var aim_yaw := 0.0
 
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
 var _since_floor := 0.0
@@ -115,8 +126,8 @@ func _unhandled_input(e: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	var input := StreetInput.move_vector() if controls_enabled else Vector2.ZERO
 	var wish := rig.right_flat() * input.x + rig.forward_flat() * input.y
-	var sprinting := controls_enabled and Input.is_action_pressed("street_sprint")
-	var target_speed := (sprint_speed if sprinting else walk_speed) * minf(input.length(), 1.0)
+	var sprinting := controls_enabled and Input.is_action_pressed("street_sprint") and not aiming
+	var target_speed := (sprint_speed if sprinting else walk_speed * (0.75 if aiming else 1.0)) * minf(input.length(), 1.0)
 
 	if is_on_floor():
 		_since_floor = 0.0
@@ -149,7 +160,9 @@ func _physics_process(delta: float) -> void:
 
 	# Face the direction of travel.
 	var prev := _facing
-	if hv.length() > 0.4:
+	if aiming:
+		_facing = lerp_angle(_facing, aim_yaw, 1.0 - exp(-24.0 * delta))
+	elif hv.length() > 0.4:
 		_facing = lerp_angle(_facing, atan2(-hv.x, -hv.z), 1.0 - exp(-turn_speed * delta))
 	_turn_rate = lerpf(_turn_rate, wrapf(_facing - prev, -PI, PI) / maxf(delta, 1e-4), 0.2)
 	visual.rotation.y = _facing
@@ -190,3 +203,40 @@ func _try_step(from_pos: Vector3, motion: Vector3) -> bool:
 
 func facing_yaw() -> float:
 	return _facing
+
+
+func hurt(amount: float, from_pos := Vector3.ZERO) -> bool:
+	## Take damage; armor soaks most of it first. Returns true if this hit killed.
+	if dead or amount <= 0.0:
+		return false
+	var soak := minf(armor, amount * ARMOR_SHARE)
+	armor -= soak
+	health = maxf(health - (amount - soak), 0.0)
+	damaged.emit(amount, from_pos)
+	if health <= 0.0:
+		dead = true
+		died.emit()
+		return true
+	if amount >= 8.0:
+		visual.play_hit()
+	return false
+
+
+func heal(amount: float) -> bool:
+	if health >= MAX_HEALTH:
+		return false
+	health = minf(health + amount, MAX_HEALTH)
+	return true
+
+
+func add_armor(amount: float) -> bool:
+	if armor >= MAX_ARMOR:
+		return false
+	armor = minf(armor + amount, MAX_ARMOR)
+	return true
+
+
+func revive() -> void:
+	dead = false
+	health = MAX_HEALTH
+	visual.set_dead(false)
