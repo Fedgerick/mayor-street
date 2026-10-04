@@ -5,7 +5,7 @@ extends PanelContainer
 
 signal chosen(kind: String)
 
-const ENTRY_SIZE := Vector2(214, 74)
+const ENTRY_SIZE := Vector2(214, 80)
 
 var city: City
 var group := "power"
@@ -95,27 +95,25 @@ func _entry(id: String) -> Button:
 	var d := Catalog.get_def(id)
 	var b := Button.new()
 	b.custom_minimum_size = ENTRY_SIZE
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	b.add_theme_font_size_override("font_size", 15)
 	var built: bool = d.unique and city != null and not city.specials_of(id).is_empty()
 	var unlocked: bool = Hud.progress().is_unlocked(id)
 	var open_: bool = unlocked and not built
-	var line2 := ""
-	if built:
-		line2 = "Already built"
-	elif not unlocked:
-		line2 = Catalog.lock_text(id)
-	else:
-		line2 = _price(d)
-	b.text = "%s\n%s" % [d.name, line2]
 	b.disabled = not open_
 	if not open_:
-		b.add_theme_color_override("font_disabled_color", Color(0.55, 0.58, 0.64))
-		b.add_theme_stylebox_override("disabled", Hud.panel_style(Color(0.12, 0.13, 0.16, 0.85), 10))
-	else:
-		b.add_theme_color_override("font_color", d.accent.lerp(Color.WHITE, 0.55))
-	b.tooltip_text = ""
+		b.add_theme_stylebox_override("disabled", Hud.panel_style(Color(0.11, 0.12, 0.15, 0.7), 10))
+	# Name on top, then the price (or what unlocks it) in smaller type.
+	var v := VBoxContainer.new()
+	v.set_anchors_preset(Control.PRESET_FULL_RECT)
+	v.offset_left = 12.0
+	v.offset_right = -10.0
+	v.offset_top = 8.0
+	v.offset_bottom = -6.0
+	v.add_theme_constant_override("separation", 2)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(v)
+	var detail := "Already built" if built else (Catalog.lock_text(id) if not unlocked else _price(d))
+	_line(v, d.name, 15, d.accent.lerp(Color.WHITE, 0.55) if open_ else Color(0.56, 0.59, 0.66))
+	_line(v, detail, 13, Color(0.78, 0.82, 0.9) if open_ else Color(0.5, 0.53, 0.6))
 	b.mouse_entered.connect(func(): _desc.text = d.desc)
 	b.pressed.connect(func():
 		visible = false
@@ -123,15 +121,27 @@ func _entry(id: String) -> Button:
 	return b
 
 
+static func _line(parent: Control, text: String, font_size: int, color: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", font_size)
+	l.add_theme_color_override("font_color", color)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(l)
+	return l
+
+
+## "$1,500 · 1x1" over "earns $8 a day".
 static func _price(d: Dictionary) -> String:
 	var cost := "$" + Catalog.thousands(int(d.cost))
 	if d.placement == "line":
-		return cost + " a tile"
-	var size := "sidewalk" if d.size == 0 else "%dx%d" % [d.size, d.size]
+		return cost + " a tile, dragged like a road"
+	var size := "on a sidewalk" if d.size == 0 else "%dx%d" % [d.size, d.size]
 	var up := int(d.upkeep)
 	var per_day := ""
 	if up > 0:
-		per_day = "  ·  $%d a day" % up
+		per_day = "\n$%d a day to run" % up
 	elif up < 0:
-		per_day = "  ·  earns $%d a day" % -up
+		per_day = "\nearns $%d a day" % -up
 	return "%s  ·  %s%s" % [cost, size, per_day]

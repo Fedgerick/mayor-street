@@ -88,6 +88,32 @@ func _run() -> void:
 	await _frames(1)
 	check(not main.menu.is_open and not paused, "clicking Resume closes the menu")
 
+	# B opens the build menu: open entries take a click, locked ones say what unlocks them.
+	var bm = hud.build_menu
+	_key(KEY_B)
+	await _frames(1)
+	check(bm.visible, "B opens the build menu")
+	bm.show_group("landmarks")
+	await _frames(1)
+	var locked := 0
+	for e in bm._grid.get_children():
+		if e is Button and e.disabled:
+			locked += 1
+	check(locked > 0, "locked landmarks are greyed out (%d)" % locked)
+	bm.show_group("parks")
+	await _frames(1)
+	_click(bm._grid.get_child(0))
+	await _frames(1)
+	check(main.tool == 6 and main.build_kind == "small_park" and not bm.visible, "clicking an entry puts that building in hand")
+	_key(KEY_ESCAPE)
+	await _frames(1)
+	check(main.tool == 0 and not main.menu.is_open, "Esc puts the building down")
+	_key(KEY_B)
+	await _frames(1)
+	_key(KEY_ESCAPE)
+	await _frames(1)
+	check(not bm.visible and not main.menu.is_open, "Esc closes the build menu before the Esc menu")
+
 	_key(KEY_TAB, true)
 	await _frames(1)
 	check(not main.in_street(), "Alt+Tab is left to the system")

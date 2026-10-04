@@ -35,6 +35,7 @@ var start_panel: Control
 var tax_label: Label
 var lbl_tier: Label
 var build_menu: BuildMenu
+var _title_hidden: Array[Control] = []
 var _toast_bad: StyleBoxFlat
 var _toast_good: StyleBoxFlat
 
@@ -275,7 +276,7 @@ func _build_side() -> void:
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD
 	v.add_child(info)
 	var help := Label.new()
-	help.text = "Tab  dive to the street and back\nWASD pan · Q/E or right-drag rotate\nwheel zoom · middle-drag grab\nSpace pause · N skip 1 hour\nF11 full screen · Esc menu"
+	help.text = "Tab  dive to the street and back\nWASD pan · Q/E or right-drag rotate\nwheel zoom · middle-drag grab\nSpace pause · N skip 1 hour\nB build menu · J quest log\nF11 full screen · Esc menu"
 	help.add_theme_font_size_override("font_size", 12)
 	help.add_theme_color_override("font_color", Color(0.55, 0.6, 0.7))
 	v.add_child(help)
@@ -286,6 +287,11 @@ func _tax(d: float) -> void:
 
 
 func show_start() -> void:
+	# Just the menu over the slowly turning island: the city panels come in with the game.
+	for c in root.get_children():
+		if c is Control and c.visible and c != toast:
+			c.visible = false
+			_title_hidden.append(c)
 	start_panel = PanelContainer.new()
 	start_panel.set_anchors_preset(Control.PRESET_CENTER)
 	start_panel.position = Vector2(-260, -150)
@@ -301,7 +307,7 @@ func show_start() -> void:
 	t.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
 	v.add_child(t)
 	var s := Label.new()
-	s.text = "City sandbox · build roads, zone land, watch New Harbor grow"
+	s.text = "Run New Harbor from above. Live in it down on the street."
 	s.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	s.add_theme_color_override("font_color", Color(0.7, 0.76, 0.85))
 	v.add_child(s)
@@ -351,6 +357,9 @@ func _show_load() -> void:
 func _close_start(demo: bool) -> void:
 	start_panel.queue_free()
 	start_panel = null
+	for c in _title_hidden:
+		c.visible = true
+	_title_hidden.clear()
 	start_chosen.emit(demo)
 
 
