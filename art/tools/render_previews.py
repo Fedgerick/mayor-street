@@ -432,7 +432,7 @@ def shot_extras():
     render("kit_extras")
 
 
-def frame(root, res, yaw=-35.0, pitch=28.0, lens=50, pad=1.08):
+def frame(root, res, yaw=-25.0, pitch=18.0, lens=50, pad=1.08):
     """Point a camera at root's bounding sphere from a 3/4 view."""
     pts = []
     for ob in [root] + list(root.children_recursive):
@@ -484,7 +484,19 @@ def shot_thumbs(names=None, out="kit_thumbs", cols=6, cell=(480, 400)):
     print("wrote", out)
 
 
-SHOTS = {"thumbs": shot_thumbs, "extras": shot_extras, "sheet": shot_sheet, "street": shot_street, "props": shot_props,
+def shot_specials():
+    """Contact sheet of every special building in art/specials.json."""
+    import json
+    with open(os.path.join(GAME, "art", "specials.json")) as f:
+        entries = json.load(f)["specials"]
+    names = []
+    for e in entries:
+        sub, n = e["model"].split("assets/kit/")[1][:-4].split("/")
+        names.append((sub, n))
+    shot_thumbs(names, "specials_thumbs", cols=6)
+
+
+SHOTS = {"thumbs": shot_thumbs, "specials": shot_specials, "extras": shot_extras, "sheet": shot_sheet, "street": shot_street, "props": shot_props,
          "night": lambda: shot_street(True, "street_night")}
 
 if __name__ == "__main__":

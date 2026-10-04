@@ -118,7 +118,7 @@
     "robbable"
    ],
    "model": "res://assets/kit/specials/gas_station.glb",
-   "interior": "shop",
+   "interior": "shop_gas",
    "door": {
     "x": 0.0,
     "z": -1.5,
@@ -139,7 +139,7 @@
     "robbable"
    ],
    "model": "res://assets/kit/specials/pawn_shop.glb",
-   "interior": "shop",
+   "interior": "shop_pawn",
    "door": {
     "x": 1.6,
     "z": 3.0,
@@ -159,7 +159,7 @@
     "robbable"
    ],
    "model": "res://assets/kit/specials/diner.glb",
-   "interior": "shop",
+   "interior": "shop_diner",
    "door": {
     "x": -0.3,
     "z": 2.9,
@@ -273,6 +273,27 @@
    "door": null,
    "folder": "specials",
    "tris": 2516
+  },
+  {
+   "id": "warehouse",
+   "name": "Pier 4 Warehouse",
+   "size": 1,
+   "tier": 2,
+   "tags": [
+    "warehouse",
+    "storage",
+    "hideout",
+    "industry"
+   ],
+   "model": "res://assets/kit/specials/warehouse.glb",
+   "interior": null,
+   "door": {
+    "x": 3.6,
+    "z": 2.6,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 2280
   },
   {
    "id": "bunker",
