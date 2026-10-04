@@ -276,7 +276,7 @@
 			"goodness": -2, "city_bonus": 0, "crime": 0
 		},
 		{
-			"id": "raid_den", "side": "good", "giver": "radio", "lean": 0, "quest_only": true,
+			"id": "raid_den", "side": "good", "giver": "radio", "lean": 0, "quest_only": true, "special": "crime_den", "resolves": "end",
 			"title": "Raid on {end}",
 			"brief": "Dispatch: {start} is going in on {end}. They want backup on the door.",
 			"slots": {
@@ -291,6 +291,151 @@
 			"pay": {"base": 300, "per_km": 120},
 			"time": {"base": 50, "per_km": 80},
 			"goodness": 6, "city_bonus": 200
+		},
+		{
+			"id": "evict_squatters", "side": "good", "giver": "radio", "lean": 0, "special": "abandoned_warehouse", "resolves": "end",
+			"title": "Squatters at {end}",
+			"brief": "Dispatch: {start} says there's trouble at {end}. Get them out before somebody gets hurt.",
+			"slots": {
+				"start": {"tag": "police"},
+				"end": {"tag": "abandoned_warehouse", "from": "start"}
+			},
+			"steps": [
+				{"do": "goto", "at": "end", "text": "Get to {end}"},
+				{"do": "hold", "at": "end", "seconds": 8, "radius": 14, "car": false, "text": "Clear the squatters out"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 150, "per_km": 90},
+			"time": {"base": 60, "per_km": 90},
+			"goodness": 3, "city_bonus": 80
+		},
+		{
+			"id": "drug_lab", "side": "bad", "giver": "payphone", "lean": 0, "special": "abandoned_warehouse", "resolves": "start",
+			"title": "Take over {start}",
+			"brief": "\"Somebody's cooking in {start}. Run them off, grab the gear and get it to {end}.\"",
+			"slots": {
+				"start": {"tag": "abandoned_warehouse"},
+				"end": {"tag": "hideout", "from": "start", "min_m": 150}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Get to {start}"},
+				{"do": "hold", "at": "start", "seconds": 10, "radius": 14, "car": false, "text": "Take over the lab"},
+				{"do": "wanted", "stars": 2},
+				{"do": "goto", "at": "end", "car": true, "clean": true, "text": "Lose the heat and get the gear to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 500, "per_km": 250},
+			"time": {"base": 120, "per_km": 110},
+			"goodness": -7, "city_bonus": -80, "crime": 3
+		},
+		{
+			"id": "join_den", "side": "bad", "giver": "payphone", "lean": 0, "special": "crime_den",
+			"title": "Work for {start}",
+			"brief": "\"The boys at {start} want to see what you're made of. Shake down {end} and bring the take back.\"",
+			"slots": {
+				"start": {"tag": "crime_den"},
+				"end": {"tag": "shop", "from": "start", "min_m": 100, "max_m": 800}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Meet the crew at {start}"},
+				{"do": "goto", "at": "end", "text": "Go to {end}"},
+				{"do": "hold", "at": "end", "seconds": 5, "car": false, "text": "Shake down the owner"},
+				{"do": "wanted", "stars": 1},
+				{"do": "goto", "at": "start", "text": "Bring the take to {start}"}
+			],
+			"route": ["start", "end", "start"],
+			"pay": {"base": 250, "per_km": 180},
+			"time": {"base": 90, "per_km": 100},
+			"goodness": -5, "city_bonus": -40, "crime": 2
+		},
+		{
+			"id": "firefight", "side": "good", "giver": "radio", "lean": 0, "special": "burning_building", "resolves": "end",
+			"title": "{end}",
+			"brief": "Dispatch: a building's going up and {start} is across town. Get there and get people out!",
+			"slots": {
+				"start": {"tag": "fire_station"},
+				"end": {"tag": "burning_building"}
+			},
+			"steps": [
+				{"do": "goto", "at": "end", "text": "Race to the fire"},
+				{"do": "hold", "at": "end", "seconds": 12, "radius": 16, "car": false, "text": "Fight the fire and pull people out"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 200, "per_km": 120},
+			"time": {"base": 45, "per_km": 70},
+			"goodness": 6, "city_bonus": 150
+		},
+		{
+			"id": "stunt_driving", "side": "good", "giver": "radio", "lean": 0, "special": "film_shoot", "resolves": "start",
+			"title": "Stunt driver at {start}",
+			"brief": "Dispatch, unofficially: the {start} crew lost their stunt driver. Hit every mark, fast.",
+			"slots": {
+				"start": {"tag": "film_shoot"},
+				"end": {"tag": "shop", "from": "start", "min_m": 100, "max_m": 500}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": true, "text": "Drive onto the set at {start}"},
+				{"do": "collect", "at": "start", "count": 4, "spread_m": 90, "text": "Hit the marks ({left} left)"},
+				{"do": "goto", "at": "start", "car": true, "text": "Back to set for the wrap"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 300, "per_km": 0},
+			"time": {"base": 75},
+			"goodness": 1, "city_bonus": 60
+		},
+		{
+			"id": "return_cash", "side": "good", "giver": "radio", "lean": 0, "special": "armored_truck", "resolves": "start",
+			"title": "Cash spill on {start}",
+			"brief": "Dispatch: {start}, money everywhere. Bag it and return it to {end}.",
+			"slots": {
+				"start": {"tag": "armored_truck"},
+				"end": {"tag": "bank", "from": "start"}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Get to the crash"},
+				{"do": "hold", "at": "start", "seconds": 4, "car": false, "text": "Bag the cash"},
+				{"do": "goto", "at": "end", "text": "Return the cash to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 150, "per_km": 100},
+			"time": {"base": 60, "per_km": 90},
+			"goodness": 6, "city_bonus": 300
+		},
+		{
+			"id": "grab_cash", "side": "bad", "giver": "payphone", "lean": 0, "special": "armored_truck", "resolves": "start",
+			"title": "Grab the cash on {start}",
+			"brief": "\"Armored truck flipped: {start}. Cops aren't there yet. Bag what you can and get it to {end}.\"",
+			"slots": {
+				"start": {"tag": "armored_truck"},
+				"end": {"tag": "hideout", "from": "start", "min_m": 150}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Get to the crash"},
+				{"do": "hold", "at": "start", "seconds": 4, "car": false, "text": "Bag the cash"},
+				{"do": "wanted", "stars": 2},
+				{"do": "goto", "at": "end", "text": "Get the cash to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 800, "per_km": 300},
+			"time": {"base": 90, "per_km": 110},
+			"goodness": -8, "city_bonus": -200, "crime": 3
+		},
+		{
+			"id": "substation_fix", "side": "good", "giver": "radio", "lean": 0, "special": "substation", "resolves": "end",
+			"title": "{end}",
+			"brief": "Dispatch: {start} reports a failed substation. Whole blocks are dark. Get it running.",
+			"slots": {
+				"start": {"tag": "power_plant"},
+				"end": {"tag": "substation"}
+			},
+			"steps": [
+				{"do": "goto", "at": "end", "text": "Get to the substation"},
+				{"do": "hold", "at": "end", "seconds": 8, "radius": 10, "car": false, "text": "Reset the breakers"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 150, "per_km": 100},
+			"time": {"base": 50, "per_km": 80},
+			"goodness": 3, "city_bonus": 150
 		}
 	]
 }

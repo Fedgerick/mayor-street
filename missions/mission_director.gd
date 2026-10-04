@@ -19,6 +19,9 @@ signal updated(m: Mission)  # chase hit, pile collected
 
 const TEMPLATES_PATH := "res://missions/data/templates.json"
 const GOTO_RADIUS := 9.0
+## Tags with only one or two buildings, where a too-short trip still beats no job.
+const SPARSE_TAGS := ["crime_den", "abandoned_warehouse", "burning_building", "film_shoot", "armored_truck",
+	"substation", "bank", "hideout", "police_hq", "hospital"]
 const CAR_NAMES := {"car_sedan": "sedan", "car_hatch": "hatchback", "car_van": "van", "car_truck": "pickup truck"}
 
 var city: City
@@ -59,8 +62,8 @@ func load_templates(path := TEMPLATES_PATH) -> void:
 
 func eligible(t: Dictionary) -> bool:
 	## Whether this template can be offered right now (flags and goodness lean).
-	if t.get("quest_only", false):
-		return false
+	if t.get("quest_only", false) or t.has("special"):
+		return false  # handed out by quests and by spawned specials only
 	if t.has("unlock") and not progress.is_unlocked(t.unlock):
 		return false
 	var lean: float = t.get("lean", 0)
@@ -170,6 +173,7 @@ func _first_slot(t: Dictionary) -> String:
 func _pick(spec: Dictionary, fields: Dictionary, used: Array, from_cell: Vector2i) -> Dictionary:
 	var cands: Array[Dictionary] = []
 	var near: Array[Dictionary] = []  # in range except for max_m, as a fallback
+	var close: Array[Dictionary] = []  # nearer than min_m, the last resort
 	var field: PackedInt32Array = fields.get(spec.get("from", ""), PackedInt32Array())
 	var player_field := PackedInt32Array()
 	if spec.has("near_player_m") and from_cell.x >= 0:
@@ -190,7 +194,11 @@ func _pick(spec: Dictionary, fields: Dictionary, used: Array, from_cell: Vector2
 				continue
 		if not field.is_empty():
 			var tiles := field[city.idx(cell.x, cell.y)]
-			if tiles < 0 or tiles * City.TILE < spec.get("min_m", 0.0):
+			if tiles < 0:
+				continue
+			if tiles * City.TILE < spec.get("min_m", 0.0):
+				if tiles > 0:
+					close.append(b)
 				continue
 			if tiles * City.TILE > spec.get("max_m", INF):
 				near.append(b)
@@ -198,6 +206,8 @@ func _pick(spec: Dictionary, fields: Dictionary, used: Array, from_cell: Vector2
 		cands.append(b)
 	if cands.is_empty():
 		cands = near
+	if cands.is_empty() and spec.get("tag", "") in SPARSE_TAGS:
+		cands = close  # a spawned special or a lone landmark: better close than no job
 	if cands.is_empty():
 		return {}
 	if lending:  # the biggest building that fits becomes the stand-in, for good

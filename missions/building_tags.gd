@@ -33,6 +33,7 @@ const STREETS := ["Elm", "Maple", "Harbor", "Lincoln", "Bay", "Pine", "Union", "
 var city: City
 var stand_ins := true
 var _borrowed := {}  # tag -> building id lent as a stand-in
+var _extra := {}     # building id -> {b, tag, name}: spawned specials (specials.gd)
 
 
 func _init(c: City) -> void:
@@ -68,6 +69,9 @@ func find(tag: String) -> Array[Dictionary]:
 				out.append(b)
 		elif tag in ZONE_TAGS[b.zone]:
 			out.append(b)
+	for id in _extra:
+		if _extra[id].tag == tag:
+			out.append(_extra[id].b)
 	if out.is_empty() and _borrowed.has(tag) and city.buildings.has(_borrowed[tag]):
 		out.append(city.buildings[_borrowed[tag]])
 	return out
@@ -92,7 +96,26 @@ func lend(tag: String, b: Dictionary) -> void:
 	_borrowed[tag] = b.id
 
 
+func add_extra(b: Dictionary, tag: String, nm: String) -> void:
+	## A spawned special: an extra tag and name on a building (or a kerb stand-in).
+	_extra[b.id] = {"b": b, "tag": tag, "name": nm}
+
+
+func remove_extra(id: int) -> void:
+	_extra.erase(id)
+
+
+func building(id: int) -> Dictionary:
+	## city.buildings or a spawned kerb special.
+	if city.buildings.has(id):
+		return city.buildings[id]
+	return _extra[id].b if _extra.has(id) else {}
+
+
 func has_real(tag: String) -> bool:
+	for id in _extra:
+		if _extra[id].tag == tag:
+			return true
 	for b in city.buildings.values():
 		if b.has("tags") and tag in b.tags:
 			return true
@@ -100,6 +123,8 @@ func has_real(tag: String) -> bool:
 
 
 func name_of(b: Dictionary, tag := "") -> String:
+	if _extra.has(b.id) and (tag == "" or _extra[b.id].tag == tag):
+		return _extra[b.id].name
 	if b.has("name"):
 		return b.name
 	for t in _borrowed:

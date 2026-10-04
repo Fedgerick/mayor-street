@@ -72,6 +72,8 @@ func _initialize() -> void:
 	check(d.templates.size() >= 12, "templates loaded (%d)" % d.templates.size())
 	link.fake_pos = city.cell_center(a.x, a.y)
 	for id in d.templates:
+		if d.templates[id].has("special") and id != "raid_den":
+			continue  # needs a spawned special: test_specials.gd
 		var m := d.generate(id, link.fake_pos)
 		check(m != null and m.pay > 0 and m.route_m > 0.0,
 			"%s: %s" % [id, m.summary() if m else "could not generate"])

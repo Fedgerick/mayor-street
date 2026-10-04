@@ -9,7 +9,8 @@ extends Node3D
 ##     missions.setup(city, street)
 ##
 ## Keys: J quest log (either view); at street level Y takes a radio job, K abandons a job,
-## B bribes a nearby cop (bribe.gd).
+## B bribes a nearby cop (bribe.gd); P black market phone and G crew backup with those
+## perks (perk_effects.gd).
 
 const PHONE_RADIUS := 2.6        # walk this close to a ringing phone to answer it
 const PHONE_MIN_M := 50.0        # a phone rings somewhere this far ...
@@ -30,6 +31,8 @@ var quests: QuestEngine
 var hud: MissionHud
 var log_panel: QuestLog
 var bribe := Bribe.new()
+var perks: PerkEffects
+var specials: SpecialSpawner
 var phones: Array[Vector3] = []   # payphone handsets on the sidewalk
 
 var _layer: CanvasLayer
@@ -102,6 +105,18 @@ func setup(c: City, s: Node) -> void:
 	log_panel = QuestLog.new()
 	log_panel.missions = self
 	_layer.add_child(log_panel)
+	perks = PerkEffects.new()
+	perks.name = "Perks"
+	add_child(perks)
+	perks.setup(self)
+	specials = SpecialSpawner.new()
+	specials.name = "Specials"
+	add_child(specials)
+	specials.setup(c, director.tags, director.router, progress)
+	specials.spawned.connect(func(sp): _news("Reported: " + sp.name, 5.0))
+	specials.ended.connect(func(sp, ok):
+		if not ok and sp.kind == "burning_building":
+			_news(sp.name.replace("Fire at", "Burned down:"), 5.0))
 	_sync_perks()
 	if progress.store:
 		progress.store.register_section("missions", self)
@@ -141,6 +156,7 @@ func _process(delta: float) -> void:
 			return
 	_brief_t = maxf(0.0, _brief_t - delta)
 	bribe.tick(delta)
+	perks.tick(delta)
 	_bribe_state = bribe.status(link.wanted(), Bribe.cop_near(_police(), link.position()),
 		progress.cash(), city.game_day(), _free_bribes())
 	if director.active == null:
@@ -224,11 +240,21 @@ func _offer(giver: String, from: Vector3) -> Mission:
 		if m:
 			m.quest = pair[0]
 			return m
+	if _rng.randf() < 0.7:
+		for sp in specials.active:
+			for t in director.templates.values():
+				if t.get("special", "") == sp.kind and t.giver == giver:
+					var m := director.generate(t.id, from)
+					if m:
+						return m
 	return director.make_offer(giver, from)
 
 
 func offer_text() -> String:
 	## For the HUD's offer box.
+	var phone := perks.phone_text()
+	if phone != "":
+		return phone
 	if _brief_t > 0.0 and _brief != "":
 		return _brief
 	if _radio_offer and director.active == null:
@@ -238,6 +264,8 @@ func offer_text() -> String:
 
 
 func offer_side() -> String:
+	if perks.phone_open:
+		return "bad"
 	if _brief_t > 0.0:
 		return _brief_side
 	return "good"
@@ -252,6 +280,8 @@ func _unhandled_input(e: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif not link.active():
 		return
+	elif perks.handle_key(k.keycode):
+		get_viewport().set_input_as_handled()
 	elif k.keycode == KEY_Y and _radio_offer and director.active == null:
 		var m := _radio_offer
 		_radio_offer = null
@@ -335,6 +365,9 @@ func _on_passed(m: Mission) -> void:
 		progress.count("job_crime", m.crime)  # services/ can read this into city crime
 	if m.quest != "":
 		quests.job_passed(m.quest, m.id)
+	var r: String = m.template.get("resolves", "")
+	if r != "":
+		specials.resolve(m.slots[r].building)
 
 
 func _on_failed(m: Mission) -> void:
@@ -602,10 +635,12 @@ func _make_phone(pos: Vector3, yaw: float) -> Node3D:
 
 func to_dict() -> Dictionary:
 	## Section "missions" in the save. Goodness, quests and counters live in Progress.
-	return {"director": director.to_dict(), "stand_ins": director.tags.to_dict(), "bribe": bribe.to_dict()}
+	return {"director": director.to_dict(), "stand_ins": director.tags.to_dict(), "bribe": bribe.to_dict(), "perks": perks.to_dict(), "specials": specials.to_dict()}
 
 
 func from_dict(d: Dictionary) -> void:
 	director.from_dict(d.get("director", {}))
 	director.tags.from_dict(d.get("stand_ins", {}))
 	bribe.from_dict(d.get("bribe", {}))
+	perks.from_dict(d.get("perks", {}))
+	specials.from_dict(d.get("specials", {}))
