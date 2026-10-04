@@ -11,6 +11,7 @@ const MAYOR_KEYS := [
 	["Wheel / middle-drag", "Zoom / grab"],
 	["1 to 6", "Inspect, road, zones, bulldoze"],
 	["7 / B", "Build menu"],
+	["J", "Quest log"],
 	["O", "Overlays"],
 	["Space  ,  .", "Pause, slower, faster"],
 	["N", "Skip an hour"],
@@ -28,6 +29,8 @@ const STREET_KEYS := [
 	["Space", "Handbrake"],
 	["H", "Horn"],
 	["R", "Put the car back on its wheels"],
+	["Y / K", "Take a radio job / give up a job"],
+	["J", "Quest log"],
 ]
 # The corner hint for each situation: key, what it does.
 const HINTS := {
@@ -98,7 +101,7 @@ func open() -> void:
 	_menu.visible = true
 	_saves.visible = false
 	_panel.visible = true
-	_save_btn.disabled = not Progress.playing
+	_save_btn.disabled = not Hud.progress().playing
 	_resume.grab_focus()
 
 
@@ -283,7 +286,7 @@ func _show_saves(saving: bool) -> void:
 
 func quit_game() -> void:
 	## Quit to desktop, keeping the game in the autosave slot.
-	Progress.autosave()
+	Hud.progress().autosave()
 	get_tree().quit()
 
 

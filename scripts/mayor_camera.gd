@@ -42,6 +42,13 @@ func set_view(f: Vector3, d: float, y: float, t := 0.0) -> void:
 	_apply()
 
 
+func glide_to(f: Vector3, d: float, y: float) -> void:
+	## Ease over to a new framing; _process does the move.
+	_focus_goal = f
+	_dist_goal = d
+	_yaw_goal = yaw + wrapf(y - yaw, -PI, PI)
+
+
 func pitch_for(d: float) -> float:
 	## Low and cinematic up close, more top-down when zoomed out.
 	var k := clampf(inverse_lerp(MIN_DIST, 600.0, d), 0.0, 1.0)

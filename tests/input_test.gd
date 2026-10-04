@@ -18,6 +18,7 @@ func check(cond: bool, what: String) -> void:
 
 func _initialize() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
+	main.skip_creator = true  # straight into the city: these tests are about keys
 	root.add_child(main)
 	_run.call_deferred()
 

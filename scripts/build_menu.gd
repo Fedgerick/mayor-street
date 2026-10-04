@@ -61,8 +61,8 @@ func _ready() -> void:
 	_desc.add_theme_color_override("font_color", Color(0.75, 0.8, 0.88))
 	_desc.custom_minimum_size = Vector2(0, 22)
 	v.add_child(_desc)
-	Progress.unlocked.connect(func(_id, _s): _refresh_if_open())
-	Progress.tier_reached.connect(func(_t, _n, _ids): _refresh_if_open())
+	Hud.progress().unlocked.connect(func(_id, _s): _refresh_if_open())
+	Hud.progress().tier_reached.connect(func(_t, _n, _ids): _refresh_if_open())
 	visible = false
 
 
@@ -79,7 +79,7 @@ func show_group(g: String) -> void:
 		c.queue_free()
 	for id in Catalog.ids(g):
 		_grid.add_child(_entry(id))
-	var t := Progress.city_tier
+	var t: int = Hud.progress().city_tier
 	var next := Catalog.goal_text(t + 1)
 	_goal.text = "%s%s" % [Catalog.TIERS[t].name, "   Next milestone: " + next if next != "" else ""]
 	_desc.text = ""
@@ -99,11 +99,12 @@ func _entry(id: String) -> Button:
 	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	b.add_theme_font_size_override("font_size", 15)
 	var built: bool = d.unique and city != null and not city.specials_of(id).is_empty()
-	var open_: bool = Progress.is_unlocked(id) and not built
+	var unlocked: bool = Hud.progress().is_unlocked(id)
+	var open_: bool = unlocked and not built
 	var line2 := ""
 	if built:
 		line2 = "Already built"
-	elif not Progress.is_unlocked(id):
+	elif not unlocked:
 		line2 = Catalog.lock_text(id)
 	else:
 		line2 = _price(d)

@@ -2,7 +2,7 @@ extends Node3D
 ## Wires the city sandbox together: sim, renderer, day/night, mayor camera, tools, HUD.
 ##
 ## Command-line options (after `--`):
-##   --demo                 start straight into the demo city
+##   --demo                 start straight into the demo city (no character creator)
 ##   --hour=21.5            set the clock
 ##   --view=x,z,dist,yawdeg camera framing
 ##   --overlay=1            0 none, 1 zones, 2 traffic, 3 land value
@@ -23,6 +23,15 @@ var hud: Hud
 var life: CityLife  # traffic and pedestrians (citylife/), created when a game starts
 var street: StreetMode  # street-level player (player/), created when a game starts
 var menu: GameMenu  # Esc menu and the corner key hint; keeps running while the game is paused
+var services: CityServices  # power, parks, garbage, police, fire (services/)
+var services_view: ServicesView
+var services_panel: ServicesPanel
+var interiors: InteriorManager  # enterable buildings (interiors/)
+var missions: Missions  # jobs, payphones, goodness and quests (missions/)
+var resident: Resident  # the character you create, and their home (creator/)
+var skip_creator := false  # no character creator; test scripts, --demo and look-dev runs skip it too
+var _dive_home := false  # after the creator, the first dive lands outside the Resident's front door
+var _gliding := false
 
 var tool := Tool.INSPECT
 var build_kind := ""  # the catalog building in hand while tool is BUILD
@@ -122,6 +131,18 @@ func _start(demo: bool, save := {}) -> void:
 	Progress.notice.connect(_on_notice)
 	if _args.has("screenshot") or _args.has("shots") or _args.has("nosave"):
 		Progress.autosave_enabled = false
+	services = CityServices.new(city)  # sets city.growth_check and adjusts land value itself
+	Progress.register_section("services", services)
+	if demo and save.is_empty():
+		services.build_demo_services()  # plants, depots, police, fire and parks for the demo
+	services_view = ServicesView.new()
+	add_child(services_view)
+	services_view.setup(services)
+	services_panel = ServicesPanel.new()
+	hud.root.add_child(services_panel)
+	services_panel.setup(services)
+	services_panel.overlay_selected.connect(_on_service_overlay)
+	Hud.no_keyboard_focus(services_panel)
 	if _args.has("hour"):
 		city.minutes = float(city.game_day()) * 1440.0 + float(_args["hour"]) * 60.0
 	view.rebuild_all()
@@ -141,6 +162,20 @@ func _start(demo: bool, save := {}) -> void:
 	add_child(street)
 	street.setup(city)  # registers its own save section, "street"
 	street.set_life(life)  # carjacking, people and cops as targets, police chases
+	interiors = InteriorManager.new()
+	interiors.name = "Interiors"
+	add_child(interiors)
+	interiors.setup(city, street)
+	street.busted_wake = func(): await interiors.enter("police", null, "busted")
+	missions = Missions.new()
+	missions.name = "Missions"
+	add_child(missions)
+	missions.setup(city, street)  # registers "missions"
+	resident = Resident.new()
+	resident.name = "Resident"
+	add_child(resident)
+	resident.setup(city, street, cam)  # registers "resident"; a load fills it here
+	resident.use_interiors(interiors)
 	street.street_entered.connect(_on_street_entered)
 	street.street_exited.connect(_on_street_exited)
 	street.vehicle_changed.connect(func(_car): _update_hint())
@@ -160,6 +195,19 @@ func _start(demo: bool, save := {}) -> void:
 	Progress.register_section("mayor", self)
 	Progress.started()
 	_update_hint()
+	var look_dev := _args.has("screenshot") or _args.has("shots") or _args.has("street") or _args.has("demo")
+	var test_run: bool = get_tree().get_script() != null  # a test script drives the game
+	if save.is_empty() and not resident.profile.loaded and not look_dev and not test_run and not skip_creator:
+		# A new game: create the Resident and pick a home while the clock waits.
+		var speed := speed_index
+		_set_speed(0)
+		hud.visible = false
+		menu.show_hint(&"")
+		await resident.new_game()
+		_dive_home = resident.profile.has_home()
+		hud.visible = true
+		_set_speed(speed)
+		_update_hint()
 
 
 ## The mayor's view, for saves: camera, speed and overlay.
@@ -232,17 +280,32 @@ func in_street() -> bool:
 
 func go_street() -> void:
 	## Dive from the mayor view to a character on the sidewalk under the camera focus.
-	if not started or in_street():
+	if not started or in_street() or _gliding:
 		return
 	_set_tool(Tool.INSPECT)
 	hud.show_tip(Vector2.ZERO, "")
+	var at := cam.focus
+	if _dive_home:
+		# A new game starts outside your own front door: swing round to face it from the
+		# street, then dive to the sidewalk there.
+		_dive_home = false
+		var b: Dictionary = resident.home.building()
+		if not b.is_empty():
+			var d: Vector2i = City.DIRS[b.rot]
+			at = resident.home.door_position()
+			_gliding = true
+			cam.glide_to(at, 90.0, atan2(float(d.x), float(d.y)))
+			await get_tree().create_timer(0.8).timeout
+			_gliding = false
+			if not started or in_street():
+				return
 	hud.visible = false
 	# The design keeps the street at 1x; the mayor speed comes back on the way up.
 	_speed_before_street = speed_index
 	_set_speed(1)
 	cam.set_process(false)
 	cam.set_process_unhandled_input(false)
-	street.enter_street(cam, cam.focus)
+	street.enter_street(cam, at)
 	life.set_camera(street.camera)
 	_update_hint()
 
@@ -320,6 +383,17 @@ func _set_overlay(o: int) -> void:
 	overlay = o
 	hud.set_overlay(o)
 	RenderingServer.global_shader_parameter_set("overlay_mode", o)
+	if o != 0 and services_panel:  # one overlay at a time: the zone ones or the service ones
+		services_panel.set_overlay(0)
+		services_view.set_overlay(0)
+
+
+func _on_service_overlay(o: int) -> void:
+	services_view.set_overlay(o)
+	if o != 0:
+		overlay = 0
+		hud.set_overlay(0)
+		RenderingServer.global_shader_parameter_set("overlay_mode", 0)
 
 
 func _set_speed(i: int) -> void:
@@ -342,6 +416,8 @@ func _input(e: InputEvent) -> void:
 	## button used to keep the keyboard and swallow Tab. F11 and Alt+Enter live in GameMenu.
 	var key := _pressed_key(e)
 	var alt := e is InputEventWithModifiers and (e as InputEventWithModifiers).alt_pressed
+	if resident and resident.get("_busy") == true and not menu.is_open:
+		return  # the character creator or the home picker has the keyboard (Esc skips there)
 	if street and not _dragging and not alt and e.is_action_pressed("street_toggle_view"):
 		get_viewport().set_input_as_handled()
 		if street.active:
@@ -447,6 +523,8 @@ func _apply(a: Vector2i, b: Vector2i) -> void:
 			city.place_zone(city.rect_cells(a, b), _zone_for_tool())
 		Tool.BULLDOZE:
 			city.bulldoze(city.rect_cells(a, b))
+			if services:
+				services.bulldoze_lines(city.rect_cells(a, b))
 		Tool.BUILD:  # power lines, drawn like roads by services/
 			var sv := Progress.get_section("services")
 			if sv and sv.has_method("place_power_line"):

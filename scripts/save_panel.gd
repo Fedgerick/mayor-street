@@ -5,6 +5,9 @@ extends PanelContainer
 
 signal closed
 
+const SLOTS := ["slot1", "slot2", "slot3"]  # as in progress.gd
+const AUTOSAVE := "autosave"
+
 var saving := false
 var _title: Label
 var _list: VBoxContainer
@@ -53,11 +56,11 @@ func refresh() -> void:
 	for c in _list.get_children():
 		c.queue_free()
 	_title.text = "SAVE GAME" if saving else "LOAD GAME"
-	var saves := Progress.list_saves()
+	var saves: Array = Hud.progress().list_saves()
 	var by_slot := {}
 	for h in saves:
 		by_slot[h.slot] = h
-	var slots: Array = Progress.SLOTS.duplicate()
+	var slots: Array = SLOTS.duplicate()
 	if not saving:
 		# Newest first, with the autosave wherever its date puts it.
 		slots = []
@@ -85,17 +88,17 @@ func refresh() -> void:
 
 func _pick(s: String) -> void:
 	if saving:
-		if Progress.save_game(s):
+		if Hud.progress().save_game(s):
 			_title.text = "SAVED TO %s" % slot_name(s).to_upper()
 			for c in _list.get_children():
 				c.queue_free()
 			close.call_deferred()
 	else:
-		Progress.load_game(s)
+		Hud.progress().load_game(s)
 
 
 static func slot_name(s: String) -> String:
-	if s == Progress.AUTOSAVE:
+	if s == AUTOSAVE:
 		return "Autosave"
 	if s.begins_with("slot"):
 		return "Slot " + s.trim_prefix("slot")

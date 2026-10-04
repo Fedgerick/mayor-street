@@ -71,6 +71,13 @@ func _ready() -> void:
 	no_keyboard_focus(root)
 
 
+## The Progress autoload, looked up at run time. Naming it directly would stop this class
+## compiling in test scripts, which load before the autoloads exist.
+static func progress() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	return tree.root.get_node_or_null(^"Progress") if tree else null
+
+
 static func no_keyboard_focus(n: Node) -> void:
 	## A clicked button would otherwise keep the keyboard: Tab then only moves focus to the
 	## next button and Space presses it again, so neither reaches the game.
@@ -298,7 +305,7 @@ func show_start() -> void:
 	s.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	s.add_theme_color_override("font_color", Color(0.7, 0.76, 0.85))
 	v.add_child(s)
-	var saves := Progress.list_saves()
+	var saves: Array = progress().list_saves()
 	if not saves.is_empty():
 		var c := Button.new()
 		c.text = "Continue\n" + SavePanel.describe(saves[0])
@@ -405,7 +412,7 @@ func _process(delta: float) -> void:
 	for i in 3:
 		bars[i].value = city.demand[i + 1]
 	tax_label.text = "Tax %d%%" % int(round(city.tax_rate * 100.0))
-	lbl_tier.text = Catalog.TIERS[Progress.city_tier].name.to_upper()
+	lbl_tier.text = Catalog.TIERS[progress().city_tier].name.to_upper()
 
 
 static func _fmt(n: int) -> String:
