@@ -3,6 +3,11 @@
 Everything lives in `audio/`. The director is one autoload that finds the main scene by itself and
 listens to what the other modules already expose, so turning it on is one line.
 
+## Status
+
+The autoload line below is in `project.godot`. Round 2 needs nothing new from main.gd: the action layer
+(`action_audio.gd`) finds `main.missions` and `main.interiors` by name when they exist.
+
 ## Required (City sandbox thread, `project.godot`)
 
 ```ini
@@ -17,6 +22,22 @@ clicks and tool sounds. Tested headless with the line added: the city, street pl
 audio tests all pass.
 
 Suggested README line for the mayor controls table: `| Music | M toggles music on and off |`.
+
+## Round 2: what the action layer reads
+
+| From | Read |
+|---|---|
+| `scripts/main.gd` | `missions`, `interiors` (optional; skipped when absent) |
+| `StreetMode` | `combat` (`fired`, `weapon_changed`), `wanted` / `wanted_changed`, `wasted`, `busted`, optional `hit_landed(kind, pos, weapon)` |
+| `StreetPlayer` | `damaged(amount, from_pos)` |
+| `DrivableCar` (any node with `exploded` + `damaged`) | `exploded`, `damaged`, `driver`, `wrecked` |
+| `Pickup` (any node with `taken`) | `taken` |
+| `CityLife` | `police.siren_list()`, optional `police.officer_fired(pos)`, `traffic.car_taken`, `crowd.peds[].flee` |
+| `Missions` | `director.started / passed / failed / step_changed`; a step with `"marker": "vault"` sets off the bank alarm at the step's slot `pos` |
+| `InteriorManager` | `interior_entered(id, building)`, `interior_exited` |
+
+Requested from other threads (audio connects them only if they exist): `StreetMode.hit_landed` from the
+Street-level player thread, and `Police.officer_fired` from the Traffic and pedestrians thread.
 
 ## What the director reads (please keep these names, or tell the audio thread)
 

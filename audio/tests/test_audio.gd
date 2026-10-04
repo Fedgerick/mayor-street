@@ -110,14 +110,19 @@ func _run() -> void:
 
 	# Car: doors, engine start, engine loop, drive stem.
 	var street: StreetMode = main.street
-	var best: Node3D = null
-	for v in get_nodes_in_group("vehicles"):
-		if best == null or v.global_position.distance_to(street.player.global_position) < best.global_position.distance_to(street.player.global_position):
-			best = v
+	# A car right next to us (the nearest parked one can be anywhere on the map).
+	var spot: Vector3 = street.player.global_position + street.player.global_basis.x * 3.0 + Vector3.UP * 0.3
+	var best: Node3D = street.spawn_car("car_sedan", spot, street.player.facing_yaw(), Color(0.8, 0.1, 0.1))
+	await wait(0.5)
 	check(best != null, "a car to get into")
 	if best:
 		street._enter_car(best)
-		await wait(1.8)
+		await wait(0.5)
+		for i in 40:
+			if not street.get("switching"):
+				break
+			await wait(0.1)
+		await wait(1.0)
 		check(audio.played.get("door_open", 0) >= 1 and audio.played.get("door_close", 0) >= 1, "door sounds on entering")
 		check(audio.played.get("engine_start", 0) == 1, "engine starts")
 		check(audio._eng_idle.playing, "engine loop running")
@@ -125,7 +130,7 @@ func _run() -> void:
 		await wait(3.0)
 		var v: float = absf(best.speed())
 		var rpm: float = audio._rpm
-		check(audio._eng_idle.pitch_scale > 0.8, "engine pitch rises with speed (v %.1f, pitch %.2f)" % [v, audio._eng_idle.pitch_scale])
+		check(audio._eng_idle.pitch_scale > 0.8, "engine revs with throttle (v %.1f, pitch %.2f)" % [v, audio._eng_idle.pitch_scale])
 		check(v < 3.0 or audio.music_weights.z > 0.0, "drive stem fades in with speed (%.2f)" % audio.music_weights.z)
 		Input.action_release("street_forward")
 		Input.action_press("street_horn")
@@ -137,6 +142,10 @@ func _run() -> void:
 		print("      rpm %.2f  drive %.2f" % [rpm, audio.music_weights.z])
 		street._leave_car()
 		await wait(1.0)
+		for i in 40:
+			if not street.get("switching"):
+				break
+			await wait(0.1)
 		check(audio._engine_target == 0.0 and not audio._eng_idle.playing, "engine off after getting out")
 
 	# Back up.

@@ -932,9 +932,277 @@ def ambience():
     write("ambience/amb_sea.ogg", amb_sea(), rms=0.10)
 
 
+# ------------------------------------------------------- round 2: action ---
+
+def _seeded(seed):
+    global rng
+    old = rng
+    rng = np.random.default_rng(seed)
+    return old
+
+
+def gunshot(body_lp=2200, thump_f=110, body_tau=0.045, crack=1.0, dur=1.1, echo=0.35):
+    n = n_of(dur)
+    t = tt(n)
+    x = crack * filt(white(n), "highpass", 2500) * np.exp(-t / 0.004)
+    x += filt(white(n), "bandpass", [250, body_lp]) * np.exp(-t / body_tau)
+    x += 1.2 * np.sin(2 * np.pi * (thump_f * (1 + 0.8 * np.exp(-t / 0.01))) * t) * np.exp(-t / 0.06)
+    x = softclip(x / np.max(np.abs(x)) * 2.0, 1.8)
+    # Slap-back off the buildings, then a dull tail.
+    out = x.copy()
+    for d, g in [(0.11, echo), (0.19, echo * 0.6), (0.31, echo * 0.35)]:
+        k = n_of(d)
+        out[k:] += g * filt(x[:n - k], "lowpass", 1800)
+    out += 0.25 * filt(brown(n), "lowpass", 300) * np.exp(-t / 0.35) * (t > 0.01)
+    return fade(out, 0.0005, 0.2)
+
+
+def sfx_action():
+    """Street action, police and alarms. Own seed, so the round-1 sounds stay byte-identical."""
+    global rng
+    old = _seeded(4242)
+    write("sfx/gun_pistol.ogg", gunshot(), peak=0.9)
+    sg = gunshot(body_lp=1600, thump_f=75, body_tau=0.09, crack=1.3, dur=1.4, echo=0.45)
+    # Pump: chk-chk.
+    for d, f in [(0.55, 2400), (0.68, 1700)]:
+        m = n_of(0.05)
+        tm = tt(m)
+        add_at(sg, 0.25 * filt(white(m), "bandpass", [f * 0.6, f * 1.6]) * np.exp(-tm / 0.008), n_of(d), wrap=False)
+    write("sfx/gun_shotgun.ogg", sg, peak=0.92)
+    write("sfx/gun_cop.ogg", filt(gunshot(body_lp=2600, thump_f=125, body_tau=0.035, crack=0.8, dur=1.0, echo=0.5), "lowpass", 6000), peak=0.85)
+
+    n = n_of(0.18)
+    t = tt(n)
+    sw = filt(white(n), "bandpass", [500, 2500]) * np.sin(np.pi * t / t[-1]) ** 2
+    write("sfx/punch_swing.ogg", fade(sw), peak=0.4)
+    for i in range(2):
+        n = n_of(0.25)
+        t = tt(n)
+        thud = np.sin(2 * np.pi * rng.uniform(80, 110) * t) * np.exp(-t / 0.04)
+        slap = filt(white(n), "bandpass", [900, 4500]) * np.exp(-t / rng.uniform(0.01, 0.018))
+        write(f"sfx/punch_hit_{i + 1}.ogg", fade(thud + 0.7 * slap), peak=0.75)
+    n = n_of(0.3)
+    t = tt(n)
+    body = np.sin(2 * np.pi * 70 * t) * np.exp(-t / 0.05) + 0.4 * filt(white(n), "bandpass", [300, 1500]) * np.exp(-t / 0.03)
+    write("sfx/body_hit.ogg", fade(body), peak=0.7)
+
+    # Bullet into concrete, and a ricochet whine.
+    n = n_of(0.35)
+    t = tt(n)
+    chip = filt(white(n), "bandpass", [1500, 8000]) * np.exp(-t / 0.012)
+    chip += 0.3 * filt(white(n) * (rng.random(n) > 0.97), "highpass", 3000) * np.exp(-t / 0.08)
+    write("sfx/bullet_impact.ogg", fade(chip), peak=0.6)
+    n = n_of(0.45)
+    t = tt(n)
+    f = 3400 * np.exp(-t / 0.5)
+    whine = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.15) * np.clip(t / 0.01, 0, 1)
+    write("sfx/ricochet.ogg", fade(0.6 * np.pad(chip, (0, n - len(chip))) + 0.5 * whine), peak=0.55)
+    n = n_of(0.5)
+    t = tt(n)
+    metal = sum(np.sin(2 * np.pi * fq * t + rng.uniform(0, 6)) * np.exp(-t / rng.uniform(0.04, 0.15))
+                for fq in [870, 1430, 2250, 3120, 4410]) / 3
+    metal += filt(white(n), "highpass", 2000) * np.exp(-t / 0.004)
+    write("sfx/bullet_metal.ogg", fade(metal), peak=0.6)
+
+    # Explosion: boom, rumble, debris.
+    n = n_of(3.2)
+    t = tt(n)
+    boom = np.sin(2 * np.pi * np.cumsum(55 + 50 * np.exp(-t / 0.08)) / SR) * np.exp(-t / 0.5)
+    rumble = filt(brown(n), "lowpass", 260) * np.exp(-t / 1.0) * 1.4
+    blast = filt(white(n), "lowpass", 4000) * np.exp(-t / 0.08)
+    debris = np.zeros(n)
+    for _ in range(60):
+        m = n_of(0.03)
+        hit = filt(white(m), "bandpass", [rng.uniform(800, 2000), 7000]) * np.exp(-tt(m) / 0.006)
+        add_at(debris, hit * rng.uniform(0.05, 0.3), n_of(0.15 + rng.uniform(0, 1.6) ** 1.6), wrap=False)
+    ex = softclip(norm_peak(boom + rumble + blast + debris, 1.0) * 1.8, 1.5)
+    write("sfx/explosion.ogg", fade(circ_reverb(np.concatenate([ex, np.zeros(n_of(1.0))]), 1.8, 0.25, lp=2500), 0.001, 0.4), peak=0.95)
+
+    # Car alarm: sweeping whoop, two-tone, chirps (2.4 s loop).
+    parts = []
+    m = n_of(0.8)
+    tm = tt(m)
+    parts.append(np.sin(2 * np.pi * np.cumsum(700 + 800 * ((tm * 6) % 1)) / SR))
+    m = n_of(0.8)
+    tm = tt(m)
+    parts.append(np.sin(2 * np.pi * np.cumsum(np.where((tm * 4) % 1 < 0.5, 1050, 1400)) / SR))
+    m = n_of(0.8)
+    tm = tt(m)
+    parts.append(np.sin(2 * np.pi * 1600 * tm) * ((tm * 10) % 1 < 0.45))
+    al = np.concatenate(parts)
+    al = np.sign(al) * np.abs(al) ** 0.5
+    write("sfx/car_alarm_loop.ogg", cfilt(cfilt(al, "bandpass", [500, 4000]), "lowpass", 3500), peak=0.5)
+
+    # Bank alarm bell: integer frequencies and a 25 Hz striker, so 1 s loops exactly.
+    n = SR
+    t = tt(n)
+    bell = sum(a * np.sin(2 * np.pi * fq * t) for fq, a in [(900, 1.0), (1440, 0.6), (2160, 0.4), (3100, 0.25)])
+    bell *= 0.55 + 0.45 * np.sin(2 * np.pi * 25 * t) ** 2
+    write("sfx/bank_alarm_loop.ogg", cfilt(bell, "bandpass", [600, 5000]), peak=0.55)
+
+    # Yelp siren: fast sweep, phase-normalized to loop.
+    n = SR
+    t = tt(n)
+    f = 1150 + 450 * np.sin(2 * np.pi * 4 * t)
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    ph *= np.round(ph[-1] / (2 * np.pi)) * 2 * np.pi / ph[-1]
+    s = np.sin(ph) + 0.3 * np.sin(2 * ph) + 0.15 * np.sin(3 * ph)
+    write("sfx/siren_yelp_loop.ogg", cfilt(s, "lowpass", 4000), peak=0.6)
+
+    # Weapon switch and pickup.
+    sw = np.zeros(n_of(0.25))
+    for d, fq in [(0.0, 3000), (0.09, 2000)]:
+        m = n_of(0.04)
+        add_at(sw, filt(white(m), "bandpass", [fq * 0.5, fq * 1.8]) * np.exp(-tt(m) / 0.006), n_of(d), wrap=False)
+    write("sfx/weapon_switch.ogg", fade(sw), peak=0.5)
+    pk = np.zeros(n_of(0.6))
+    for k, mm in enumerate([76, 81, 88]):
+        add_at(pk, 0.5 * marimba(midi(mm), 0.35), n_of(0.05 * k), wrap=False)
+    add_at(pk, 0.3 * sw, 0, wrap=False)
+    write("sfx/pickup.ogg", fade(pk), peak=0.55)
+
+    # Carjack: door yanked, a scuffle, a thump on the tarmac.
+    n = n_of(1.0)
+    cj = np.zeros(n)
+    m = n_of(0.2)
+    tm = tt(m)
+    add_at(cj, filt(white(m), "bandpass", [2000, 7000]) * np.exp(-tm / 0.005), 0, wrap=False)
+    for k in range(5):
+        m = n_of(0.12)
+        tm = tt(m)
+        add_at(cj, rng.uniform(0.2, 0.5) * filt(white(m), "bandpass", [300, 2500]) * np.sin(np.pi * tm / tm[-1]), n_of(0.1 + 0.09 * k), wrap=False)
+    m = n_of(0.3)
+    tm = tt(m)
+    add_at(cj, np.sin(2 * np.pi * 65 * tm) * np.exp(-tm / 0.07), n_of(0.62), wrap=False)
+    write("sfx/carjack.ogg", fade(cj), peak=0.7)
+
+    # Wasted: a heavy hit and a falling drone.
+    n = n_of(3.5)
+    t = tt(n)
+    ws = np.sin(2 * np.pi * np.cumsum(50 + 40 * np.exp(-t / 0.05)) / SR) * np.exp(-t / 0.6)
+    for mm in [45, 52, 56]:
+        f = midi(mm) * (1 - 0.12 * t / t[-1])
+        ws += 0.25 * signal.sawtooth(2 * np.pi * np.cumsum(f) / SR) * np.clip(t / 0.3, 0, 1) * np.exp(-t / 1.6)
+    ws = filt(ws, "lowpass", 1200)
+    write("sfx/wasted.ogg", fade(circ_reverb(ws, 2.0, 0.3), 0.002, 0.5), peak=0.8)
+
+    # Busted: police whistle, cuffs, low sting.
+    n = n_of(2.8)
+    bs = np.zeros(n)
+    for d, ln in [(0.0, 0.18), (0.26, 0.45)]:
+        m = n_of(ln)
+        tm = tt(m)
+        f = 2900 * (1 + 0.03 * np.sin(2 * np.pi * 38 * tm))
+        wh = np.sin(2 * np.pi * np.cumsum(f) / SR) + 0.3 * filt(white(m), "bandpass", [2500, 3500])
+        add_at(bs, 0.5 * wh * adsr(m, 0.01, 0.02, 1, 0.04), n_of(d), wrap=False)
+    for d in (0.95, 1.08):
+        m = n_of(0.05)
+        add_at(bs, 0.4 * filt(white(m), "bandpass", [2500, 9000]) * np.exp(-tt(m) / 0.005), n_of(d), wrap=False)
+    m = n_of(1.6)
+    tm = tt(m)
+    sting = sum(np.sin(2 * np.pi * midi(mm) * tm) for mm in [40, 47, 51]) * np.exp(-tm / 0.7) * 0.4
+    add_at(bs, sting, n_of(1.05), wrap=False)
+    write("sfx/busted.ogg", fade(circ_reverb(bs, 1.2, 0.2), 0.002, 0.3), peak=0.75)
+    rng = old
+
+
+def amb_panic():
+    """A crowd running from trouble: excited high voices and the odd scream."""
+    n = n_of(AMB_SEC)
+    x = np.zeros((n, 2))
+    formants = [(800, 1200), (650, 1900), (400, 2400), (700, 1000)]
+    for v in range(10):
+        f0 = rng.uniform(170, 330)
+        jitter = 1 + 0.06 * cfilt(white(n), "lowpass", 6)
+        src = signal.sawtooth(2 * np.pi * np.cumsum(f0 * jitter) / SR)
+        voice = np.zeros(n)
+        pos = int(rng.integers(0, n))
+        total = 0
+        while total < n:
+            d = rng.uniform(0.06, 0.16)
+            m = n_of(d)
+            f1, f2 = formants[rng.integers(0, len(formants))]
+            seg = src[(np.arange(m) + pos) % n]
+            y = 0.6 * filt(seg, "bandpass", [f1 * 0.8, f1 * 1.25]) + 0.4 * filt(seg, "bandpass", [f2 * 0.85, f2 * 1.2])
+            add_at(voice, y * np.sin(np.pi * np.arange(m) / m) ** 1.2, pos)
+            gap = n_of(rng.uniform(0.0, 0.5)) if rng.random() < 0.2 else 0
+            pos += m + gap
+            total += m + gap
+        x += pan(voice * rng.uniform(0.4, 1.0), rng.uniform(-0.9, 0.9))
+    for _ in range(9):
+        d = rng.uniform(0.5, 1.1)
+        m = n_of(d)
+        tm = tt(m) / d
+        f = rng.uniform(600, 900) * (1 + 0.5 * np.sin(np.pi * tm)) * (1 + 0.02 * np.sin(2 * np.pi * 7 * tt(m)))
+        src = signal.sawtooth(2 * np.pi * np.cumsum(f) / SR)
+        sc = 0.6 * filt(src, "bandpass", [900, 1500]) + 0.4 * filt(src, "bandpass", [2400, 3400])
+        add_at(x, pan(sc * np.sin(np.pi * tm) ** 0.7 * rng.uniform(0.5, 1.0), rng.uniform(-0.9, 0.9)), int(rng.integers(0, n)))
+    for _ in range(40):  # running feet
+        m = n_of(0.08)
+        add_at(x, pan(0.15 * filt(white(m), "bandpass", [300, 3000]) * np.exp(-tt(m) / 0.015), rng.uniform(-0.8, 0.8)), int(rng.integers(0, n)))
+    return circ_reverb(cfilt(x, "lowpass", 4500), 1.0, 0.3, lp=4000)
+
+
+def amb_room():
+    n = n_of(AMB_SEC)
+    t = tt(n)
+    x = 0.6 * cfilt(stereo_noise(brown, n, 0.7), "lowpass", 140)
+    x += 0.25 * cfilt(stereo_noise(pink, n, 0.5), "bandpass", [200, 900])
+    x += 0.06 * pan(np.sin(2 * np.pi * 60 * t) + 0.4 * np.sin(2 * np.pi * 180 * t), 0)
+    return x
+
+
+def music_action():
+    """Mission music: same key, tempo and length as the other stems, so it crossfades in sync."""
+    global rng
+    old = _seeded(911)
+    n = n_of(BARS * 4 * BEAT)
+    drm = np.zeros((n, 2))
+    bas = np.zeros((n, 2))
+    stab = np.zeros((n, 2))
+    rise = np.zeros((n, 2))
+
+    def tom(f):
+        m = n_of(0.35)
+        tm = tt(m)
+        return np.sin(2 * np.pi * np.cumsum(f * (1 + 0.5 * np.exp(-tm / 0.03))) / SR) * np.exp(-tm / 0.18)
+
+    for b, (chord, root) in enumerate(SONG):
+        for s in (0, 3, 8, 10):
+            add_at(drm, pan(kick(1.1), 0), n_of(step_time(b, s)))
+        for s in (4, 12):
+            add_at(drm, pan(snare(1.2) * 0.9, 0.05), n_of(step_time(b, s)))
+        for s in range(16):
+            add_at(drm, pan(hat() * (0.3 if s % 2 == 0 else 0.15), 0.3), n_of(step_time(b, s)))
+        if b % 2 == 1:
+            for k, s in enumerate((12, 13, 14, 15)):
+                add_at(drm, pan(tom([180, 150, 120, 95][k]) * 0.5, -0.4 + 0.25 * k), n_of(step_time(b, s)))
+        # Driving sixteenth bass on the root, octave jumps on the off-beats.
+        for s in range(16):
+            iv = 12 if s % 4 == 3 else 0
+            add_at(bas, pan(bass(midi(root + iv), BEAT / 4 * 0.7, saw=0.8) * (0.9 if s % 4 == 0 else 0.6), 0), n_of(step_time(b, s)))
+        # Staccato string-ish stabs on beat 1 and the "and" of 2.
+        for s in (0, 6, 11):
+            for i, mm in enumerate(chord[:4]):
+                m = n_of(BEAT * 0.3)
+                tm = tt(m)
+                y = sum(signal.sawtooth(2 * np.pi * midi(mm + 12) * 2 ** (d / 12) * tm) for d in (-0.1, 0.1))
+                y = filt(y, "lowpass", 2500) * adsr(m, 0.01, 0.05, 0.7, 0.08) * 0.12
+                add_at(stab, pan(y, -0.5 + i * 0.33), n_of(step_time(b, s)))
+        if b % 8 == 7:  # noise riser into each section
+            m = n_of(4 * BEAT)
+            tm = tt(m) / (4 * BEAT)
+            r = filt(white(m), "bandpass", [800, 6000]) * tm ** 3 * 0.35
+            add_at(rise, np.stack([r, r[::-1] * 0 + r], axis=1), n_of(bar_start(b)))
+    act = 0.85 * drm + 0.7 * bas + 0.8 * stab + rise
+    act = circ_reverb(act, 1.4, 0.15, lp=6000)
+    write("music/music_action.ogg", act, rms=0.11)
+    rng = old
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", choices=["sfx", "missions", "ambience", "music"])
+    ap.add_argument("--only", choices=["sfx", "missions", "action", "ambience", "music"])
     a = ap.parse_args()
     if a.only in (None, "sfx"):
         print("sfx")
@@ -946,6 +1214,14 @@ def main():
     if a.only in (None, "sfx", "missions"):
         print("missions")
         sfx_missions()
+    if a.only in (None, "action"):
+        print("action")
+        sfx_action()
+        old = _seeded(31337)
+        write("ambience/amb_panic.ogg", amb_panic(), rms=0.10)
+        write("ambience/amb_room.ogg", amb_room(), rms=0.06)
+        globals()["rng"] = old
+        music_action()
     if a.only in (None, "ambience"):
         print("ambience")
         ambience()

@@ -30,9 +30,12 @@ const SFX := [
 	"horn_loop", "engine_idle_loop", "engine_load_loop", "road_roll_loop", "skid_loop",
 	"traffic_car_loop", "siren_loop",
 	"phone_ring", "radio_static", "mission_start", "checkpoint", "mission_passed", "mission_failed",
+	"gun_pistol", "gun_shotgun", "gun_cop", "punch_swing", "punch_hit_1", "punch_hit_2", "body_hit",
+	"bullet_impact", "ricochet", "bullet_metal", "explosion", "car_alarm_loop", "bank_alarm_loop",
+	"siren_yelp_loop", "weapon_switch", "pickup", "carjack", "wasted", "busted",
 ]
-const AMBIENCE := ["amb_city_day", "amb_city_night", "amb_birds", "amb_crickets", "amb_wind", "amb_crowd", "amb_sea"]
-const MUSIC := ["music_mayor", "music_street", "music_drive"]
+const AMBIENCE := ["amb_city_day", "amb_city_night", "amb_birds", "amb_crickets", "amb_wind", "amb_crowd", "amb_sea", "amb_panic", "amb_room"]
+const MUSIC := ["music_mayor", "music_street", "music_drive", "music_action"]
 
 # Default bus levels in dB.
 const BUSES := {"Music": -9.0, "Ambience": -5.0, "SFX": -1.0, "UI": -6.0}
@@ -62,7 +65,11 @@ var commerce := 0.0              # 0..1 share of that which is shops and offices
 var water := 0.0                 # 0..1 how much sea is around
 var night := 0.0                 # 0..1
 var peds_near := 0
-var music_weights := Vector3(1, 0, 0)   # mayor, street, drive (linear)
+var music_weights := Vector4(1, 0, 0, 0)   # mayor, street, drive, action (linear)
+var action := 0.0                # 0..1 mission / chase music wanted (set by ActionAudio)
+var panic := 0.0                 # 0..1 people running nearby (set by ActionAudio)
+var indoors := false             # inside an interior (set by ActionAudio)
+var action_audio: ActionAudio
 var amb_gains := {}
 var played := {}                 # sound name -> times started (for tests)
 
@@ -121,6 +128,10 @@ func _ready() -> void:
 	_load_streams()
 	_build_players()
 	get_tree().node_added.connect(_on_node_added)
+	action_audio = ActionAudio.new()
+	action_audio.name = "Action"
+	action_audio.director = self
+	add_child(action_audio)
 
 
 # ------------------------------------------------------------------- public ---
@@ -363,10 +374,18 @@ func _on_vehicle_changed(c: Node) -> void:
 		_car = c
 		_prev_car_vel = (c as RigidBody3D).linear_velocity if c is RigidBody3D else Vector3.ZERO
 		var pos := (c as Node3D).global_position
-		play_at("door_open", pos, -2.0)
-		_later(0.35, _door_close.bind(c, pos, -1.0))
-		_later(0.6, _engine_start.bind(c))
-		_later(1.15, _engine_running.bind(c))
+		# The character walks to the door and climbs in first; time the doors to that.
+		var walk := 0.0
+		var climb := 0.8
+		var p = _street.get("player") if _street else null
+		if p and c.has_method("exit_point"):
+			walk = minf(p.global_position.distance_to(c.exit_point()) / 3.0, 1.5)
+		if p and p.get("visual") and p.visual.has_method("clip_length"):
+			climb = clampf(p.visual.clip_length("EnterCar"), 0.3, 2.5)
+		_later(walk + 0.05, _door_open.bind(c, pos, -2.0))
+		_later(walk + climb * 0.85, _door_close.bind(c, pos, -1.0))
+		_later(walk + climb + 0.15, _engine_start.bind(c))
+		_later(walk + climb + 0.7, _engine_running.bind(c))
 	else:
 		var old = _car
 		_car = null
@@ -374,7 +393,11 @@ func _on_vehicle_changed(c: Node) -> void:
 		if old and is_instance_valid(old):
 			var pos: Vector3 = old.global_position
 			play_at("door_open", pos, -3.0)
-			_later(0.4, _door_close.bind(old, pos, -1.0))
+			_later(0.8, _door_close.bind(old, pos, -1.0))
+
+
+func _door_open(c: Object, pos: Vector3, db: float) -> void:
+	play_at("door_open", _pos_of(c, pos), db)
 
 
 func _door_close(c: Object, pos: Vector3, db: float) -> void:
@@ -549,6 +572,13 @@ func _update_ambience(delta: float, street: bool, started: bool) -> void:
 		crowd = d * commerce * low * 0.5 * day
 	_amb_target["amb_crowd"] = crowd
 	_amb_target["amb_sea"] = water * (1.0 - 0.6 * smoothstep(150.0, 900.0, height))
+	_amb_target["amb_panic"] = panic if street else 0.0
+	_amb_target["amb_crowd"] *= 1.0 - panic
+	_amb_target["amb_room"] = 0.8 if indoors else 0.0
+	if indoors:
+		for k in _amb_target:
+			if k != "amb_room":
+				_amb_target[k] *= 0.2
 	for k in _amb:
 		var g: float = move_toward(amb_gains[k], _amb_target[k], delta * 0.45)
 		amb_gains[k] = g
@@ -557,21 +587,25 @@ func _update_ambience(delta: float, street: bool, started: bool) -> void:
 		p.stream_paused = g < 0.003
 	# From street level to the clouds the city turns into a muffled hum.
 	_amb_lp.cutoff_hz = 20000.0 * pow(1500.0 / 20000.0, smoothstep(30.0, 900.0, height))
+	if indoors:
+		_amb_lp.cutoff_hz = minf(_amb_lp.cutoff_hz, 4000.0)  # room tone stays clear, the city is quiet
 
 
 func _update_music(delta: float, street: bool, started: bool) -> void:
-	var target := Vector3(0.75 if not started else 1.0, 0.0, 0.0)
+	var target := Vector4(0.75 if not started else 1.0, 0.0, 0.0, 0.0)
 	if street:
 		var drive := 0.0
 		if _car and is_instance_valid(_car) and _car.has_method("speed"):
 			drive = clampf((absf(_car.speed()) - 3.0) / 15.0, 0.0, 1.0)
-		target = Vector3(0.0, 1.0, drive)
+		# Missions and chases swap the street groove for the action stem.
+		target = Vector4(0.0, 1.0 - action, drive * (1.0 - action), action)
 	# The whole crossfade takes about as long as the camera dive.
 	var rate := delta / 2.8
 	music_weights.x = move_toward(music_weights.x, target.x, rate)
 	music_weights.y = move_toward(music_weights.y, target.y, rate)
 	music_weights.z = move_toward(music_weights.z, target.z, delta / 1.5)
-	for i in 3:
+	music_weights.w = move_toward(music_weights.w, target.w, delta / 2.0)
+	for i in _music.size():
 		var w: float = music_weights[i]
 		# Equal-power-ish curve so the middle of a crossfade doesn't dip.
 		_music[i].volume_db = linear_to_db(maxf(sin(w * PI * 0.5), 0.0001))
