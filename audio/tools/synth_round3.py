@@ -146,6 +146,32 @@ def weather():
     S.rng = old
 
 
+def bus_stop():
+    """A bus pulling in: brake squeal, the air-brake "pssh", then the doors hissing open."""
+    n = n_of(3.2)
+    t = tt(n)
+    x = np.zeros(n)
+    m = n_of(0.7)
+    tm = tt(m)
+    sq = np.sin(2 * np.pi * np.cumsum(2300 + 120 * np.sin(2 * np.pi * 7 * tm)) / SR)
+    x[:m] += 0.25 * sq * adsr(m, 0.05, 0.2, 0.7, 0.2)
+    for start, dur, lo, hi, g in [(0.75, 0.6, 1500, 9000, 1.0), (1.6, 0.9, 2500, 11000, 0.6)]:
+        s0 = n_of(start)
+        k = n_of(dur)
+        e = np.clip(tt(k) / 0.01, 0, 1) * np.exp(-tt(k) / (dur * 0.35))
+        x[s0:s0 + k] += g * filt(white(k), "bandpass", [lo, hi]) * e
+    s0 = n_of(1.65)  # door clunk
+    k = n_of(0.15)
+    x[s0:s0 + k] += 0.5 * np.sin(2 * np.pi * 90 * tt(k)) * np.exp(-tt(k) / 0.03)
+    return fade(x, 0.002, 0.2)
+
+
+def bus():
+    old = S._seeded(6060)
+    write("sfx/bus_stop.ogg", bus_stop(), peak=0.8)
+    S.rng = old
+
+
 # ------------------------------------------------------------------- radio ---
 
 class Grid:
@@ -446,11 +472,14 @@ def radio():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", choices=["weather", "radio"])
+    ap.add_argument("--only", choices=["weather", "bus", "radio"])
     a = ap.parse_args()
     if a.only in (None, "weather"):
         print("weather")
         weather()
+    if a.only in (None, "bus"):
+        print("bus")
+        bus()
     if a.only in (None, "radio"):
         print("radio")
         radio()

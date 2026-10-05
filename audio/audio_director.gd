@@ -33,7 +33,7 @@ const SFX := [
 	"gun_pistol", "gun_shotgun", "gun_cop", "punch_swing", "punch_hit_1", "punch_hit_2", "body_hit",
 	"bullet_impact", "ricochet", "bullet_metal", "explosion", "car_alarm_loop", "bank_alarm_loop",
 	"siren_yelp_loop", "weapon_switch", "pickup", "carjack", "wasted", "busted",
-	"thunder_1", "thunder_2", "radio_tune",
+	"thunder_1", "thunder_2", "radio_tune", "bus_stop",
 ]
 const AMBIENCE := ["amb_city_day", "amb_city_night", "amb_birds", "amb_crickets", "amb_wind", "amb_crowd", "amb_sea", "amb_panic", "amb_room",
 	"amb_rain_light", "amb_rain_heavy", "amb_rain_roof", "amb_gusts"]

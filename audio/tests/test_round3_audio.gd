@@ -96,6 +96,13 @@ func _run() -> void:
 		var cv: float = audio._canyon(Vector2i(b.x, b.y), true, city.land, city.bld, City.SIZE)
 		check(cv > 0.0, "a tall building counts toward the canyon (%.2f)" % cv)
 
+	# A bus pulling in at a stop.
+	var traffic = main.life.traffic
+	if traffic.has_signal("bus_stopped") and traffic.cars.size() > 0:
+		var stops: int = audio.played.get("bus_stop", 0)
+		traffic.bus_stopped.emit(traffic.cars[0], null)
+		check(audio.played.get("bus_stop", 0) == stops + 1, "air brakes and doors when a bus stops")
+
 	# Car radio.
 	var spot: Vector3 = street.player.global_position + street.player.global_basis.x * 3.0 + Vector3.UP * 0.3
 	var car: Node3D = street.spawn_car("car_sedan", spot, street.player.facing_yaw(), Color(0.2, 0.3, 0.8))

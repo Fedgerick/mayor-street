@@ -32,7 +32,7 @@ Suggested README line for the mayor controls table: `| Music | M toggles music o
 | `StreetPlayer` | `damaged(amount, from_pos)` |
 | `DrivableCar` (any node with `exploded` + `damaged`) | `exploded`, `damaged`, `driver`, `wrecked` |
 | `Pickup` (any node with `taken`) | `taken` |
-| `CityLife` | `police.siren_list()`, optional `police.officer_fired(pos)`, `traffic.car_taken`, `crowd.peds[].flee` |
+| `CityLife` | `police.siren_list()`, optional `police.officer_fired(pos)`, `traffic.car_taken`, optional `traffic.bus_stopped(car, stop)`, `crowd.peds[].flee` |
 | `Missions` | `director.started / passed / failed / step_changed`; a step with `"marker": "vault"` sets off the bank alarm at the step's slot `pos` |
 | `InteriorManager` | `interior_entered(id, building)`, `interior_exited` |
 
@@ -50,7 +50,7 @@ group, and reads:
 | `wind: float` | 0 calm, 1 gale |
 | `signal lightning(pos: Vector3)` (optional) | thunder follows after distance / 343 m/s |
 
-Until a weather node exists the game stays dry. The car radio registers its own input action
+`weather/weather.gd` (c6ff226) matches this. Until the sandbox wires `main.weather` the game stays dry. The car radio registers its own input action
 `audio_radio_next` (C, D-pad up) and reads `City.specials_of("radio_tower")` to put KMAY on air.
 Suggested README line for the street controls table: `| Radio | C switches station (in a car) |`.
 

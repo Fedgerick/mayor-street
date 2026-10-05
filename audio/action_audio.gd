@@ -5,7 +5,7 @@ extends Node
 ##   player/   StreetCombat fired / weapon_changed, StreetMode wanted_changed / wasted / busted,
 ##             StreetPlayer damaged, DrivableCar exploded / damaged, Pickup taken,
 ##             StreetMode hit_landed (optional, when player/ adds it)
-##   citylife/ Police siren_list(), Traffic car_taken, Crowd peds[].flee,
+##   citylife/ Police siren_list(), Traffic car_taken / bus_stopped, Crowd peds[].flee,
 ##             Police officer_fired (optional, when citylife/ adds it)
 ##   missions/ MissionDirector started / passed / failed / step_changed
 ##   interiors/ InteriorManager interior_entered / interior_exited
@@ -106,6 +106,8 @@ func _wire() -> void:
 	if l != null and l != _life and l.get("traffic") != null:
 		_life = l
 		l.traffic.car_taken.connect(_on_car_taken)
+		if l.traffic.has_signal("bus_stopped"):
+			l.traffic.bus_stopped.connect(_on_bus_stopped)
 		var police = l.get("police")
 		if police and police.has_signal("officer_fired"):
 			police.officer_fired.connect(_on_officer_fired)
@@ -183,6 +185,13 @@ func _on_wanted(stars: int) -> void:
 
 func _on_car_taken(pos: Vector3, _fwd: Vector3) -> void:
 	director.play_at("carjack", pos + Vector3.UP, 0.0, _rng.randf_range(0.95, 1.05), 8.0)
+
+
+func _on_bus_stopped(car, _stop) -> void:
+	if car == null or not ("pos" in car):
+		return
+	var pos: Vector3 = car.pos
+	director.play_at("bus_stop", pos + Vector3.UP * 1.5, -3.0, _rng.randf_range(0.95, 1.05), 9.0)
 
 
 func _on_exploded(car: Node3D) -> void:
