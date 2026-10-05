@@ -67,15 +67,19 @@ func _initialize() -> void:
 		sus.pos = cam.global_position - cam.global_basis.z * 28.0
 		sus.pos.y = 0.17
 		life.set_suspect(sus)
-	if args.has("rain") and main.get("weather") == null:
-		var w := Weather.new()
-		main.add_child(w)
-		w.setup(city)
+	if args.has("rain"):
+		var w: Weather = main.get("weather")
+		if w == null:
+			w = Weather.new()
+			main.add_child(w)
+			w.setup(city)
+			life.set_weather(w)
+			var fx := RainFX.new()
+			main.add_child(fx)
+			fx.setup(w, cam)
+		elif main.get("rain_fx"):
+			main.rain_fx.set_camera(cam)
 		w.set_weather(Weather.Kind.RAIN, true)
-		life.set_weather(w)
-		var fx := RainFX.new()
-		main.add_child(fx)
-		fx.setup(w, cam)
 	# Run the street life ahead without drawing, so people have sat down and buses come.
 	for i in int(float(args.get("warm", "0")) * 30.0):
 		life.step(1.0 / 30.0)

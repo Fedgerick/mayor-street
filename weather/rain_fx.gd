@@ -64,7 +64,7 @@ func _make_drops() -> GPUParticles3D:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	m.billboard_keep_scale = true
-	m.albedo_color = Color(0.78, 0.82, 0.9, 0.32)
+	m.albedo_color = Color(0.8, 0.84, 0.92, 0.42)
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	q.material = m
 	p.draw_pass_1 = q
@@ -97,15 +97,30 @@ func _make_splashes() -> GPUParticles3D:
 	pm.scale_curve = curve
 	p.process_material = pm
 	var q := QuadMesh.new()
-	q.size = Vector2(0.09, 0.07)
+	q.size = Vector2(0.07, 0.05)
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	m.albedo_color = Color(0.85, 0.88, 0.95, 0.45)
+	m.albedo_color = Color(0.85, 0.88, 0.95, 0.35)
+	m.albedo_texture = _soft_dot()  # round, soft-edged splash rather than a grey square
 	q.material = m
 	p.draw_pass_1 = q
 	return p
+
+
+func _soft_dot() -> GradientTexture2D:
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.5)
+	t.fill_to = Vector2(0.5, 0.0)
+	t.width = 32
+	t.height = 32
+	return t
 
 
 func _process(_delta: float) -> void:
