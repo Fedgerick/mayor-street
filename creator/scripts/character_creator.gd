@@ -206,6 +206,7 @@ func _refresh_model() -> void:
 		if not ResourceLoader.exists("res://player/assets/character.glb"):
 			return
 		_model = (load("res://player/scripts/character_model.gd") as GDScript).new()
+		_model.set("auto_idle", false)   # no folded arms or looking around in the preview
 		_pivot.add_child(_model)
 	profile.look.apply(_model)
 
@@ -411,8 +412,8 @@ func _page_look() -> void:
 	_heading("Skin")
 	_swatches(CharacterLook.SKIN, l.skin, func(i): l.skin = i)
 	_heading("Hair")
-	_choices(CharacterLook.HAIR_ORDER, func(k): return CharacterLook.HAIR_STYLES[k].label, l.hair, 4,
-		func(k): l.hair = k)
+	_choices(CharacterLook.HAIR_ORDER, func(k): return CharacterLook.HAIR_STYLES[k], l.hair, 4,
+		func(k): l.set_hair(k))
 	_heading("Hair color")
 	_swatches(CharacterLook.HAIR_COLORS, l.hair_color, func(i): l.hair_color = i)
 	_heading("Face")
@@ -421,18 +422,64 @@ func _page_look() -> void:
 
 
 func _page_clothes() -> void:
-	var l := profile.look
-	_heading("Top")
-	_swatches(CharacterLook.CLOTH, l.top, func(i): l.top = i, 1)
-	_heading("Bottom")
-	_swatches(CharacterLook.CLOTH, l.bottom, func(i): l.bottom = i, 1)
-	_heading("Shoes")
-	_swatches(CharacterLook.CLOTH, l.shoes, func(i): l.shoes = i, 1)
+	_clothes_sections()
 	var note := Label.new()
-	note.text = "Colors marked $ are sold in clothing shops once the city unlocks them."
+	note.text = "Items marked $ are sold in clothing shops once the city unlocks them."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.add_theme_color_override("font_color", SUB)
 	_page.add_child(note)
+
+
+## Style and color pickers for every piece of clothing. In the shop, unowned items can be
+## tried on; elsewhere they are greyed out with a $.
+func _clothes_sections() -> void:
+	var l := profile.look
+	_style_choices("top", "Top")
+	_swatches(CharacterLook.CLOTH, l.top, func(i): l.top = i, 1)
+	if l.top_style == "jacket":
+		_heading("Jacket color")
+		_swatches(CharacterLook.CLOTH, l.jacket, func(i): l.jacket = i, 1)
+	_style_choices("bottom", "Bottom")
+	_swatches(CharacterLook.CLOTH, l.bottom, func(i): l.bottom = i, 1)
+	_style_choices("shoes", "Shoes")
+	_swatches(CharacterLook.CLOTH, l.shoes, func(i): l.shoes = i, 1)
+	_style_choices("hat", "Hat")
+	if l.hat != "":
+		_heading("Hat color")
+		_swatches(CharacterLook.CLOTH, l.hat_color, func(i): l.hat_color = i, 1)
+	elif l.hair in CharacterLook.NO_HAT_HAIR:
+		var n := Label.new()
+		n.text = "Hats need short hair: pick Short, Buzz cut, Bald or Ponytail first."
+		n.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		n.add_theme_color_override("font_color", SUB)
+		_page.add_child(n)
+
+
+func _style_choices(slot: String, title: String) -> void:
+	_heading(title)
+	var g := GridContainer.new()
+	g.columns = 3
+	g.add_theme_constant_override("h_separation", 6)
+	g.add_theme_constant_override("v_separation", 6)
+	_page.add_child(g)
+	var l := profile.look
+	for style in CharacterLook.STYLE_ORDER[slot]:
+		var b := Button.new()
+		var owned := CharacterLook.style_owned(slot, style, profile.owned)
+		var id := "%s:%s" % [slot, style]
+		b.text = CharacterLook.STYLES[slot][style]
+		if not owned:
+			b.text += "  $" + (str(ClothingStock.price(id)) if mode == Mode.SHOP else "")
+			b.tooltip_text = "Sold in clothing shops"
+		b.toggle_mode = true
+		b.button_pressed = l.get_style(slot) == style
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0, 40)
+		b.disabled = not owned and mode != Mode.SHOP
+		b.pressed.connect(func():
+			l.set_style(slot, style)
+			_changed())
+		g.add_child(b)
 
 
 func _page_outfits() -> void:
@@ -501,19 +548,14 @@ func _page_shop() -> void:
 		c.add_theme_font_size_override("font_size", 22)
 		c.add_theme_color_override("font_color", Color(0.55, 0.9, 0.6))
 		_page.add_child(c)
-	_heading("Top")
-	_swatches(CharacterLook.CLOTH, l.top, func(i): l.top = i, 1)
-	_heading("Bottom")
-	_swatches(CharacterLook.CLOTH, l.bottom, func(i): l.bottom = i, 1)
-	_heading("Shoes")
-	_swatches(CharacterLook.CLOTH, l.shoes, func(i): l.shoes = i, 1)
+	_clothes_sections()
 	_heading("In the basket")
 	var bill := ClothingStock.unpaid(l, profile.owned)
 	var lines := []
 	for id in bill.ids:
 		lines.append("%s  $%d" % [ClothingStock.item_name(id), ClothingStock.price(id)])
 	var b := Label.new()
-	b.text = "\n".join(lines) if not lines.is_empty() else "Nothing new. Pick a color marked $ to try it on."
+	b.text = "\n".join(lines) if not lines.is_empty() else "Nothing new. Try on anything marked $."
 	if cash >= 0 and bill.total > cash:
 		b.text += "\nYou're $%d short." % (bill.total - cash)
 	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

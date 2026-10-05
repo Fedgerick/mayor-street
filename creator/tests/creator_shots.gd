@@ -12,6 +12,9 @@ const LOOKS := [
 	["look_long_mustache", "Look", {"hair": "long", "face": "mustache", "skin": 7, "hair_color": 4, "top": 6}],
 	["look_bun", "Look", {"hair": "bun", "face": "clean", "skin": 0, "hair_color": 1, "top": 3}],
 	["clothes", "Clothes", {"hair": "bald", "face": "clean", "skin": 5, "top": 4, "bottom": 2, "shoes": 5}],
+	["outfit_hoodie_cap", "Clothes", {"hair": "short", "face": "stubble", "skin": 3, "top_style": "hoodie", "top": 2, "bottom_style": "jeans", "bottom": 3, "shoe_style": "boots", "shoes": 1, "hat": "cap", "hat_color": 5}],
+	["outfit_jacket_skirt", "Clothes", {"hair": "ponytail", "face": "glasses", "skin": 6, "top_style": "jacket", "top": 0, "jacket": 10, "bottom_style": "skirt", "bottom": 1, "shoe_style": "sneakers", "shoes": 5, "hair_color": 1}],
+	["outfit_tank_shorts", "Clothes", {"hair": "afro", "face": "beard", "skin": 7, "top_style": "tank", "top": 7, "bottom_style": "shorts", "bottom": 4, "body": "athletic", "hair_color": 0}],
 ]
 
 
@@ -46,7 +49,7 @@ func _run() -> void:
 	shop.mode = CharacterCreator.Mode.SHOP
 	shop.cash = 240
 	var sp := ResidentProfile.new()
-	sp.look = CharacterLook.from_dict({"hair": "bun", "skin": 2, "hair_color": 0, "top": 17, "bottom": 1, "shoes": 13})
+	sp.look = CharacterLook.from_dict({"hair": "bun", "skin": 2, "hair_color": 0, "top": 17, "top_style": "hoodie", "bottom": 1, "shoes": 13, "shoe_style": "boots"})
 	sp.owned.append("cloth:13")
 	shop.profile = sp
 	root.add_child(shop)

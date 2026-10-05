@@ -64,10 +64,13 @@ func wear_outfit(slot: int) -> bool:
 	if slot >= outfits.size() or outfits[slot].is_empty():
 		return false
 	var l := CharacterLook.from_dict(outfits[slot])
-	# A saved outfit can't smuggle in shop colors that are no longer owned.
-	for k in ["top", "bottom", "shoes"]:
+	# A saved outfit can't bring back shop colors or styles that aren't owned.
+	for k in ["top", "bottom", "shoes", "jacket", "hat_color"]:
 		if not CharacterLook.cloth_owned(l.get(k), owned):
 			l.set(k, look.get(k))
+	for part in ["top", "bottom", "shoes", "hat"]:
+		if not CharacterLook.style_owned(part, l.get_style(part), owned):
+			l.set_style(part, look.get_style(part))
 	look = l
 	return true
 

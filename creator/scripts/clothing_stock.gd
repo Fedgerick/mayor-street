@@ -1,8 +1,7 @@
 class_name ClothingStock
 extends RefCounted
-## What clothing shops sell, and what a look costs to buy. Today that is the shop colors
-## CharacterLook.CLOTH lists from CLOTH_FREE on. The rebuilt characters' new clothes
-## (round 3) join here as more items with their own ids.
+## What clothing shops sell, and what a look costs to buy: the shop colors
+## CharacterLook.CLOTH lists from CLOTH_FREE on, and the clothing styles beyond the free basics.
 
 const ITEMS := {
 	"cloth:12": {"name": "Royal purple", "price": 75},
@@ -14,7 +13,16 @@ const ITEMS := {
 	"cloth:18": {"name": "Racing green", "price": 90},
 	"cloth:19": {"name": "Neon lime", "price": 120},
 }
-const SLOTS := ["top", "bottom", "shoes"]
+# Clothing styles from the rebuilt characters: "<slot>:<style>".
+const STYLE_ITEMS := {
+	"top:tank": {"name": "Tank top", "price": 30},
+	"top:hoodie": {"name": "Hoodie", "price": 60},
+	"top:jacket": {"name": "Jacket", "price": 120},
+	"bottom:skirt": {"name": "Skirt", "price": 45},
+	"shoes:boots": {"name": "Boots", "price": 80},
+	"hat:cap": {"name": "Cap", "price": 35},
+	"hat:beanie": {"name": "Beanie", "price": 35},
+}
 
 
 const PERK_DISCOUNT := "perk:shop_discount"   # goodness +25: shops give 15% off
@@ -27,7 +35,11 @@ static func price(id: String) -> int:
 
 
 static func list_price(id: String) -> int:
-	return int(ITEMS.get(id, {}).get("price", 0))
+	return int(_item(id).get("price", 0))
+
+
+static func _item(id: String) -> Dictionary:
+	return ITEMS.get(id, STYLE_ITEMS.get(id, {}))
 
 
 static func price_factor() -> float:
@@ -39,7 +51,7 @@ static func price_factor() -> float:
 
 
 static func item_name(id: String) -> String:
-	return String(ITEMS.get(id, {}).get("name", id))
+	return String(_item(id).get("name", id))
 
 
 static func cloth_id(i: int) -> String:
@@ -47,12 +59,26 @@ static func cloth_id(i: int) -> String:
 
 
 ## The shop items a look uses that aren't owned yet: {"ids": [...], "total": dollars}.
+## Colors count for the pieces actually worn (no hat, no hat color; a jacket color only
+## with a jacket).
 static func unpaid(look: CharacterLook, owned: PackedStringArray) -> Dictionary:
 	var ids: Array[String] = []
+	var wanted: Array[String] = []
+	for slot in ["top", "bottom", "shoes", "hat"]:
+		var style := look.get_style(slot)
+		if style != "":
+			wanted.append("%s:%s" % [slot, style])
+	var colors := [look.top, look.bottom, look.shoes]
+	if look.top_style == "jacket":
+		colors.append(look.jacket)
+	if look.hat != "":
+		colors.append(look.hat_color)
+	for c in colors:
+		wanted.append(cloth_id(int(c)))
 	var total := 0
-	for slot in SLOTS:
-		var id := cloth_id(int(look.get(slot)))
-		if ITEMS.has(id) and not owned.has(id) and not ids.has(id):
-			ids.append(id)
-			total += price(id)
+	for id in wanted:
+		if _item(id).is_empty() or owned.has(id) or ids.has(id):
+			continue
+		ids.append(id)
+		total += price(id)
 	return {"ids": ids, "total": total}

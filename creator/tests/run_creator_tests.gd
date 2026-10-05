@@ -54,14 +54,42 @@ func _run() -> void:
 	w.wear_outfit(0)
 	check(w.look.top == 15, "owned shop color worn")
 
-	# Every hair and face combination makes pieces near the head.
-	var all_ok := true
-	for h in CharacterLook.HAIR_ORDER:
-		for f in CharacterLook.FACE_ORDER:
-			for pc in CharacterLook.pieces(h, f):
-				if pc.pos.distance_to(Vector3(0, 1.66, 0)) > 0.3:
-					all_ok = false
-	check(all_ok, "hair and face pieces sit on the head")
+	# Clothing styles: free basics, owned ones, hats and hair that clip, old saves.
+	var cl := CharacterLook.new()
+	check(CharacterLook.style_owned("top", "tee", PackedStringArray()), "tee is free")
+	check(not CharacterLook.style_owned("top", "hoodie", PackedStringArray()), "hoodie is not free")
+	check(CharacterLook.style_owned("top", "hoodie", PackedStringArray(["top:hoodie"])), "bought hoodie is owned")
+	cl.set_hair("afro")
+	cl.set_style("hat", "cap")
+	check(cl.hair == "short" and cl.hat == "cap", "a hat swaps clipping hair for short hair")
+	cl.set_hair("mohawk")
+	check(cl.hat == "", "clipping hair takes the hat off")
+	var old := CharacterLook.from_dict({"top": 5, "hair": "short"})
+	check(old.top_style == "tee" and old.bottom_style == "jeans" and old.shoe_style == "sneakers" and old.hat == "",
+		"old saves load as tee, jeans, sneakers")
+	check(CharacterLook.from_dict({"hair": "afro", "hat": "cap"}).hat == "", "saved hat on clipping hair is dropped")
+	var rl := CharacterLook.random(rng)
+	check(CharacterLook.style_owned("top", rl.top_style, PackedStringArray()) and rl.hat == "",
+		"random looks only use free clothes")
+	var hw := ResidentProfile.new()
+	hw.look.top_style = "hoodie"
+	hw.save_outfit(0)
+	hw.look.top_style = "tee"
+	hw.wear_outfit(0)
+	check(hw.look.top_style == "tee", "unowned hoodie not worn from a saved outfit")
+	hw.owned.append("top:hoodie")
+	hw.wear_outfit(0)
+	check(hw.look.top_style == "hoodie", "owned hoodie worn from a saved outfit")
+	var bl := CharacterLook.new()
+	bl.top_style = "jacket"
+	bl.hat = "beanie"
+	var b2 := ClothingStock.unpaid(bl, PackedStringArray())
+	check(b2.ids.has("top:jacket") and b2.ids.has("hat:beanie"), "bill lists the jacket and the beanie")
+	bl.top_style = "tee"
+	bl.hat = ""
+	bl.jacket = 17
+	bl.hat_color = 17
+	check(ClothingStock.unpaid(bl, PackedStringArray()).total == 0, "unworn jacket and hat colors are not billed")
 
 	# Homes: auto move-in, describe, door, survives a merge, lost on bulldoze.
 	var c := City.new()
@@ -116,30 +144,25 @@ func _run() -> void:
 		l.face = "shades"
 		l.body = "heavy"
 		l.top = 5
+		l.top_style = "hoodie"
+		l.shoe_style = "boots"
 		l.apply(cm)
-		var mi: MeshInstance3D = cm.model.find_children("*", "MeshInstance3D", true, false)[0]
-		var names := []
-		for s in mi.mesh.get_surface_count():
-			names.append(mi.mesh.surface_get_material(s).resource_name)
-		check(not names.has("Hair"), "afro drops the hair cap (%s)" % str(names))
-		var shirt_ok := false
-		for s in mi.mesh.get_surface_count():
-			if names[s] == "Shirt":
-				shirt_ok = mi.get_surface_override_material(s).albedo_color == CharacterLook.CLOTH[5]
-		check(shirt_ok, "shirt dressed in the chosen color")
-		var extra := cm.model.find_child(CharacterLook.EXTRA, true, false)
-		check(extra != null and extra.get_child_count() == CharacterLook.pieces("afro", "shades").size(),
-			"head pieces attached")
+		var parts: PackedStringArray = cm.part_names()
+		check(parts.has("Hair_afro") and parts.has("Face_shades") and parts.has("Top_hoodie") and parts.has("Shoes_boots"),
+			"model wears the chosen styles (%s)" % ", ".join(parts))
+		check(cm.colors.Shirt == CharacterLook.CLOTH[5] and cm.colors.Skin == CharacterLook.SKIN[l.skin],
+			"model wears the chosen colors")
 		check(cm.model.scale.x > 1.1, "heavy body is wider")
+		var passes := [0]
+		cm.dressed.connect(func(): passes[0] += 1)
+		l.apply(cm)
+		check(passes[0] == 0, "applying the same look again changes nothing")
 		l.hair = "short"
 		l.face = "clean"
+		l.set_style("hat", "cap")
+		l.hat_color = 3
 		l.apply(cm)
-		await process_frame
-		names.clear()
-		for s in mi.mesh.get_surface_count():
-			names.append(mi.mesh.surface_get_material(s).resource_name)
-		check(names.has("Hair"), "short hair brings the cap back")
-		check(cm.model.find_children(CharacterLook.EXTRA, "", true, false).size() == 1, "re-dressing replaces pieces")
+		check(cm.part_names().has("Hat_cap") and cm.colors.Hat == CharacterLook.CLOTH[3], "hat and hat color applied")
 		cm.animate(0.016, 2.0, true, 0.0, 0.0)
 		check(true, "animates after dressing")
 
@@ -153,16 +176,12 @@ func _run() -> void:
 		root.add_child(rs)
 		rs.profile.look.hair = "mohawk"
 		rs.setup(c, street, cam3)
-		check(street.player.visual.model.find_child(CharacterLook.EXTRA, true, false) != null,
-			"street character dressed by the resident")
-		street.player.visual._dress()
+		check(street.player.visual.part_names().has("Hair_mohawk"), "street character dressed by the resident")
+		street.player.visual.clear_outfit()   # player/ re-dresses from its seed; ours must come back
 		await process_frame
-		var shirt2 := false
-		var mi2: MeshInstance3D = street.player.visual.model.find_children("*", "MeshInstance3D", true, false)[0]
-		for s in mi2.mesh.get_surface_count():
-			if mi2.mesh.surface_get_material(s).resource_name == "Shirt":
-				shirt2 = mi2.get_surface_override_material(s).albedo_color == CharacterLook.CLOTH[rs.profile.look.top]
-		check(shirt2, "look comes back after player/ re-dresses")
+		check(street.player.visual.part_names().has("Hair_mohawk") and
+			street.player.visual.colors.Shirt == CharacterLook.CLOTH[rs.profile.look.top],
+			"look comes back after player/ re-dresses")
 
 		# The real home room from interiors/, when it's there.
 		if ResourceLoader.exists("res://interiors/interior_manager.gd"):
