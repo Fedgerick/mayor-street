@@ -62,3 +62,9 @@ Clothing shops: `profile.owned.append("cloth:<i>")` unlocks shop color i
       -s res://creator/tests/creator_shots.gd -- --shots=DIR
 
 Run them on a scratch copy, not the shared folder.
+
+## Round 3 update: rebuilt characters
+- CharacterLook now dresses player/ CharacterModel through set_outfit(): styles top (tee, longsleeve, hoodie, jacket, tank), bottom (jeans, shorts, skirt), shoes (sneakers, boots), hat (cap, beanie), hair, face.
+- Free: tee, longsleeve, jeans, shorts, sneakers. Sold: other styles (ClothingStock.STYLE_ITEMS, ids like "top:hoodie") and colors cloth:12..19.
+- Resident.open_shop() opens the shop screen (returns 0 if refused). Hook it to the clothing shop counter once the interior and the clothing_shop catalog entry exist.
+- perk:shop_discount gives 15% off.
