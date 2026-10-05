@@ -2,12 +2,25 @@ class_name Traffic
 extends Node3D
 ## AI cars that drive the road grid: lane following with the Intelligent Driver Model,
 ## turns and U-turns, signalled junctions with box reservations, yielding to people on
-## crosswalks. Drawn with one MultiMesh per car model, rebuilt from a flat buffer each
-## frame, so a few hundred cars cost a handful of draw calls.
+## crosswalks. Drawn from the car kit (vehicles/) with a CarDrawer per model: three
+## MultiMeshes by distance, rebuilt from flat buffers each frame, so a few hundred cars
+## cost a few dozen draw calls.
 
-const MODELS := ["car_sedan", "car_hatch", "car_van", "car_truck", "car_bus"]
-const LENGTHS := [4.4, 3.8, 4.8, 6.8, 10.5]
+const MODELS := ["car_sedan", "car_hatch", "car_van", "car_truck", "car_bus",
+	"car_sports", "car_pickup", "car_taxi", "car_garbage"]
+const LENGTHS := [4.5, 3.85, 4.9, 6.84, 11.5, 4.45, 5.5, 4.5, 8.0]   # VehicleKit.spec lengths
+const WHEEL_R := [0.36, 0.36, 0.36, 0.48, 0.5, 0.36, 0.42, 0.36, 0.5]
+const SEDAN := 0
+const HATCH := 1
+const VAN := 2
+const TRUCK := 3
 const BUS := 4
+const SPORTS := 5
+const PICKUP := 6
+const TAXI := 7
+const GARBAGE := 8
+## What the player gets when taking a car, while the city kit lacks the newer models.
+const OLD_NAME := {"car_sports": "car_sedan", "car_taxi": "car_sedan", "car_pickup": "car_van", "car_garbage": "car_truck", "car_bus": "car_truck"}
 const ROAD_Y := 0.05
 
 # Intelligent Driver Model.
@@ -40,6 +53,10 @@ class Car:
 	var halt := 0.0      # seconds left standing at a pickup
 	var bus := false     # a city bus: stops at the bus stops it passes
 	var served := -1     # cell of the last bus stop served
+	var wheel := 0.0     # wheel roll angle, for the kit's wheel shader
+	var steer := 0.0     # front wheel angle, + left
+	var brake := false   # brake lights on
+	var seed := 0.0      # which driver sits inside
 
 signal car_taken(pos: Vector3, fwd: Vector3)  # a driver was pulled out at pos
 signal bus_stopped(car: Car, stop: Object)    # a bus pulled in at a stop (StreetSpots.Spot)
@@ -58,8 +75,7 @@ var shadows := true
 var reserved := {}     # junction cell -> Array[Car]
 var _lanes := {}       # cell * 4 + din -> Array[Car] sorted by s
 var _next_id := 1
-var _mmi: Array[MultiMeshInstance3D] = []
-var _buf: Array[PackedFloat32Array] = []
+var _draw: Array[CarDrawer] = []
 
 # Stats for tests.
 var red_runs := 0
@@ -76,23 +92,21 @@ func setup(road_net: RoadNet, seed_value := 7) -> void:
 	net = road_net
 	rng.seed = seed_value
 	for k in MODELS.size():
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = true
-		mm.use_custom_data = true
-		var kit := _kit()
-		var mesh: Mesh = kit.mesh(MODELS[k]) if kit else null
-		if mesh == null and k == BUS:
-			mesh = BusMesh.build()
-		mm.mesh = mesh if mesh else _fallback_mesh(LENGTHS[k])
-		mm.instance_count = max_cars
-		mm.visible_instance_count = 0
-		var mmi := MultiMeshInstance3D.new()
-		mmi.multimesh = mm
-		mmi.name = MODELS[k]
-		add_child(mmi)
-		_mmi.append(mmi)
-		_buf.append(PackedFloat32Array())
+		var d := CarDrawer.new()
+		add_child(d)
+		var fallback: Mesh = BusMesh.build() if k == BUS else _fallback_mesh(LENGTHS[k])
+		if k >= SPORTS and VehicleKit.mesh(MODELS[k]) == null:
+			fallback = _old_mesh(k)
+		d.setup(MODELS[k], max_cars if k <= TRUCK else max_cars / 4, fallback)
+		_draw.append(d)
+
+
+## Before the car kit: newer models borrow an old kit car.
+func _old_mesh(k: int) -> Mesh:
+	var kit := _kit()
+	var old: String = OLD_NAME.get(MODELS[k], "car_sedan")
+	var m: Mesh = kit.mesh(old) if kit else null
+	return m if m else _fallback_mesh(LENGTHS[k])
 
 
 func _fallback_mesh(length: float) -> Mesh:
@@ -107,7 +121,7 @@ func spawn_garbage(cell: int) -> Car:
 	var c := spawn_at(cell, false)
 	if c:
 		c.garbage = true
-		c.model = 3
+		c.model = GARBAGE
 		c.tint = GARBAGE_TINT
 		c.aggr = 0.7
 	return c
@@ -144,8 +158,6 @@ func nearest_car(pos: Vector3, radius: float) -> Car:
 	var best: Car = null
 	var bd := radius * radius
 	for c in cars:
-		if c.bus:
-			continue  # no drivable bus yet
 		var d := c.pos.distance_squared_to(pos)
 		if d < bd:
 			bd = d
@@ -158,7 +170,11 @@ func take_car(c: Car) -> Dictionary:
 	var back := -c.fwd
 	var right := Vector3.UP.cross(back).normalized()
 	var xf := Transform3D(Basis(right, Vector3.UP, back), c.pos)
-	var out := {"xform": xf, "model": MODELS[c.model], "tint": c.tint}
+	var model: String = MODELS[c.model]
+	var kit := _kit()
+	if kit and kit.mesh(model) == null:
+		model = OLD_NAME.get(model, "car_sedan")
+	var out := {"xform": xf, "model": model, "tint": c.tint}
 	remove(c)
 	car_taken.emit(c.pos, c.fwd)
 	return out
@@ -186,12 +202,8 @@ func spawn_at(cell: int, rand_pos := true) -> Car:
 	for o in _lane(cell * 4 + c.din):
 		if absf(o.s - c.s) < 9.0:
 			return null
-	var z := _zone_near(cell)
-	var r := rng.randf()
-	if z == City.Zone.IND:
-		c.model = 3 if r < 0.45 else (2 if r < 0.75 else 0)
-	else:
-		c.model = 0 if r < 0.45 else (1 if r < 0.8 else (2 if r < 0.95 else 3))
+	c.model = _pick_model(_zone_near(cell))
+	c.seed = rng.randf()
 	var tints: Array = _kit().CAR_TINTS if _kit() else [Color(0.8, 0.2, 0.2), Color(0.9, 0.9, 0.9)]
 	c.tint = tints[rng.randi() % tints.size()]
 	c.aggr = rng.randf_range(0.85, 1.12)
@@ -200,6 +212,25 @@ func spawn_at(cell: int, rand_pos := true) -> Car:
 	cars.append(c)
 	_lane(cell * 4 + c.din).append(c)
 	return c
+
+
+# Model mix by the zone along the street: [model, weight].
+const MIX_TOWN := [[SEDAN, 34], [HATCH, 22], [SPORTS, 6], [PICKUP, 10], [VAN, 10], [TRUCK, 5], [TAXI, 3]]
+const MIX_SHOPS := [[SEDAN, 30], [HATCH, 20], [SPORTS, 7], [PICKUP, 6], [VAN, 10], [TRUCK, 7], [TAXI, 20]]
+const MIX_INDUSTRY := [[SEDAN, 15], [PICKUP, 20], [VAN, 25], [TRUCK, 40]]
+
+
+func _pick_model(zone: int) -> int:
+	var mix: Array = MIX_INDUSTRY if zone == City.Zone.IND else (MIX_SHOPS if zone == City.Zone.COM else MIX_TOWN)
+	var total := 0
+	for m in mix:
+		total += m[1]
+	var r := rng.randi() % total
+	for m in mix:
+		r -= m[1]
+		if r < 0:
+			return m[0]
+	return SEDAN
 
 
 func _kit() -> Node:
@@ -408,6 +439,7 @@ func _drive(c: Car, dt: float) -> void:
 		var s_star := MIN_GAP + maxf(0.0, c.v * HEADWAY * (1.0 + 0.35 * wet) + c.v * dv / (2.0 * sqrt(ACCEL * BRAKE)))
 		acc -= ACCEL * pow(s_star / maxf(gap, 0.1), 2.0)
 	acc = clampf(acc, -9.0, ACCEL)
+	c.brake = acc < -0.8 or c.v < 0.3
 	c.v = maxf(0.0, c.v + acc * dt)
 	if gap < 0.3:
 		c.v = 0.0
@@ -465,6 +497,8 @@ func _reserve(c: Car, j: int) -> bool:
 
 func _advance(c: Car, dt: float) -> void:
 	c.s += c.v * dt
+	c.wheel = fmod(c.wheel + c.v * dt / WHEEL_R[c.model], TAU)
+	var old_fwd := c.fwd
 	var m := c.din * 4 + c.dout
 	while c.s >= net.move_len[m]:
 		c.s -= net.move_len[m]
@@ -492,6 +526,11 @@ func _advance(c: Car, dt: float) -> void:
 		_lane(c.cell * 4 + c.din).append(c)
 		m = c.din * 4 + c.dout
 	_place(c)
+	# Front wheels follow how fast the heading turns (wheelbase about 0.6 of the length).
+	if dt > 0.0 and c.v > 0.2:
+		var yaw := old_fwd.signed_angle_to(c.fwd, Vector3.UP) / dt
+		var want := clampf(yaw * LENGTHS[c.model] * 0.6 / c.v, -0.6, 0.6)
+		c.steer = lerpf(c.steer, want, minf(dt * 8.0, 1.0))
 
 
 func _place(c: Car) -> void:
@@ -506,30 +545,24 @@ func _place(c: Car) -> void:
 # ---------------------------------------------------------------- render ---
 
 func render() -> void:
-	var counts := []
-	counts.resize(MODELS.size())
-	counts.fill(0)
-	for k in MODELS.size():
-		if _buf[k].size() != max_cars * 20:
-			_buf[k].resize(max_cars * 20)
+	var eye := Vector3.ZERO
+	var has_eye := camera != null and camera.is_inside_tree()
+	if has_eye:
+		eye = camera.global_position
+	for d in _draw:
+		d.begin()
 	for c in cars:
-		var k := c.model
-		var n: int = counts[k]
-		if n >= max_cars:
-			continue
-		counts[k] = n + 1
-		# Car meshes face -Z. Basis columns: x = right, y = up, z = back.
-		var back := -c.fwd
-		var right := Vector3.UP.cross(back).normalized()
-		var b := _buf[k]
-		var o := n * 20
-		b[o] = right.x; b[o + 1] = 0.0; b[o + 2] = back.x; b[o + 3] = c.pos.x
-		b[o + 4] = right.y; b[o + 5] = 1.0; b[o + 6] = back.y; b[o + 7] = c.pos.y
-		b[o + 8] = right.z; b[o + 9] = 0.0; b[o + 10] = back.z; b[o + 11] = c.pos.z
-		b[o + 12] = c.tint.r; b[o + 13] = c.tint.g; b[o + 14] = c.tint.b; b[o + 15] = 1.0
-		b[o + 16] = 0.0; b[o + 17] = 0.0; b[o + 18] = 0.0; b[o + 19] = 0.0
-	for k in MODELS.size():
-		var mm := _mmi[k].multimesh
-		mm.buffer = _buf[k]
-		mm.visible_instance_count = counts[k]
-		_mmi[k].cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var lod := CarDrawer.lod_at(c.pos, eye, has_eye)
+		var cu := VehicleKit.custom(false, c.brake, false, false, c.wheel, c.steer, c.seed)
+		_draw[c.model].add(c.pos, c.fwd, c.tint, cu, lod)
+	for d in _draw:
+		d.finish(shadows)
+
+
+## Cars drawn at each LOD, for budgets and tests.
+func lod_counts() -> Array:
+	var out := [0, 0, 0]
+	for d in _draw:
+		for k in 3:
+			out[k] += d._n[k]
+	return out

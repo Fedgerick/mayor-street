@@ -41,6 +41,8 @@ class CopCar:
 	var officers: Array = []   # Officer objects out of this car
 	var deployed := false
 	var age := 0.0
+	var wheel := 0.0
+	var seed := 0.0
 
 class Officer:
 	var pos := Vector3.ZERO
@@ -73,20 +75,10 @@ var _route_target := -1
 var _route := PackedInt32Array()   # BFS hops to the target cell over road arms
 var _route_timer := 0.0
 var _pool: Array[CharacterModel] = []
-var _car_mmi: MultiMeshInstance3D
-var _bar_mmi: MultiMeshInstance3D
+var _draw: CarDrawer
 var _time := 0.0
 var _panic_timer := 0.0
 var _next_shot := 0.0
-
-const BAR_SHADER := """
-shader_type spatial;
-render_mode unshaded, cull_back;
-void fragment() {
-	ALBEDO = COLOR.rgb * (0.4 + COLOR.a * 5.0);
-}
-"""
-
 
 func setup(c: City, road_net: RoadNet, tr: Traffic, cr: Crowd) -> void:
 	city = c
@@ -94,40 +86,14 @@ func setup(c: City, road_net: RoadNet, tr: Traffic, cr: Crowd) -> void:
 	traffic = tr
 	crowd = cr
 	rng.seed = 4242
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.use_custom_data = true
-	var kit := get_tree().root.get_node_or_null("Kit") if is_inside_tree() else null
-	var mesh: Mesh = kit.mesh("car_sedan") if kit else null
-	if mesh == null:
-		var b := BoxMesh.new()
-		b.size = Vector3(1.8, 1.3, CAR_LEN)
-		mesh = b
-	mm.mesh = mesh
-	mm.instance_count = MAX_CARS
-	mm.visible_instance_count = 0
-	_car_mmi = MultiMeshInstance3D.new()
-	_car_mmi.name = "CopCars"
-	_car_mmi.multimesh = mm
-	add_child(_car_mmi)
-	var bm := MultiMesh.new()
-	bm.transform_format = MultiMesh.TRANSFORM_3D
-	bm.use_colors = true
-	var box := BoxMesh.new()
-	box.size = Vector3(0.5, 0.14, 0.26)
-	var mat := ShaderMaterial.new()
-	mat.shader = Shader.new()
-	mat.shader.code = BAR_SHADER
-	box.material = mat
-	bm.mesh = box
-	bm.instance_count = MAX_CARS * 2
-	bm.visible_instance_count = 0
-	_bar_mmi = MultiMeshInstance3D.new()
-	_bar_mmi.name = "LightBars"
-	_bar_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_bar_mmi.multimesh = bm
-	add_child(_bar_mmi)
+	# The kit's cruiser has its light bar built in; the siren flag makes it flash.
+	_draw = CarDrawer.new()
+	add_child(_draw)
+	var fallback: Mesh = null
+	var kit: Node = get_tree().root.get_node_or_null("Kit") if is_inside_tree() else null
+	if VehicleKit.mesh("car_police") == null and kit:
+		fallback = kit.mesh("car_sedan")
+	_draw.setup("car_police", MAX_CARS, fallback)
 	refresh_stations()
 
 
@@ -401,6 +367,7 @@ func _route_exit(cell: int, din: int, wander := false) -> int:
 
 func _drive(c: CopCar, dt: float) -> void:
 	c.age += dt
+	c.wheel = fmod(c.wheel + c.v * dt / 0.36, TAU)
 	var sp := suspect_pos()
 	var dist := c.pos.distance_to(sp)
 	var in_car: bool = suspect != null and suspect.suspect_in_vehicle()
@@ -638,25 +605,12 @@ func officer_count() -> int:
 # ---------------------------------------------------------------- render ---
 
 func render() -> void:
-	var mm := _car_mmi.multimesh
-	var bm := _bar_mmi.multimesh
-	var flash := fmod(_time * 3.0, 1.0) < 0.5
-	var n := 0
+	var eye := Vector3.ZERO
+	var has_eye := camera != null and camera.is_inside_tree()
+	if has_eye:
+		eye = camera.global_position
+	_draw.begin()
 	for c in cars:
-		if n >= MAX_CARS:
-			break
-		var back := -c.fwd
-		var right := Vector3.UP.cross(back).normalized()
-		var xf := Transform3D(Basis(right, Vector3.UP, back), c.pos)
-		mm.set_instance_transform(n, xf)
-		mm.set_instance_color(n, Color(0.95, 0.95, 0.97))
-		mm.set_instance_custom_data(n, Color(0, 0, 0, 0))
-		for k in 2:
-			var on := c.siren and (flash if k == 0 else not flash)
-			var col := Color(1.0, 0.08, 0.05) if k == 0 else Color(0.1, 0.3, 1.0)
-			col.a = 1.0 if on else 0.0
-			bm.set_instance_transform(n * 2 + k, xf * Transform3D(Basis(), Vector3(-0.28 if k == 0 else 0.28, 1.55, 0.1)))
-			bm.set_instance_color(n * 2 + k, col)
-		n += 1
-	mm.visible_instance_count = n
-	bm.visible_instance_count = n * 2
+		var cu := VehicleKit.custom(c.siren, c.v < 0.5, c.parked and not c.officers.is_empty(), false, c.wheel, 0.0, c.seed)
+		_draw.add(c.pos, c.fwd, Color(0.95, 0.95, 0.97), cu, CarDrawer.lod_at(c.pos, eye, has_eye))
+	_draw.finish(true)

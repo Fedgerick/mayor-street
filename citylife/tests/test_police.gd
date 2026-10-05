@@ -138,17 +138,24 @@ func _initialize() -> void:
 	var p0 = life.crowd.peds[0]
 	var crime: Vector3 = p0.pos
 	var n := life.report_crime(crime, 3)
-	var near_before := 0
+	# Follow the same people (others may walk up or get off a bus meanwhile).
+	var near: Array = []
+	var d_before: Array = []
 	for p in life.crowd.peds:
 		if p.pos.distance_to(crime) < 20.0:
-			near_before += 1
+			near.append(p)
+			d_before.append(p.pos.distance_to(crime))
 	for f in 30 * 4:
 		life.step(dt)
-	var near_after := 0
-	for p in life.crowd.peds:
-		if p.pos.distance_to(crime) < 20.0:
-			near_after += 1
-	check(n > 0 and near_after < near_before, "people run from gunfire (%d fled, %d -> %d within 20 m)" % [n, near_before, near_after])
+	var ran := 0
+	var gone := 0
+	for k in near.size():
+		var p = near[k]
+		if not life.crowd.peds.has(p):
+			gone += 1
+		elif p.pos.distance_to(crime) > d_before[k] + 4.0:
+			ran += 1
+	check(n > 0 and ran + gone == near.size(), "people run from gunfire (%d panicked, %d of %d nearby ran off)" % [n, ran + gone, near.size()])
 
 	# --- carjacking -----------------------------------------------------------------
 	var before := life.traffic.cars.size()

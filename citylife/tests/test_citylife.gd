@@ -183,6 +183,13 @@ func _initialize() -> void:
 		cam.global_position = keep
 		life.step(dt)
 	check(life.traffic.shadows, "car shadows at street level")
+	var lods: Array = life.traffic.lod_counts()
+	print("  cars by LOD at street level: ", lods)
+	check(lods[0] > 0 and lods[0] < lods[1] + lods[2], "only the nearest cars get the full model (%d of %d)" % [lods[0], lods[0] + lods[1] + lods[2]])
+	var kinds := {}
+	for c in life.traffic.cars:
+		kinds[Traffic.MODELS[c.model]] = true
+	check(kinds.size() >= 5, "a mix of car models in traffic (%s)" % ", ".join(kinds.keys()))
 
 	print("citylife: %s" % ("PASS" if failures == 0 else "%d FAILED" % failures))
 	quit(1 if failures > 0 else 0)
