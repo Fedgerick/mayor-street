@@ -616,6 +616,8 @@ func _crime_and_happiness() -> void:
 	var good := current_goodness()
 	var good_bias := -good / 100.0 * 0.2
 	var tax_pen := maxf(city.tax_rate - 0.07, 0.0) * 2.5
+	# Street results from missions/ (a busted crime den, a good Game day), when present.
+	var fx: Object = city.get_meta("street_effects", null)
 	crime.fill(0.0)
 	fire_risk.fill(0.0)
 	happiness.fill(0.0)
@@ -630,10 +632,14 @@ func _crime_and_happiness() -> void:
 		var lv := city.land_value[i]
 		var base := 0.12 + 0.35 * minf(dens[i], 1.0) + 0.3 * (1.0 - lv) + 0.25 * jobless + good_bias + 0.1 * garbage[i]
 		var cr := clampf(base - 0.75 * police[i], 0.0, 1.0)
+		if fx != null:
+			cr *= fx.crime_mult(b.x, b.y)
 		var fr := clampf((0.15 + 0.4 * minf(dens[i], 1.0) + (0.25 if b.zone == City.Zone.IND else 0.0)) * (1.0 - 0.85 * fire[i]), 0.0, 1.0)
 		var h := 0.45 + 0.2 * lv + 0.25 * park[i] - 0.35 * cr - 0.25 * garbage[i] - 0.1 * fr - tax_pen
 		if power_in_play() and not b.get("powered", true):
 			h -= 0.35
+		if fx != null:
+			h += fx.happiness_add(b.x, b.y)
 		h = clampf(h, 0.0, 1.0)
 		for dy in b.size:
 			for dx in b.size:
