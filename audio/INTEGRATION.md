@@ -32,7 +32,7 @@ Suggested README line for the mayor controls table: `| Music | M toggles music o
 | `StreetPlayer` | `damaged(amount, from_pos)` |
 | `DrivableCar` (any node with `exploded` + `damaged`) | `exploded`, `damaged`, `driver`, `wrecked` |
 | `Pickup` (any node with `taken`) | `taken` |
-| `CityLife` | `police.siren_list()`, optional `police.officer_fired(pos)`, `traffic.car_taken`, optional `traffic.bus_stopped(car, stop)`, `crowd.peds[].flee` |
+| `CityLife` | `police.siren_list()`, optional `police.officer_fired(pos)`, `traffic.car_taken`, optional `traffic.bus_stopped(car, stop)`, optional `StreetCombat.reloading(id)`, optional `DrivableCar.crashed(strength)`, `crowd.peds[].flee` |
 | `Missions` | `director.started / passed / failed / step_changed`; a step with `"marker": "vault"` sets off the bank alarm at the step's slot `pos` |
 | `InteriorManager` | `interior_entered(id, building)`, `interior_exited` |
 

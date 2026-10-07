@@ -42,32 +42,39 @@ func _run() -> void:
 	var city: City = main.city
 	city.minutes = float(city.game_day()) * 1440.0 + 12.0 * 60.0
 
-	# Weather from a stand-in weather node (the real one will come from weather/).
-	var src := GDScript.new()
-	src.source_code = "extends Node\nsignal lightning(pos: Vector3)\nvar rain := 0.0\nvar wind := 0.0\n"
-	src.reload()
-	var w: Node = src.new()
-	w.add_to_group("weather")
-	main.add_child(w)
+	# Weather: the game's own main.weather when it's wired, else a stand-in node in the "weather" group.
+	var w = main.get("weather")
+	if w == null:
+		var src := GDScript.new()
+		src.source_code = "extends Node\nsignal lightning(pos: Vector3)\nvar rain := 0.0\nvar wind := 0.0\n"
+		src.reload()
+		w = src.new()
+		w.add_to_group("weather")
+		main.add_child(w)
 	await wait(1.2)
-	check(audio.weather_audio.source == w, "finds a node in the weather group")
-	w.rain = 1.0
-	w.wind = 0.8
+	var wa: WeatherAudio = audio.weather_audio
+	check(wa.source == w, "finds the weather node (%s)" % str(wa.source))
+	wa.rain_override = 1.0
+	wa.wind_override = 0.8
 	audio.rain = 0.95  # skip the slow fade
 	audio.wind = 0.75
 	await wait(0.6)
 	check(audio._amb_target["amb_rain_heavy"] > 0.3 and audio._amb_target["amb_rain_light"] < 0.1,
 		"downpour plays the heavy rain (heavy %.2f, light %.2f)" % [audio._amb_target["amb_rain_heavy"], audio._amb_target["amb_rain_light"]])
 	check(audio._amb_target["amb_gusts"] > 0.2, "wind brings gusts (%.2f)" % audio._amb_target["amb_gusts"])
-	w.lightning.emit(main.cam.global_position + Vector3(100, 0, 0) if main.get("cam") else Vector3(100, 0, 0))
+	var strike: Vector3 = (main.cam.global_position if main.get("cam") else Vector3.ZERO) + Vector3(100, 0, 0)
+	if w.has_signal("lightning"):
+		w.lightning.emit(strike)
+	else:
+		wa._on_lightning(strike)
 	await wait(0.8)
 	check(audio.played.get("thunder_1", 0) == 1, "lightning 100 m away thunders after its travel time")
-	w.rain = 0.3
+	wa.rain_override = 0.3
 	audio.rain = 0.3
 	await wait(0.6)
 	check(audio._amb_target["amb_rain_light"] > 0.2 and audio._amb_target["amb_rain_heavy"] < 0.05, "light rain plays the light loop")
-	w.rain = 0.0
-	w.wind = 0.0
+	wa.rain_override = 0.0
+	wa.wind_override = 0.0
 	audio.rain = 0.0
 	audio.wind = 0.0
 
@@ -103,6 +110,25 @@ func _run() -> void:
 		traffic.bus_stopped.emit(traffic.cars[0], null)
 		check(audio.played.get("bus_stop", 0) == stops + 1, "air brakes and doors when a bus stops")
 
+	# Pickups emit taken(kind).
+	var ps := GDScript.new()
+	ps.source_code = "extends Node3D\nsignal taken(kind: StringName)\n"
+	ps.reload()
+	var pk: Node3D = ps.new()
+	main.add_child(pk)
+	pk.global_position = street.player.global_position
+	await process_frame
+	var picks: int = audio.played.get("pickup", 0)
+	pk.taken.emit(&"cash")
+	check(audio.played.get("pickup", 0) == picks + 1, "pickup sound")
+	pk.queue_free()
+
+	# Reloads.
+	if street.combat.has_signal("reloading"):
+		street.combat.reloading.emit(&"shotgun")
+		street.combat.reloading.emit(&"pistol")
+		check(audio.played.get("reload_shotgun", 0) == 1 and audio.played.get("reload_pistol", 0) == 1, "reload sounds")
+
 	# Car radio.
 	var spot: Vector3 = street.player.global_position + street.player.global_basis.x * 3.0 + Vector3.UP * 0.3
 	var car: Node3D = street.spawn_car("car_sedan", spot, street.player.facing_yaw(), Color(0.2, 0.3, 0.8))
@@ -137,10 +163,18 @@ func _run() -> void:
 		radio.next_station()
 		await wait(1.2)
 		check(radio.station == 1 and radio._player.playing, "and back on")
+		if car.has_signal("crashed"):
+			audio._crash_cool = 0.0
+			var crashes: int = audio.played.get("crash", 0)
+			car.crashed.emit(0.8)
+			check(audio.played.get("crash", 0) == crashes + 1, "crash sound from the car's own crashed signal")
 		# Rain on the roof while driving.
+		wa.rain_override = 0.8
 		audio.rain = 0.8
 		await wait(0.3)
 		check(audio._amb_target["amb_rain_roof"] > 0.5, "rain drums on the car roof")
+		wa.rain_override = -1.0
+		wa.wind_override = -1.0
 		audio.rain = 0.0
 		street._leave_car()
 		await wait(1.0)

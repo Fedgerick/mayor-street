@@ -166,6 +166,55 @@ def bus_stop():
     return fade(x, 0.002, 0.2)
 
 
+def click(f=3200, tau=0.004, body=0.0, body_f=600):
+    m = n_of(0.12)
+    tm = tt(m)
+    y = filt(white(m), "bandpass", [f * 0.6, min(f * 2.5, 18000)]) * np.exp(-tm / tau)
+    y += 0.6 * np.sin(2 * np.pi * f * 1.3 * tm) * np.exp(-tm / (tau * 0.7))
+    if body:
+        y += body * np.sin(2 * np.pi * body_f * tm) * np.exp(-tm / 0.02)
+    return y
+
+
+def slide(dur, lo, hi):
+    m = n_of(dur)
+    tm = tt(m)
+    return filt(white(m), "bandpass", [lo, hi]) * np.sin(np.pi * tm / dur) ** 2 * 0.35
+
+
+def reload_pistol():
+    """1.15 s: mag out, mag in, slide racked back and released."""
+    x = np.zeros(n_of(1.3))
+    add_at(x, click(2200, 0.006, 0.4, 420), n_of(0.05), wrap=False)
+    add_at(x, slide(0.12, 800, 3000), n_of(0.12), wrap=False)
+    add_at(x, slide(0.1, 900, 3500), n_of(0.5), wrap=False)
+    add_at(x, click(2600, 0.005, 0.7, 380), n_of(0.6), wrap=False)
+    add_at(x, slide(0.08, 1500, 6000), n_of(0.88), wrap=False)
+    add_at(x, click(3400, 0.004, 0.3), n_of(0.95), wrap=False)
+    add_at(x, click(2900, 0.006, 0.6, 500), n_of(1.05), wrap=False)
+    return fade(x, 0.001, 0.05)
+
+
+def reload_shotgun():
+    """1.5 s: three shells pushed in, then the pump racked."""
+    x = np.zeros(n_of(1.65))
+    for t0 in (0.15, 0.5, 0.85):
+        add_at(x, slide(0.06, 600, 2500), n_of(t0), wrap=False)
+        add_at(x, click(1800, 0.008, 0.6, 300), n_of(t0 + 0.06), wrap=False)
+    add_at(x, slide(0.12, 500, 2200) * 1.5, n_of(1.15), wrap=False)
+    add_at(x, click(1500, 0.01, 0.9, 220), n_of(1.27), wrap=False)
+    add_at(x, slide(0.1, 600, 2600) * 1.5, n_of(1.3), wrap=False)
+    add_at(x, click(2000, 0.008, 0.9, 260), n_of(1.42), wrap=False)
+    return fade(x, 0.001, 0.05)
+
+
+def reloads():
+    old = S._seeded(7070)
+    write("sfx/reload_pistol.ogg", reload_pistol(), peak=0.7)
+    write("sfx/reload_shotgun.ogg", reload_shotgun(), peak=0.75)
+    S.rng = old
+
+
 def bus():
     old = S._seeded(6060)
     write("sfx/bus_stop.ogg", bus_stop(), peak=0.8)
@@ -472,7 +521,7 @@ def radio():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", choices=["weather", "bus", "radio"])
+    ap.add_argument("--only", choices=["weather", "bus", "reload", "radio"])
     a = ap.parse_args()
     if a.only in (None, "weather"):
         print("weather")
@@ -480,6 +529,9 @@ def main():
     if a.only in (None, "bus"):
         print("bus")
         bus()
+    if a.only in (None, "reload"):
+        print("reload")
+        reloads()
     if a.only in (None, "radio"):
         print("radio")
         radio()

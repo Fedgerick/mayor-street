@@ -2,7 +2,7 @@ class_name ActionAudio
 extends Node
 ## Round-2 street action sound, owned by AudioDirector (one child node, no setup needed).
 ## Hooks into signals the other modules already expose:
-##   player/   StreetCombat fired / weapon_changed, StreetMode wanted_changed / wasted / busted,
+##   player/   StreetCombat fired / weapon_changed / reloading, StreetMode wanted_changed / wasted / busted,
 ##             StreetPlayer damaged, DrivableCar exploded / damaged, Pickup taken,
 ##             StreetMode hit_landed (optional, when player/ adds it)
 ##   citylife/ Police siren_list(), Traffic car_taken / bus_stopped, Crowd peds[].flee,
@@ -102,6 +102,8 @@ func _wire() -> void:
 			_combat = c
 			c.fired.connect(_on_fired)
 			c.weapon_changed.connect(func(_id): director.play_ui("weapon_switch", -4.0))
+			if c.has_signal("reloading"):
+				c.reloading.connect(_on_reloading)
 	var l = m.get("life")
 	if l != null and l != _life and l.get("traffic") != null:
 		_life = l
@@ -187,6 +189,14 @@ func _on_car_taken(pos: Vector3, _fwd: Vector3) -> void:
 	director.play_at("carjack", pos + Vector3.UP, 0.0, _rng.randf_range(0.95, 1.05), 8.0)
 
 
+func _on_reloading(id: StringName) -> void:
+	var p = _street.get("player") if _street else null
+	if p == null:
+		return
+	var snd := "reload_shotgun" if id == &"shotgun" else "reload_pistol"
+	director.play_at(snd, p.global_position + Vector3.UP, -3.0, 1.0, 5.0)
+
+
 func _on_bus_stopped(car, _stop) -> void:
 	if car == null or not ("pos" in car):
 		return
@@ -221,8 +231,10 @@ func _stop_alarm(car: Object) -> void:
 		p.queue_free()
 
 
-func _on_pickup(n: Node3D) -> void:
-	if is_instance_valid(n):
+func _on_pickup(a = null, b = null) -> void:
+	# Pickup emits taken(kind); the bound pickup node comes after it.
+	var n = b if b is Node3D else a
+	if n is Node3D and is_instance_valid(n):
 		director.play_at("pickup", n.global_position + Vector3.UP * 0.5, -2.0, 1.0, 6.0)
 
 

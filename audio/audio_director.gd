@@ -33,7 +33,7 @@ const SFX := [
 	"gun_pistol", "gun_shotgun", "gun_cop", "punch_swing", "punch_hit_1", "punch_hit_2", "body_hit",
 	"bullet_impact", "ricochet", "bullet_metal", "explosion", "car_alarm_loop", "bank_alarm_loop",
 	"siren_yelp_loop", "weapon_switch", "pickup", "carjack", "wasted", "busted",
-	"thunder_1", "thunder_2", "radio_tune", "bus_stop",
+	"thunder_1", "thunder_2", "radio_tune", "bus_stop", "reload_pistol", "reload_shotgun",
 ]
 const AMBIENCE := ["amb_city_day", "amb_city_night", "amb_birds", "amb_crickets", "amb_wind", "amb_crowd", "amb_sea", "amb_panic", "amb_room",
 	"amb_rain_light", "amb_rain_heavy", "amb_rain_roof", "amb_gusts"]
@@ -400,6 +400,9 @@ func _on_city_message(text: String) -> void:
 func _on_vehicle_changed(c: Node) -> void:
 	if c != null:
 		_car = c
+		# Cars that report their own knocks get crash sounds from that; others from the velocity check.
+		if c.has_signal("crashed") and not c.is_connected("crashed", _on_car_crashed):
+			c.connect("crashed", _on_car_crashed.bind(c))
 		_prev_car_vel = (c as RigidBody3D).linear_velocity if c is RigidBody3D else Vector3.ZERO
 		var pos := (c as Node3D).global_position
 		# The character walks to the door and climbs in first; time the doors to that.
@@ -770,8 +773,15 @@ func _loop(p: AudioStreamPlayer3D, db: float, pitch: float, on := true) -> void:
 		p.play()
 
 
+func _on_car_crashed(strength: float, c: Node3D) -> void:
+	if _crash_cool > 0.0 or not is_instance_valid(c):
+		return
+	_crash_cool = 0.4
+	play_at("crash", c.global_position, linear_to_db(clampf(strength, 0.3, 1.0)), _rng.randf_range(0.9, 1.1), 12.0)
+
+
 func _crash_check() -> void:
-	if not (_car is RigidBody3D) or not is_instance_valid(_car):
+	if not (_car is RigidBody3D) or not is_instance_valid(_car) or _car.has_signal("crashed"):
 		return
 	var vel := (_car as RigidBody3D).linear_velocity
 	var dv := (vel - _prev_car_vel).length()
