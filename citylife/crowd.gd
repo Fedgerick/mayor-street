@@ -827,7 +827,11 @@ func render() -> void:
 			var ou := nu * 16
 			var up := p.pos
 			if p.hero != null:
-				up.y += 0.05
+				# Hang the canopy from the rigged model's raised fist.
+				var hand := p.pos + right * UmbrellaMesh.HAND.x + Vector3(0, p.size * UmbrellaMesh.HAND.y, 0) + back * UmbrellaMesh.HAND.z
+				var grip: Vector3 = p.hero.umbrella_grip()
+				if grip.distance_to(hand) < 0.8:
+					up += grip - hand
 			_brolly_buf[ou] = right.x; _brolly_buf[ou + 1] = 0.0; _brolly_buf[ou + 2] = back.x; _brolly_buf[ou + 3] = up.x
 			_brolly_buf[ou + 4] = 0.0; _brolly_buf[ou + 5] = p.size; _brolly_buf[ou + 6] = 0.0; _brolly_buf[ou + 7] = up.y
 			_brolly_buf[ou + 8] = right.z; _brolly_buf[ou + 9] = 0.0; _brolly_buf[ou + 10] = back.z; _brolly_buf[ou + 11] = up.z
@@ -962,15 +966,27 @@ func update_heroes(dt: float) -> void:
 		m.global_basis = Basis.looking_at(p.fwd, Vector3.UP).scaled(Vector3.ONE * p.size)
 		if p.flee > 0.0:
 			m.set_sitting(false)
+			m.set_activity("")
 			m.animate(dt, RUN, true, 0.0, 0.0)
 			continue
 		var st := _stance(p)
 		m.set_sitting(st.y == Pose.SIT)
+		m.set_activity(_hero_activity(p, int(st.y)))
 		var moving := st.x > 0.0
 		m.animate(dt, CharacterModel.WALK_SPEED if moving else 0.0, true, 0.0, 0.0)
 		if moving:
 			# The walk clip is authored at 3.6 m/s; play it slower to match a stroll.
 			m.tree.set("parameters/pace/scale", clampf(p.speed / CharacterModel.WALK_SPEED * 1.7, 0.5, 1.0))
+
+
+## What a close-up person's rigged model is doing, from the crowd's pose.
+func _hero_activity(p: Ped, pose: int) -> String:
+	match pose:
+		Pose.SIT: return "bench"
+		Pose.PHONE: return "phone"
+		Pose.CHAT: return "talk"
+		Pose.UMBRELLA: return "umbrella"
+	return "look" if p.gawk else ""
 
 
 func _take_hero(p: Ped) -> void:
@@ -995,6 +1011,8 @@ func _release_hero(p: Ped) -> void:
 		return
 	var m: CharacterModel = p.hero
 	m.visible = false
+	m.set_sitting(false)
+	m.set_activity("")
 	m.tree.active = false
 	_pool.append(m)
 	p.hero = null

@@ -72,6 +72,16 @@ func _initialize() -> void:
 	w.set_weather(Weather.Kind.FOG)
 	w.advance(90.0)
 	check(w.fog > 0.9 and w.visibility() < 0.35, "fog rolls in (%.2f)" % w.fog)
+	var strikes := [0]
+	w.lightning.connect(func(_p): strikes[0] += 1)
+	w._strikes(120.0)
+	check(strikes[0] == 0, "no lightning in fog")
+	w.intensity = 1.0
+	w.set_weather(Weather.Kind.RAIN, true)
+	for i in 120:
+		w._strikes(1.0)
+	check(strikes[0] >= 3, "lightning in heavy rain (%d strikes in 2 game hours)" % strikes[0])
+	check(w.is_in_group("weather"), "audio can find the weather by group")
 	w.set_weather(-1)
 	check(w.forced == -1, "back to the calendar")
 	var d := w.to_dict()

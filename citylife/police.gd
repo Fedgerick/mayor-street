@@ -563,18 +563,9 @@ func _take_model() -> CharacterModel:
 	return m
 
 
-## Dress a CharacterModel as a police officer: navy shirt and trousers, black shoes.
+## Dress a CharacterModel as a police officer (the player thread's uniform preset).
 static func _uniform(m: CharacterModel) -> void:
-	var cols := {"Shirt": Color(0.12, 0.17, 0.33), "Pants": Color(0.08, 0.1, 0.18),
-		"Shoes": Color(0.05, 0.05, 0.06), "Hair": Color(0.06, 0.07, 0.12)}
-	for mi in m.model.find_children("*", "MeshInstance3D", true, false):
-		var mesh_inst := mi as MeshInstance3D
-		for s in mesh_inst.mesh.get_surface_count():
-			var src := mesh_inst.mesh.surface_get_material(s)
-			var nm := src.resource_name if src else ""
-			var mat := mesh_inst.get_surface_override_material(s) as StandardMaterial3D
-			if mat and cols.has(nm):
-				mat.albedo_color = cols[nm]
+	m.set_outfit({"preset": "police"})
 
 
 ## An officer was killed (by the player): drop them and scare everyone nearby.

@@ -30,6 +30,7 @@ const DRY_MINUTES := 150.0       # and they dry this slowly
 const GLOBALS := ["weather_cloud", "weather_rain", "weather_fog", "weather_wet", "weather_wind"]
 
 signal changed(kind: int)        # the state the weather is heading for changed
+signal lightning(pos: Vector3)   # a strike in heavy rain (audio plays thunder after the delay)
 
 var city: City
 var kind := Kind.CLEAR           # the state it is heading for
@@ -41,6 +42,11 @@ var fog := 0.0
 var wind := 0.2
 var wet := 0.0
 var auto_step := true
+var focus := Vector3.ZERO        # where lightning strikes around (main sets the camera); city centre if zero
+var lightning_on := true
+
+var _rng := RandomNumberGenerator.new()
+var _next_strike := 0.0           # game minutes until the next strike
 
 var _last_minutes := -1.0
 var _globals: Array[String] = []
@@ -48,6 +54,9 @@ var _globals: Array[String] = []
 
 func setup(c: City) -> void:
 	city = c
+	add_to_group("weather")
+	_rng.seed = hash([c.map_seed, "lightning"])
+	_next_strike = _rng.randf_range(4.0, 20.0)
 	for g in GLOBALS:
 		if ProjectSettings.has_setting("shader_globals/" + g):
 			_globals.append(g)
@@ -72,7 +81,24 @@ func step() -> void:
 		kind = want
 		changed.emit(kind)
 	advance(dm)
+	_strikes(dm)
 	_push()
+
+
+## Heavy rain brings the odd lightning strike somewhere within a kilometre or so.
+func _strikes(dm: float) -> void:
+	if not lightning_on or rain < 0.7 or dm <= 0.0:
+		return
+	_next_strike -= dm
+	if _next_strike > 0.0:
+		return
+	_next_strike = _rng.randf_range(3.0, 18.0) / maxf(rain, 0.1)
+	var at := focus
+	if at == Vector3.ZERO and city:
+		at = city.cell_center(City.SIZE / 2, City.SIZE / 2)
+	var a := _rng.randf() * TAU
+	var r := _rng.randf_range(250.0, 1400.0)
+	lightning.emit(at + Vector3(cos(a) * r, 0.0, sin(a) * r))
 
 
 ## Move the eased values on by `dm` game minutes.
