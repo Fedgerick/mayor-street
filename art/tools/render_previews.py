@@ -496,7 +496,14 @@ def shot_specials():
     shot_thumbs(names, "specials_thumbs", cols=6)
 
 
-SHOTS = {"thumbs": shot_thumbs, "specials": shot_specials, "extras": shot_extras, "sheet": shot_sheet, "street": shot_street, "props": shot_props,
+def shot_street_kit():
+    """Contact sheet of the street dressing kit (assets/kit/street)."""
+    sys.path.insert(0, HERE)
+    import build_street
+    shot_thumbs([("street", n) for n, _ in build_street.JOBS], "street_kit_thumbs", cols=7, cell=(360, 300))
+
+
+SHOTS = {"thumbs": shot_thumbs, "specials": shot_specials, "street_kit": shot_street_kit, "extras": shot_extras, "sheet": shot_sheet, "street": shot_street, "props": shot_props,
          "night": lambda: shot_street(True, "street_night")}
 
 if __name__ == "__main__":

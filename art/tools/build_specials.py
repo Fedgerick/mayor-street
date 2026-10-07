@@ -406,6 +406,45 @@ def diner(name):
     return m.build(name)
 
 
+@special("clothing_shop", "Threads Clothing", 1, 1, ["shop", "clothes"], interior="shop_clothes",
+         door=lot_door(-1.8, -3.0))
+def clothing_shop(name):
+    """Boutique: a tall glass shopfront with mannequins in the window, striped awning."""
+    rng = random.Random(14)
+    m = Mesh()
+    lot(m, 6, "Paving")
+    x0, x1, y0, y1 = -5.0, 5.0, -3.0, 5.4
+    block_with_windows(m, x0, y0, x1, y1, 0.12, 1, 4.4, "Accent", pitch=3.0, win_h=1.6, sill=1.8,
+                       all_skip=lambda nm, f, c, cs: nm == "S")
+    block_with_windows(m, x0, y0, x1, y1, 4.52, 1, 3.4, "Wall", win_w=1.4, win_h=1.8, pitch=2.4, mullion=True,
+                       lintel="Trim")
+    # shopfront: big window either side of the door
+    m.box(x0, y0 - 0.05, 0.12, x1, y0 + 0.01, 0.55, "Trim")
+    for (a, b) in ((x0 + 0.3, -2.6), (-1.0, x1 - 0.3)):
+        m.box(a, y0 - 0.03, 0.55, b, y0, 3.6, "Glass")
+        m.box(a - 0.1, y0 - 0.12, 0.55, a + 0.05, y0, 3.6, "Metal")
+        m.box(b - 0.05, y0 - 0.12, 0.55, b + 0.1, y0, 3.6, "Metal")
+    door_box(m, -1.8, y0, 0.12, 1.4, 2.6)
+    # mannequins behind the glass
+    for x in (-4.0, 0.2, 2.6):
+        m.cyl(x, y0 + 0.6, 0.55, 0.62, 0.25, "Metal", seg=8)
+        m.cyl(x, y0 + 0.6, 0.62, 1.7, 0.05, "Metal", seg=6)
+        m.box(x - 0.25, y0 + 0.45, 1.6, x + 0.25, y0 + 0.75, 2.4, "Awning", top="Awning")
+        smooth_blob(m, x, y0 + 0.6, 2.62, 0.15, "Trim", rng, subdiv=1, jitter=0.0)
+    # striped awning across the front
+    a, b = 4.0, 3.2
+    m.face([(x0 + 0.2, y0, a), (x1 - 0.2, y0, a), (x1 - 0.2, y0 - 1.5, b), (x0 + 0.2, y0 - 1.5, b)], "Awning", (0, -1, 1))
+    m.face([(x0 + 0.2, y0, a - 0.04), (x1 - 0.2, y0, a - 0.04), (x1 - 0.2, y0 - 1.5, b - 0.04),
+            (x0 + 0.2, y0 - 1.5, b - 0.04)], "Awning", (0, 0, -1))
+    m.face([(x0 + 0.2, y0 - 1.5, b), (x1 - 0.2, y0 - 1.5, b), (x1 - 0.2, y0 - 1.5, b - 0.3),
+            (x0 + 0.2, y0 - 1.5, b - 0.3)], "Awning", (0, -1, 0))
+    top = 7.92
+    m.box(x0 - 0.2, y0 - 0.3, top, x1 + 0.2, y1 + 0.2, top + 0.4, "Trim")
+    flat_roof(m, x0, y0, x1, y1, top + 0.4, parapet=0.3)
+    name_sign(m, "THREADS", (0.0, y0, 4.5), (1, 0, 0), 0.7, plate=None, letters="Lamp", max_w=7)
+    return m.build(name)
+
+
 @special("payphone", "Payphone", 0, 1, ["payphone", "mission_giver"], folder="props")
 def payphone(name):
     m = Mesh()
@@ -810,7 +849,7 @@ def hospital(name):
 # ------------------------------------------------------------------ Tier 4 ---
 
 @special("casino", "The Golden Ace Casino", 2, 4, ["casino", "robbable", "nightlife", "landmark"],
-         door=lot_door(0.0, -7.6))
+         interior="casino", door=lot_door(0.0, -7.6))
 def casino(name):
     rng = random.Random(41)
     m = Mesh()
@@ -1061,7 +1100,8 @@ def radio_tower(name):
 
 # ------------------------------------------------------------------ Tier 5 ---
 
-@special("federal_reserve", "Federal Reserve", 2, 5, ["bank", "robbable", "landmark", "vault"], interior="bank",
+@special("federal_reserve", "Federal Reserve", 2, 5, ["bank", "robbable", "landmark", "vault"],
+         interior="federal_reserve",
          door=lot_door(0.0, -8.2))
 def federal_reserve(name):
     rng = random.Random(51)

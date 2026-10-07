@@ -723,10 +723,310 @@ def police():
     r.mark("busted", 1.6, 2.2, 0, -90)
     r.export()
 
+def shop_clothes():
+    """Clothing shop: racks and tables of clothes, mannequins, fitting rooms, a big mirror."""
+    rng = random.Random(8)
+    r = Room("shop_clothes")
+    x0, x1, y0, y1 = -5.0, 5.0, -4.0, 4.0
+    r.shell(x0, y0, x1, y1, h=3.4, wall="I_White", floor="I_Floorboards",
+            doors=[("S", -1.8, 1.4, 2.3), ("N", 3.6, 1.0, 2.2)], skirting="I_WoodDark")
+    r.door_leaf("S", -1.8, y0 - T / 2, w=1.4, h=2.3, mat="I_Glass", frame="I_Steel")
+    r.window("S", -4.0, y0, 0.5, 1.6, 2.4)
+    r.window("S", 2.4, y0, 0.5, 4.2, 2.4)
+    colours = ["I_Red", "I_CarpetBlue", "I_Yellow", "I_Green", "I_Black", "I_White", "I_Fabric", "I_Olive",
+               "I_NeonPink", "I_Leather"]
+    # hanging rails: a chrome bar with a row of garments
+    def rail(x, y, length, along_x=True):
+        if along_x:
+            for e in (x - length / 2, x + length / 2):
+                r.cyl(e, y, 0, 1.55, 0.03, "I_Steel", seg=6)
+            r.deco(x - length / 2, y - 0.02, 1.5, x + length / 2, y + 0.02, 1.55, "I_Steel")
+            n = int(length / 0.12)
+            for i in range(n):
+                gx = x - length / 2 + 0.08 + i * 0.12
+                ln = rng.uniform(0.6, 1.0)
+                r.deco(gx - 0.03, y - 0.25, 1.5 - ln, gx + 0.03, y + 0.25, 1.48, rng.choice(colours[:8]))
+            r.c.box(x - length / 2, y - 0.3, 0, x + length / 2, y + 0.3, 1.6, "Concrete")
+        else:
+            for e in (y - length / 2, y + length / 2):
+                r.cyl(x, e, 0, 1.55, 0.03, "I_Steel", seg=6)
+            r.deco(x - 0.02, y - length / 2, 1.5, x + 0.02, y + length / 2, 1.55, "I_Steel")
+            n = int(length / 0.12)
+            for i in range(n):
+                gy = y - length / 2 + 0.08 + i * 0.12
+                ln = rng.uniform(0.6, 1.0)
+                r.deco(x - 0.25, gy - 0.03, 1.5 - ln, x + 0.25, gy + 0.03, 1.48, rng.choice(colours[:8]))
+            r.c.box(x - 0.3, y - length / 2, 0, x + 0.3, y + length / 2, 1.6, "Concrete")
+    rail(-3.2, 1.2, 2.4)
+    rail(-3.2, -1.6, 2.4)
+    rail(4.4, -0.6, 4.0, along_x=False)
+    # display tables with folded stacks
+    for (tx, ty) in ((0.2, -1.6), (0.2, 1.0)):
+        table(r, tx, ty, 1.6, 0.9, h=0.8, top="I_Wood", leg="I_WoodDark")
+        for i in range(6):
+            sx = tx - 0.6 + (i % 3) * 0.6
+            sy = ty - 0.2 + (i // 3) * 0.4
+            for k in range(rng.randint(2, 4)):
+                r.deco(sx - 0.22, sy - 0.15, 0.8 + k * 0.06, sx + 0.22, sy + 0.15, 0.85 + k * 0.06, rng.choice(colours))
+    # mannequins
+    for (mx, my) in ((-4.2, -3.2), (1.6, -3.3), (3.4, -3.3)):
+        r.cyl(mx, my, 0, 0.05, 0.25, "I_SteelDark", seg=10, collide=True)
+        r.cyl(mx, my, 0.05, 0.9, 0.04, "I_Steel", seg=6)
+        r.deco(mx - 0.22, my - 0.13, 0.9, mx + 0.22, my + 0.13, 1.55, rng.choice(colours))
+        r.deco(mx - 0.18, my - 0.11, 0.5, mx + 0.18, my + 0.11, 0.95, rng.choice(colours))
+        from build_extra import smooth_blob
+        smooth_blob(r.v, mx, my, 1.72, 0.13, "I_White", rng, subdiv=1, jitter=0.0)
+    # fitting rooms along the north wall (two curtained booths)
+    for i, cx in enumerate((-3.9, -2.4)):
+        r.solid(cx - 0.75, y1 - 1.5, 0, cx - 0.7, y1, 2.3, "I_White")
+        r.deco(cx - 0.7, y1 - 1.5, 0.15, cx + 0.7, y1 - 1.45, 2.2, "I_Carpet" if i == 0 else "I_CarpetBlue")
+        r.deco(cx - 0.6, y1 - 0.06, 0.4, cx + 0.6, y1 - 0.02, 2.0, "I_Glass")   # mirror inside
+    r.solid(-1.65, y1 - 1.5, 0, -1.6, y1, 2.3, "I_White")
+    # big mirror and a bench
+    r.deco(-0.4, y1 - 0.06, 0.3, 1.4, y1 - 0.02, 2.4, "I_Glass")
+    r.deco(-0.5, y1 - 0.08, 0.2, 1.5, y1 - 0.06, 2.5, "I_Brass")
+    r.solid(-0.2, y1 - 1.2, 0, 1.2, y1 - 0.8, 0.45, "I_Leather")
+    # counter by the door
+    counter(r, 1.6, -0.6, 3.6, 0.0, h=1.0, body="I_White", top="I_Wood")
+    r.deco(2.4, -0.4, 1.0, 2.9, -0.1, 1.3, "I_SteelDark")
+    r.deco(2.45, -0.42, 1.12, 2.85, -0.4, 1.26, "I_Screen")
+    r.mark("register", 2.65, -0.25, 1.0, 180)
+    # back room with the safe
+    r.shell(2.6, y1 + T, 5.0, 6.6, h=3.4, wall="I_ConcreteDark", floor="I_ConcreteDark", doors=[("S", 3.6, 1.0, 2.2)])
+    r.solid(3.9, 5.7, 0, 4.9, 6.55, 1.1, "I_SteelDark")
+    crate(r, 3.2, 5.9, 0.7, mat="I_Paper")
+    r.ceiling_lamp(3.8, 5.6, h=3.4, mat="I_LampCool", color="e0ecff", rng=4, energy=0.7, size=0.4)
+    plant(r, 4.4, -3.4, rng, 1.0)
+    r.deco(-4.8, y0 + 0.02, 2.75, 4.8, y0 + 0.06, 2.85, "I_NeonPink")
+    for (x, y) in ((-3.0, 0.0), (0.2, -0.3), (3.0, 1.6), (3.0, -2.4), (-3.0, 2.8)):
+        r.ceiling_lamp(x, y, h=3.4, mat="I_LampWarm", color="fff0d8", rng=6, energy=1.1, size=0.5)
+    r.mark("spawn", -1.8, -3.0, 0, 0)
+    r.mark("exit", -1.8, y0 - 0.1, 0, 180)
+    r.mark("counter", 2.6, -1.1, 0, 0)
+    r.mark("clerk", 2.6, 0.5, 0, 180)
+    r.mark("racks", -3.2, -0.2, 0, 0)
+    r.mark("fitting_room", -3.9, y1 - 0.8, 0, 180)
+    r.mark("mirror", 0.5, y1 - 1.6, 0, 0)
+    r.mark("safe", 4.3, 5.2, 0, 0)
+    r.export()
+
+
+def casino():
+    """Gaming floor (slots, card tables, roulette, bar, cashier cage) and, behind the cage,
+    the counting room with the cash, the money counters and the security monitors."""
+    rng = random.Random(9)
+    r = Room("casino")
+    x0, x1, y0, y1 = -12.0, 12.0, -8.0, 7.0
+    r.shell(x0, y0, x1, y1, h=5.0, wall="I_WoodDark", floor="I_Carpet", ceil="I_Black",
+            doors=[("S", 0.0, 2.6, 3.0), ("N", 7.5, 1.2, 2.4)], skirting="I_Brass")
+    r.door_leaf("S", 0.0, y0 - T / 2, w=2.6, h=3.0, mat="I_Glass", frame="I_Brass")
+    r.deco(-2.5, y0, 0.0, 2.5, -4.5, 0.015, "I_MarbleDark")  # entry runner
+    # slot machine banks, back to back
+    for bx in (-9.5, -6.5):
+        for i in range(6):
+            y = -5.6 + i * 1.0
+            for side in (-1, 1):
+                x = bx + side * 0.45
+                r.solid(x - 0.3, y - 0.4, 0, x + 0.3, y + 0.4, 1.0, "I_SteelDark")
+                r.deco(x - 0.32, y - 0.38, 1.0, x + 0.32, y + 0.38, 1.75, "I_Black")
+                r.deco(x + side * 0.33 - 0.01, y - 0.3, 1.15, x + side * 0.33 + 0.01, y + 0.3, 1.6, "I_Screen")
+                r.deco(x - 0.3, y - 0.36, 1.75, x + 0.3, y + 0.36, 1.95,
+                       rng.choice(["I_NeonPink", "I_NeonCyan", "I_NeonPurple", "I_NeonGreen"]))
+                chair(r, x + side * 0.75, y, "N", mat="I_Leather")
+        r.light(bx, -3.0, 3.0, "ff70d0", 7, 1.2)
+    # card tables
+    for (tx, ty) in ((-1.5, -3.5), (2.5, -3.5), (-1.5, 0.5), (2.5, 0.5)):
+        r.cyl(tx, ty, 0, 0.72, 0.3, "I_WoodDark", seg=10)
+        r.cyl(tx, ty, 0.72, 0.8, 1.2, "I_Green", seg=16, collide=True)
+        r.cyl(tx, ty, 0.8, 0.82, 1.25, "I_Leather", seg=16, r_top=1.2, cap=False)
+        for k in range(5):
+            a = math.pi * (0.15 + 0.7 * k / 4)
+            chair(r, tx + math.cos(a) * 1.6, ty - math.sin(a) * 1.6, "N", mat="I_Leather")
+        for k in range(4):  # chip stacks
+            r.cyl(tx - 0.5 + k * 0.3, ty + 0.5, 0.82, 0.9 + k * 0.03, 0.06, rng.choice(["I_Red", "I_CarpetBlue", "I_Gold"]), seg=8)
+        r.ceiling_lamp(tx, ty, h=5.0, mat="I_LampWarm", color="ffd9a0", rng=6, energy=1.5, size=0.8)
+    # roulette
+    rx, ry = 7.0, -3.5
+    r.solid(rx - 1.8, ry - 0.8, 0, rx + 1.8, ry + 0.8, 0.8, "I_WoodDark")
+    r.deco(rx - 1.75, ry - 0.75, 0.8, rx + 0.6, ry + 0.75, 0.82, "I_Green")
+    r.cyl(rx + 1.1, ry, 0.8, 0.95, 0.55, "I_Wood", seg=16)
+    r.cyl(rx + 1.1, ry, 0.95, 0.98, 0.42, "I_Red", seg=16)
+    r.cyl(rx + 1.1, ry, 0.98, 1.1, 0.06, "I_Gold", seg=8)
+    r.ceiling_lamp(rx, ry, h=5.0, mat="I_LampWarm", color="ffd9a0", rng=6, energy=1.5, size=0.8)
+    # bar along the east wall
+    counter(r, 10.0, -2.0, 11.0, 4.0, h=1.1, body="I_WoodDark", top="I_MarbleDark")
+    shelf_unit(r, 11.4, -1.8, 11.95, 3.8, h=2.4, levels=4, mat="I_WoodDark",
+               goods=["I_Glass", "I_Gold", "I_Green", "I_Brass"], rng=rng)
+    for i in range(5):
+        r.cyl(9.4, -1.4 + i * 1.2, 0, 0.75, 0.05, "I_Brass", seg=6)
+        r.cyl(9.4, -1.4 + i * 1.2, 0.75, 0.82, 0.22, "I_Leather", seg=10, collide=True)
+    r.deco(10.0, 4.0, 1.1, 11.0, -2.0, 1.12, "I_NeonPurple")
+    # cashier cage on the north wall; the counting room door is behind it, reached through
+    # the staff gap between the cage and the bar
+    cx0, cx1 = 2.0, 9.0
+    counter(r, cx0, 4.4, cx1, 5.0, h=1.1, body="I_WoodDark", top="I_Marble")
+    for i in range(8):
+        x = cx0 + 0.1 + i * (cx1 - cx0 - 0.2) / 7
+        r.deco(x - 0.02, 4.68, 1.1, x + 0.02, 4.72, 3.0, "I_Brass")
+    r.deco(cx0, 4.66, 2.95, cx1, 4.74, 3.05, "I_Brass")
+    r.c.box(cx0, 4.4, 1.1, cx1, 5.0, 3.0, "Concrete")
+    r.solid(cx0 - 0.2, 4.4, 0, cx0, y1, 3.0, "I_WoodDark")
+    r.deco(4.5, 4.36, 2.0, 6.5, 4.4, 2.4, "I_NeonGreen")
+    # counting room behind the north wall
+    ky0, ky1 = y1 + T, 13.0
+    r.shell(4.0, ky0, 12.0, ky1, h=3.2, wall="I_ConcreteDark", floor="I_Concrete", ceil="I_ConcreteDark",
+            doors=[("S", 7.5, 1.2, 2.4)], skirting="I_SteelDark")
+    r.door_leaf("W", 4.0 - T / 2, 10.0, w=1.0, mat="I_SteelDark", frame="I_Steel")
+    for (tx, ty) in ((6.0, 9.2), (9.5, 9.2)):
+        r.solid(tx - 1.2, ty - 0.6, 0, tx + 1.2, ty + 0.6, 0.85, "I_Steel")
+        for k in range(10):
+            bx = tx - 1.0 + (k % 5) * 0.4
+            by = ty - 0.4 + (k // 5) * 0.4
+            for z in range(rng.randint(1, 4)):
+                r.deco(bx, by, 0.85 + z * 0.08, bx + 0.32, by + 0.16, 0.92 + z * 0.08, "I_Cash")
+        r.deco(tx - 0.2, ty + 0.2, 0.85, tx + 0.3, ty + 0.55, 1.15, "I_SteelDark")   # money counter
+        r.ceiling_lamp(tx, ty, h=3.2, mat="I_LampCool", color="e0ecff", rng=5, energy=1.2, size=0.9)
+    for i in range(3):   # cash carts
+        x = 5.0 + i * 1.0
+        r.solid(x - 0.4, 11.7, 0, x + 0.4, 12.8, 1.0, "I_SteelDark")
+        r.deco(x - 0.35, 11.75, 1.0, x + 0.35, 12.75, 1.2, "I_Cash")
+    r.solid(10.6, 11.8, 0, 11.9, 12.9, 1.8, "I_SteelDark")       # safe
+    r.deco(10.6, 11.78, 0.7, 11.2, 11.8, 1.3, "I_Steel")
+    for i in range(4):   # security monitors
+        r.deco(11.9, 9.0 + i * 0.6, 1.4, 11.95, 9.5 + i * 0.6, 1.85, "I_Screen")
+    r.deco(11.5, 8.9, 0.0, 11.95, 11.4, 0.9, "I_SteelDark")
+    r.deco(4.5, ky1 - 0.06, 2.6, 5.5, ky1 - 0.02, 2.8, "I_RedLight")
+    # glitzy ceiling
+    for x in range(-10, 11, 4):
+        r.deco(x - 0.1, y0, 4.85, x + 0.1, y1, 4.95, "I_Brass")
+    r.deco(-11.9, -7.9, 3.8, -11.85, 6.9, 3.9, "I_NeonPink")
+    r.light(-2.0, 5.0, 3.5, "ffd090", 9, 1.5)
+    r.light(5.0, -6.0, 3.5, "ffd090", 9, 1.5)
+    r.mark("spawn", 0.0, -6.8, 0, 0)
+    r.mark("exit", 0.0, y0 - 0.1, 0, 180)
+    r.mark("slots", -8.0, -1.0, 0, 0)
+    r.mark("tables", 0.5, -1.5, 0, 0)
+    r.mark("roulette", 7.0, -2.2, 0, 180)
+    r.mark("bar", 9.0, 1.0, 0, -90)
+    r.mark("cage", 5.5, 3.6, 0, 0)
+    r.mark("counting_room", 7.8, 10.6, 0, 0)
+    r.mark("cash", 6.0, 10.1, 0, 180)
+    r.mark("safe", 11.0, 11.2, 0, 0)
+    r.mark("security", 11.0, 10.0, 0, -90)
+    r.export()
+
+
+def federal_reserve():
+    """Marble hall with a guard desk and security gates, a long ramp down to the vault floor:
+    a round vault door standing open onto cages of gold."""
+    rng = random.Random(10)
+    r = Room("federal_reserve")
+    x0, x1, y0, y1 = -9.0, 9.0, -7.0, 3.0
+    r.shell(x0, y0, x1, y1, h=7.0, wall="I_Marble", floor="I_Marble", ceil="I_White",
+            doors=[("S", 0.0, 2.8, 3.6), ("N", 0.0, 3.0, 3.0)], skirting="I_MarbleDark")
+    r.door_leaf("S", 0.0, y0 - T / 2, w=2.8, h=3.6, mat="I_Brass", frame="I_MarbleDark")
+    for x in (-7.0, -3.5, 3.5, 7.0):
+        r.cyl(x, -4.0, 0, 7.0, 0.5, "I_Marble", seg=16, collide=True)
+        r.solid(x - 0.65, -4.65, 0, x + 0.65, -3.35, 0.35, "I_MarbleDark")
+    r.deco(-1.6, y0, 0.0, 1.6, y1, 0.015, "I_CarpetBlue")
+    # an eagle-ish seal on the back wall: gold disc
+    r.v.cyl(0, y1 - 0.02, 4.2, 4.2, 1.2, "I_Gold", seg=20)
+    for i in range(20):
+        a0, a1 = math.tau * i / 20, math.tau * (i + 1) / 20
+        c = Vector((0, y1 - 0.05, 5.2))
+        p0 = c + Vector((math.cos(a0) * 1.2, 0, math.sin(a0) * 1.2))
+        p1 = c + Vector((math.cos(a1) * 1.2, 0, math.sin(a1) * 1.2))
+        r.v.face([c, p1, p0], "I_Gold", (0, -1, 0))
+    # guard desk and turnstile gates
+    counter(r, -5.5, -1.6, -2.0, -0.8, h=1.1, body="I_MarbleDark", top="I_Marble")
+    r.deco(-4.2, -1.3, 1.1, -3.6, -1.0, 1.45, "I_Screen")
+    for x in (-1.6, -0.5, 0.6, 1.7):
+        r.solid(x - 0.08, -0.4, 0, x + 0.08, 0.6, 1.0, "I_Steel")
+    r.deco(-1.6, -0.35, 0.95, 1.7, -0.3, 1.0, "I_RedLight")
+    for x in (-8.0, 8.0):
+        plant(r, x, -6.2, rng, 1.4)
+    for x in (-5.0, 0.0, 5.0):
+        r.cyl(x, -2.0, 6.2, 7.0, 0.03, "I_Brass", seg=4)
+        r.cyl(x, -2.0, 5.6, 6.2, 0.7, "I_LampWarm", seg=14, r_top=0.2)
+        r.light(x, -2.0, 5.0, "ffe0b0", 11, 2.4)
+    # ramp corridor down to the vault level (z = -4)
+    cx0, cx1 = -1.5, 1.5
+    ry0, ry1 = y1 + T, 13.0
+    zv = -4.0
+    r.solid(cx0 - T, ry0, zv, cx0, ry1, 3.0, "I_Concrete")
+    r.solid(cx1, ry0, zv, cx1 + T, ry1, 3.0, "I_Concrete")
+    r.solid(cx0 - T, ry0, 3.0, cx1 + T, ry1, 3.3, "I_ConcreteDark")
+    steps = 16
+    for i in range(steps):
+        y = ry0 + i * (ry1 - ry0) / steps
+        z = -(i + 1) * (-zv) / steps
+        r.solid(cx0, y, z - 0.25, cx1, y + (ry1 - ry0) / steps, z, "I_ConcreteDark")
+    for i in range(3):
+        r.ceiling_lamp(0.0, ry0 + 2 + i * 3.5, h=3.0, mat="I_LampCool", color="e0ecff", rng=5, energy=1.0, size=0.6)
+    # vault level
+    vx0, vx1, vy0, vy1 = -7.0, 7.0, ry1, 24.0
+    r.shell(vx0, vy0, vx1, vy1, h=4.0, z=zv, wall="I_SteelDark", floor="I_Concrete", ceil="I_ConcreteDark",
+            doors=[("S", 0.0, 3.0, 3.0)], skirting="I_Steel")
+    # the round vault door, swung open to the west
+    dx, dy, dz = -2.2, vy0 + 1.2, zv + 1.6
+    seg = 20
+    for i in range(seg):
+        a0, a1 = math.tau * i / seg, math.tau * (i + 1) / seg
+        p0 = Vector((dx, dy + 1.5 * math.cos(a0), dz + 1.5 * math.sin(a0)))
+        p1 = Vector((dx, dy + 1.5 * math.cos(a1), dz + 1.5 * math.sin(a1)))
+        c = Vector((dx, dy, dz))
+        r.v.face([c, p0, p1], "I_Steel", (1, 0, 0))
+        r.v.face([c + Vector((-0.6, 0, 0)), p1 + Vector((-0.6, 0, 0)), p0 + Vector((-0.6, 0, 0))], "I_Steel", (-1, 0, 0))
+        r.v.face([p0, p1, p1 + Vector((-0.6, 0, 0)), p0 + Vector((-0.6, 0, 0))], "I_SteelDark", ((p0 + p1) / 2 - c))
+    for k in range(4):
+        a = k * math.pi / 4
+        d = Vector((0, math.cos(a), math.sin(a)))
+        r.v.obox(Vector((dx + 0.02, dy, dz)) - d * 1.0 - Vector((0, 0, 0.05)), d * 2.0, Vector((0.14, 0, 0)),
+                 Vector((0, 0, 0.1)), "I_Brass")
+    r.c.box(dx - 0.6, dy - 1.5, zv, dx, dy + 1.5, zv + 3.2, "Concrete")
+    # gold cages: rows of shelves stacked with bars behind mesh
+    for row, y in enumerate((17.0, 20.0)):
+        for side in (-1, 1):
+            xa, xb = (1.2, 6.6) if side > 0 else (-6.6, -1.2)
+            r.solid(xa, y - 0.5, zv, xb, y + 0.5, zv + 0.1, "I_SteelDark")
+            for lvl in range(3):
+                z = zv + 0.1 + lvl * 0.7
+                r.deco(xa, y - 0.5, z + 0.6, xb, y + 0.5, z + 0.64, "I_Steel")
+                n = int((xb - xa) / 0.3)
+                for i in range(n):
+                    bx = xa + 0.05 + i * 0.3
+                    for j in range(2):
+                        r.deco(bx, y - 0.4 + j * 0.42, z, bx + 0.25, y - 0.05 + j * 0.42, z + 0.1, "I_Gold")
+                        if rng.random() < 0.7:
+                            r.deco(bx + 0.02, y - 0.38 + j * 0.42, z + 0.1, bx + 0.23, y - 0.07 + j * 0.42, z + 0.18, "I_Gold")
+            r.c.box(xa, y - 0.5, zv, xb, y + 0.5, zv + 2.2, "Concrete")
+            # cage mesh in front
+            for i in range(int((xb - xa) / 0.4) + 1):
+                x = xa + i * 0.4
+                r.deco(x - 0.015, y - 0.62, zv, x + 0.015, y - 0.58, zv + 2.4, "I_Steel")
+    # pallet of cash and a cart in the middle
+    for (px, py) in ((-0.8, 22.5), (0.8, 22.5)):
+        r.solid(px - 0.6, py - 0.5, zv, px + 0.6, py + 0.5, zv + 0.15, "I_Wood")
+        r.solid(px - 0.55, py - 0.45, zv + 0.15, px + 0.55, py + 0.45, zv + 1.0, "I_Cash")
+    for (x, y) in ((-4.0, 23.0), (4.0, 23.0), (0.0, 18.5)):
+        r.ceiling_lamp(x, y, h=zv + 4.0, mat="I_LampCool", color="d8e8ff", rng=8, energy=1.6, size=1.4)
+    r.deco(-0.5, vy1 - 0.06, zv + 3.2, 0.5, vy1 - 0.02, zv + 3.5, "I_RedLight")
+    r.mark("spawn", 0.0, -5.8, 0, 0)
+    r.mark("exit", 0.0, y0 - 0.1, 0, 180)
+    r.mark("desk", -3.8, -2.2, 0, 0)
+    r.mark("gate", 0.0, -0.9, 0, 0)
+    r.mark("vault_door", 0.0, vy0 + 1.0, zv, 0)
+    r.mark("vault", 0.0, 20.5, zv, 0)
+    r.mark("gold", 4.0, 18.5, zv, 0)
+    r.mark("alarm", 8.8, -1.0, 2.4, -90)
+    r.deco(8.75, -1.3, 2.2, 8.95, -0.7, 2.6, "I_RedLight")
+    r.export()
+
 
 JOBS = {"home": home, "bank": bank, "bunker": bunker, "shop_gas": lambda: shop("gas"),
         "shop_pawn": lambda: shop("pawn"), "shop_diner": lambda: shop("diner"),
-        "nightclub": nightclub, "police": police}
+        "nightclub": nightclub, "police": police, "shop_clothes": shop_clothes, "casino": casino,
+        "federal_reserve": federal_reserve}
 
 
 def main():

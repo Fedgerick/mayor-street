@@ -2,7 +2,8 @@ extends SceneTree
 ## Headless check of every interior: markers, collision, lights, door data.
 ##     godot --headless --path . --script res://interiors/tests/interiors_test.gd
 
-const IDS := ["home", "bank", "bunker", "shop_gas", "shop_pawn", "shop_diner", "nightclub", "police"]
+const IDS := ["home", "bank", "bunker", "shop_gas", "shop_pawn", "shop_diner", "nightclub", "police",
+	"shop_clothes", "casino", "federal_reserve"]
 
 
 func _initialize() -> void:

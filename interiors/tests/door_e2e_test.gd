@@ -87,7 +87,8 @@ func _run() -> void:
 	if d > 1.0:
 		return _fail("player not back at the door")
 	# Every room: enter directly (as missions will), stand for a moment, leave.
-	for rid in ["home", "bank", "bunker", "shop_gas", "shop_pawn", "shop_diner", "nightclub", "police"]:
+	for rid in ["home", "bank", "bunker", "shop_gas", "shop_pawn", "shop_diner", "nightclub", "police",
+			"shop_clothes", "casino", "federal_reserve"]:
 		await create_timer(0.3).timeout
 		if not await mgr.enter(rid):
 			return _fail("enter(%s) refused" % rid)

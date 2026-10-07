@@ -6,9 +6,11 @@ const DOORS := {
 	"gas_station": {"interior": "shop_gas", "name": "Gas 'n' Go", "door": Vector3(0.0, 0.0, -1.5)},
 	"pawn_shop": {"interior": "shop_pawn", "name": "Lucky Pawn", "door": Vector3(1.6, 0.0, 3.0)},
 	"diner": {"interior": "shop_diner", "name": "Starlite Diner", "door": Vector3(-0.3, 0.0, 2.9)},
+	"clothing_shop": {"interior": "shop_clothes", "name": "Threads Clothing", "door": Vector3(-1.8, 0.0, 3.0)},
 	"bank": {"interior": "bank", "name": "Second National Bank", "door": Vector3(0.0, 0.0, 4.2)},
 	"nightclub": {"interior": "nightclub", "name": "Club Voltage", "door": Vector3(0.0, 0.0, 3.4)},
 	"bunker": {"interior": "bunker", "name": "The Bunker", "door": Vector3(-2.4, 0.0, 2.9)},
 	"police_hq": {"interior": "police", "name": "Police Headquarters", "door": Vector3(0.0, 0.0, 8.6)},
-	"federal_reserve": {"interior": "bank", "name": "Federal Reserve", "door": Vector3(0.0, 0.0, 8.2)},
+	"casino": {"interior": "casino", "name": "The Golden Ace Casino", "door": Vector3(0.0, 0.0, 7.6)},
+	"federal_reserve": {"interior": "federal_reserve", "name": "Federal Reserve", "door": Vector3(0.0, 0.0, 8.2)},
 }

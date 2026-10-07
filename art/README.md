@@ -11,6 +11,8 @@ python3.11 -m venv /opt/bpyenv && /opt/bpyenv/bin/pip install bpy==5.0.1 pillow
 /opt/bpyenv/bin/python art/tools/build_interiors.py # interiors/models/*.glb
 /opt/bpyenv/bin/python art/tools/render_previews.py # previews -> art/previews/
 /opt/bpyenv/bin/python art/tools/render_interiors.py # room cutaways -> art/previews/
+/opt/bpyenv/bin/python art/tools/build_street.py    # street dressing kit -> assets/kit/street/
+python3 art/tools/make_decals.py                     # ground wear + graffiti atlas -> art/dresser/decals.png
 ```
 
 Run `build_kit.py` before `build_extra.py`: the extras script imports its helpers.
@@ -26,12 +28,14 @@ materials by name with one shared stylized shader, so only use the material name
 | `civic/` | fire_station, police_station, school, park, parking_lot (size 1), hospital (size 2) |
 | `props/` | lamps, traffic light, trees (round, puffy, pine, cypress, palm), bush, hedge, bench, hydrant, trash bin, mailbox, bus stop, planter, billboard, bollard, news box, power pole |
 | `roads/`, `cars/` | road tiles and four car types (base kit) |
+| `street/` | street dressing: swaying street trees (a/b/c), low bushes, grass tufts, flowers, rocks, overflowing bin, trash bags, parking meter, street sign, cafe set, neon blades (BAR, OPEN, HOTEL, PIZZA, 24H), shop-window ground floors with awnings (storefront_a..d, storefront_half) |
 | `specials/` | the catalog's special and service buildings with name signs (Second National Bank, The Bunker, power plants...). `art/specials.json` lists id, name, size, tier, tags, model, interior, door spot and triangles. |
 
 ## Enterable buildings
 
 `build_interiors.py` writes one glb per room to `interiors/models/`: home, bank (with vault),
-bunker, three shops (gas, pawn, diner), nightclub and police station. Each glb has the room
+bunker, four shops (gas, pawn, diner, clothes), nightclub, police station, casino (floor plus
+counting room behind the cashier cage) and Federal Reserve (marble hall, ramp down to the gold vault). Each glb has the room
 mesh, a `-colonly` collision mesh, `M_<name>` empties for points of interest (spawn, exit,
 vault, stash, safe, register, busted, cell_1...) and `L_<rrggbb>_<range>_<energy x10>` empties
 that `interiors/interior.gd` turns into lights. `build_specials.py` writes
@@ -42,6 +46,20 @@ room, fades out, loads that one room high above the map (y 2500, not below: the 
 ground is an infinite plane that pushes the player back up) and fades back in. Tests:
 `godot --headless --path . --script res://interiors/tests/interiors_test.gd` and
 `.../door_e2e_test.gd -- --demo`.
+
+## Street dressing
+
+`art/dresser/street_dresser.gd` (class `StreetDresser`) fills the streets around the street
+camera from city data: trees, meters, hydrants, bins, signs and mailboxes on the curbs; cafe
+sets, planters and bushes against walls; storefronts with awnings on commercial ground floors;
+neon blades on tall commercial buildings; trash bags and overflowing bins where garbage piles
+up; graffiti where crime is high and on industrial walls; cracks and oil stains on roads and
+sidewalks; grass, flowers, rocks and billboards on empty land and shores. One MultiMesh per
+prop type over about 200 m (about 75 draw calls, 315k triangles), colliders within 60 m,
+decals within 70 m. It keeps clear of citylife's benches and bus shelters and hides above
+70 m. Wiring (main.gd): `var dresser := StreetDresser.new(); add_child(dresser);
+dresser.setup(city, services, life.spots)`. Tests: `art/dresser/tests/dresser_test.gd -- --demo`;
+before/after pictures: `art/dresser/tests/dress_shots.gd` (with and without `--nodress`).
 
 ## Budgets for the laptop (Ryzen 5700U, integrated Radeon)
 

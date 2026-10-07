@@ -169,6 +169,25 @@
    "tris": 1250
   },
   {
+   "id": "clothing_shop",
+   "name": "Threads Clothing",
+   "size": 1,
+   "tier": 1,
+   "tags": [
+    "shop",
+    "clothes"
+   ],
+   "model": "res://assets/kit/specials/clothing_shop.glb",
+   "interior": "shop_clothes",
+   "door": {
+    "x": -1.8,
+    "z": 3.0,
+    "yaw_deg": 0.0
+   },
+   "folder": "specials",
+   "tris": 1772
+  },
+  {
    "id": "payphone",
    "name": "Payphone",
    "size": 0,
@@ -407,7 +426,7 @@
     "landmark"
    ],
    "model": "res://assets/kit/specials/casino.glb",
-   "interior": null,
+   "interior": "casino",
    "door": {
     "x": 0.0,
     "z": 7.6,
@@ -534,7 +553,7 @@
     "vault"
    ],
    "model": "res://assets/kit/specials/federal_reserve.glb",
-   "interior": "bank",
+   "interior": "federal_reserve",
    "door": {
     "x": 0.0,
     "z": 8.2,

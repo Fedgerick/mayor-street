@@ -20,8 +20,9 @@ sys.path.insert(0, HERE)
 import render_previews as R  # noqa: E402
 
 MODELS = os.path.join(R.GAME, "interiors", "models")
-ROOMS = ["home", "bank", "bunker", "shop_gas", "shop_pawn", "shop_diner", "nightclub", "police"]
-CUT = {"bunker": -0.3}   # the bunker's hall is a floor down: slice above it
+ROOMS = ["home", "bank", "bunker", "shop_gas", "shop_pawn", "shop_diner", "nightclub", "police",
+         "shop_clothes", "casino", "federal_reserve"]
+CUT = {"bunker": -0.3, "federal_reserve": -0.3}   # rooms a floor down: slice above them
 DEFAULT_CUT = 2.3
 
 
