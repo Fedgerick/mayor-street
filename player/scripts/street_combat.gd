@@ -2,7 +2,8 @@ class_name StreetCombat
 extends Node
 ## On-foot weapons: fists, one pistol, one shotgun. Hold right mouse (left trigger) to
 ## aim over the shoulder, left mouse (right trigger) to punch or fire; Q / mouse wheel /
-## 1-3 switch. Shots are hitscan from the centre of the screen, so what the crosshair
+## 1-3 switch; R reloads (it also happens by itself when a magazine runs dry). Punches
+## run a jab, cross, hook combo. Shots are hitscan from the centre of the screen, so what the crosshair
 ## covers is what gets hit; the tracer is drawn from the gun's muzzle.
 ##
 ## StreetMode owns this node and resolves what a shot hits (`StreetMode.trace_shot`) and
@@ -11,15 +12,18 @@ extends Node
 
 signal weapon_changed(id: StringName)
 signal fired(id: StringName)
+signal reloading(id: StringName)   # a reload starts (for sound)
 
 const ORDER: Array[StringName] = [&"fists", &"pistol", &"shotgun"]
 const WEAPONS := {
 	&"fists": {"name": "Fists", "damage": 12.0, "range": 1.6, "cooldown": 0.45, "pellets": 1, "spread": 0.0,
 		"aim": CharacterModel.Aim.NONE, "shake": 0.0},
 	&"pistol": {"name": "Pistol", "damage": 25.0, "range": 70.0, "cooldown": 0.28, "pellets": 1, "spread": 0.8,
-		"aim": CharacterModel.Aim.PISTOL, "shake": 0.25, "pickup_ammo": 34, "max_ammo": 170},
+		"aim": CharacterModel.Aim.PISTOL, "shake": 0.25, "pickup_ammo": 34, "max_ammo": 170,
+		"magazine": 12, "reload": 1.15},
 	&"shotgun": {"name": "Shotgun", "damage": 12.0, "range": 26.0, "cooldown": 0.95, "pellets": 8, "spread": 5.5,
-		"aim": CharacterModel.Aim.SHOTGUN, "shake": 0.6, "pickup_ammo": 12, "max_ammo": 60},
+		"aim": CharacterModel.Aim.SHOTGUN, "shake": 0.6, "pickup_ammo": 12, "max_ammo": 60,
+		"magazine": 6, "reload": 1.5},
 }
 const AIM_DISTANCE := 2.1
 const AIM_SIDE := 0.62
@@ -29,7 +33,9 @@ const PUNCH_DELAY := 0.14     # the fist lands this long after the swing starts
 
 var street: Node              # StreetMode
 var current: StringName = &"fists"
-var ammo := {&"pistol": 0, &"shotgun": 0}
+var ammo := {&"pistol": 0, &"shotgun": 0}         # every round carried, loaded or not
+var loaded := {&"pistol": 0, &"shotgun": 0}       # rounds in the magazine
+var reload_left := 0.0                             # seconds until the reload finishes
 var aiming := false
 var _cool := 0.0
 var _pose := 0.0
@@ -63,6 +69,8 @@ func give(id: StringName, rounds := -1) -> bool:
 		return false
 	var had: bool = ammo[id] > 0
 	ammo[id] = mini(ammo[id] + n, w.max_ammo)
+	if loaded[id] == 0:
+		loaded[id] = mini(int(w.magazine), ammo[id])   # a picked-up gun comes loaded
 	if not had and current == &"fists":
 		select(id)
 	return true
@@ -72,6 +80,8 @@ func strip() -> void:
 	## Busted: the police keep your guns.
 	for k in ammo:
 		ammo[k] = 0
+		loaded[k] = 0
+	reload_left = 0.0
 	select(&"fists")
 
 
@@ -80,6 +90,7 @@ func select(id: StringName) -> void:
 		return
 	if id != current:
 		current = id
+		reload_left = 0.0
 		weapon_changed.emit(id)
 	_show_gun()
 
@@ -98,7 +109,26 @@ func weapon_name() -> String:
 
 
 func ammo_text() -> String:
-	return "" if current == &"fists" else str(ammo[current])
+	if current == &"fists":
+		return ""
+	if reload_left > 0.0:
+		return "reloading"
+	return "%d / %d" % [loaded[current], ammo[current] - loaded[current]]
+
+
+func reload() -> bool:
+	## Fill the magazine from the rounds carried. False when full or out of rounds.
+	if current == &"fists" or reload_left > 0.0:
+		return false
+	var w: Dictionary = WEAPONS[current]
+	if loaded[current] >= mini(int(w.magazine), ammo[current]):
+		return false
+	reload_left = w.reload
+	_pose = 0.0
+	var p: StreetPlayer = street.player
+	p.visual.play_reload(w.aim)
+	reloading.emit(current)
+	return true
 
 
 func show_crosshair() -> bool:
@@ -113,6 +143,10 @@ func _process(delta: float) -> void:
 	var p: StreetPlayer = street.player
 	_cool = maxf(_cool - delta, 0.0)
 	_pose = maxf(_pose - delta, 0.0)
+	if reload_left > 0.0:
+		reload_left = maxf(reload_left - delta, 0.0)
+		if reload_left == 0.0 and current != &"fists":
+			loaded[current] = mini(int(WEAPONS[current].magazine), ammo[current])
 	var can: bool = street.can_fight()
 	if not can:
 		_set_aim(false, p)
@@ -128,11 +162,14 @@ func _process(delta: float) -> void:
 			select(ORDER[k])
 	if current != &"fists" and not has_weapon(current):
 		cycle(-1)
+	if Input.is_action_just_pressed("street_reload"):
+		reload()
 	_set_aim(Input.is_action_pressed("street_aim") and current != &"fists", p)
 	p.aim_yaw = p.rig.yaw
 	p.aiming = aiming or _pose > 0.0
 	p.visual.set_aim(WEAPONS[current].aim if p.aiming else CharacterModel.Aim.NONE)
-	if Input.is_action_pressed("street_fire") and _cool <= 0.0 and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if Input.is_action_pressed("street_fire") and _cool <= 0.0 and reload_left <= 0.0 \
+			and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		fire()
 
 
@@ -152,6 +189,9 @@ func fire() -> void:
 	var p: StreetPlayer = street.player
 	if current != &"fists" and ammo[current] <= 0:
 		return
+	if current != &"fists" and loaded[current] <= 0:
+		reload()
+		return
 	_cool = w.cooldown
 	if current == &"fists":
 		p.visual.play_punch()
@@ -159,6 +199,7 @@ func fire() -> void:
 		_punch_land.call_deferred(w)
 		return
 	ammo[current] -= 1
+	loaded[current] -= 1
 	# Hip fire: snap round to where the camera looks and hold the gun up a moment.
 	if not aiming:
 		p.face(p.rig.yaw)
@@ -180,6 +221,8 @@ func fire() -> void:
 	street.camera.shake(w.shake)
 	street.on_shot_fired(current, muzzle)
 	fired.emit(current)
+	if loaded[current] <= 0 and ammo[current] > 0:
+		reload.call_deferred()
 
 
 func _punch_land(w: Dictionary) -> void:

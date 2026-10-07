@@ -7,6 +7,10 @@ extends Camera3D
 ## The zoom eases altitude in log space, so it reads like one continuous dive: fast
 ## through the empty sky, slowing as rooftops get close, then swinging in behind the
 ## character's shoulder.
+##
+## Feel: the view widens with speed (`fov_boost`), rolls a little into corners (`lean`),
+## and shakes on hits, shots, crashes and blasts (`shake()`): a smooth noise shake whose
+## strength falls off quickly, so small knocks read as a jolt and big ones as a rumble.
 
 signal flight_finished
 
@@ -17,7 +21,8 @@ enum Mode { IDLE, FOLLOW, FLY, BLEND }
 
 var mode := Mode.IDLE
 var rig: OrbitRig
-var fov_boost := 0.0                     # 0..1, set by StreetMode from car speed
+var fov_boost := 0.0                     # 0..1, set by StreetMode from speed
+var lean := 0.0                          # radians of roll, set by StreetMode in corners
 
 var _t := 0.0
 var _dur := 1.0
@@ -27,13 +32,19 @@ var _from_focus := Vector3.ZERO
 var _to_xf := Transform3D()              # used when not flying to a rig
 var _to_fov := 45.0
 var _to_rig: OrbitRig
-var _shake := 0.0
+var _shake := 0.0                        # trauma, 0..1.5
+var _lean := 0.0
+var _noise := FastNoiseLite.new()
+var _nt := 0.0
 
 
 func _ready() -> void:
 	near = 0.08
 	far = 4000.0
 	fov = street_fov
+	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_noise.frequency = 1.0
+	_noise.seed = randi()
 
 
 func follow(r: OrbitRig) -> void:
@@ -69,7 +80,8 @@ func rise_to(to: Transform3D, to_fov: float, duration := 2.6) -> void:
 
 
 func shake(amount: float) -> void:
-	_shake = maxf(_shake, amount)
+	## Adds trauma: 0.2 a light knock, 0.5 a punch or a pistol, 1+ a blast.
+	_shake = minf(maxf(_shake, amount) + amount * 0.25, 1.5)
 
 
 func _start_flight(from: Transform3D, from_fov: float, duration: float) -> void:
@@ -113,14 +125,21 @@ func _process(delta: float) -> void:
 				else:
 					mode = Mode.IDLE
 				flight_finished.emit()
+	# Roll into corners (follow only; flights stay level).
+	_lean = lerpf(_lean, lean if mode == Mode.FOLLOW else 0.0, 1.0 - exp(-3.0 * delta))
+	var roll := _lean
 	if _shake > 0.0:
-		_shake = maxf(_shake - delta * 2.5, 0.0)
-		var j := _shake * _shake * 0.06
-		h_offset = randf_range(-j, j)
-		v_offset = randf_range(-j, j)
+		_shake = maxf(_shake - delta * 1.6, 0.0)
+		_nt += delta * (18.0 + 10.0 * _shake)
+		var j := _shake * _shake
+		h_offset = _noise.get_noise_2d(_nt, 0.0) * j * 0.09
+		v_offset = _noise.get_noise_2d(0.0, _nt) * j * 0.09
+		roll += _noise.get_noise_2d(_nt, 50.0) * j * 0.03
 	else:
 		h_offset = 0.0
 		v_offset = 0.0
+	if absf(roll) > 0.0001 and mode != Mode.IDLE:
+		rotate_object_local(Vector3.FORWARD, roll)
 
 
 func _fly_xf(k: float) -> Transform3D:

@@ -15,6 +15,7 @@ const KEYS := {
 	"street_interact": [KEY_E, KEY_F],
 	"street_toggle_view": [KEY_TAB],
 	"street_reset": [KEY_R],
+	"street_reload": [KEY_R],     # on foot; R flips the car back over when driving
 	"street_horn": [KEY_H],
 	"street_lights": [KEY_L],
 	"street_next_weapon": [KEY_Q],
@@ -37,6 +38,7 @@ const BUTTONS := {
 	"street_sprint": [JOY_BUTTON_LEFT_STICK],
 	"street_toggle_view": [JOY_BUTTON_BACK],
 	"street_reset": [JOY_BUTTON_X],
+	"street_reload": [JOY_BUTTON_X],
 	"street_horn": [JOY_BUTTON_LEFT_SHOULDER],
 	"street_next_weapon": [JOY_BUTTON_RIGHT_SHOULDER],
 	"street_prev_weapon": [JOY_BUTTON_DPAD_LEFT],

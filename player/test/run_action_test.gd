@@ -107,23 +107,42 @@ func _run() -> void:
 	street.combat._cool = 0.0
 	street.combat.fire()
 	check(street.combat.ammo[&"pistol"] == ammo0 - 1, "firing uses a round")
+	# Magazines: the last round in the magazine starts a reload by itself.
+	street.combat.loaded[&"pistol"] = 1
+	street.combat._cool = 0.0
+	street.combat.fire()
+	await frames(2)
+	check(street.combat.reload_left > 0.0 and street.combat.ammo_text() == "reloading", "an empty magazine reloads by itself")
+	street.combat.reload_left = 0.01
+	await frames(3)
+	check(street.combat.loaded[&"pistol"] == 12, "reloaded a 12-round magazine (%s)" % street.combat.ammo_text())
 	check(&"shots_fired" in crimes, "gunfire is a crime")
 	# A punch.
 	street.combat.select(&"fists")
 	var ped2 = null
 	for q in life.crowd.peds:
-		if q.pos.distance_to(p.global_position) < 150.0:
+		# Someone just walking (not heading for a bench, bus stop or chat).
+		if q.pos.distance_to(p.global_position) < 150.0 and q.spot == null and q.group.is_empty():
 			ped2 = q
 			break
 	if ped2:
-		var back: Vector3 = ped2.fwd
-		p.place(ped2.pos + back * 0.9 + Vector3.UP * 0.2, atan2(back.x, back.z))
 		ped2.pause = 2.0
+		ped2.flee = 0.0
+		await frames(1)
+		# Stand next to them; new street props (benches, stops) can push us off a spot.
+		var side := Vector3(ped2.fwd.z, 0.0, -ped2.fwd.x)
+		for off in [ped2.fwd, -ped2.fwd, side, -side]:
+			p.place(ped2.pos + off * 0.9 + Vector3.UP * 0.2, 0.0)
+			await frames(2)
+			if Vector2(p.global_position.x - ped2.pos.x, p.global_position.z - ped2.pos.z).length() < 1.1:
+				break
+		var to: Vector3 = ped2.pos - p.global_position
+		p.face(atan2(-to.x, -to.z))
 		crimes.clear()
 		street.combat._cool = 0.0
 		street.combat.fire()
 		await frames(20)
-		check(street._hp.has(ped2) or not life.crowd.peds.has(ped2), "a punch lands")
+		check(street._hp.has(ped2) or not life.crowd.peds.has(ped2), "a punch lands (%.2f m away)" % ped2.pos.distance_to(p.global_position))
 
 	# --- Car fire and explosion -------------------------------------------------------
 	street.heat.clear()
@@ -231,6 +250,39 @@ func _run() -> void:
 		check(&"car_theft" in crimes, "taking a parked car is car theft")
 	else:
 		check(false, "found a parked car")
+
+	# --- Lock picks and the emergency-vehicle perk (missions/) --------------------------
+	while street.switching:
+		await frames(5)
+	if prog and street.car:
+		street._leave_car()
+		await frames(80)
+		street.heat.clear()
+		crimes.clear()
+		prog.counts["lock_picks"] = 2
+		var quiet := street.spawn_car("car_sedan", p.global_position + Vector3(4, 0.3, 0), 0.0, Color.RED)
+		quiet.set_meta("parked", true)
+		while street.switching:
+			await frames(5)
+		street._enter_car(quiet)
+		await frames(110)
+		check(not (&"car_theft" in crimes) and int(prog.counts["lock_picks"]) == 1, "a lock pick takes a parked car quietly (%s, %s left, in %s)" % [crimes, prog.counts["lock_picks"], street.car])
+		street._leave_car()
+		await frames(80)
+		prog.counts["lock_picks"] = 0
+		if prog.unlocks is Dictionary:
+			prog.unlocks["perk:emergency_vehicles"] = "test"
+		else:
+			prog.unlocks.append("perk:emergency_vehicles")
+		street.heat.clear()
+		var cruiser := street.spawn_car("car_police", p.global_position + Vector3(-5, 0.3, 0), 0.0, Color.WHITE)
+		cruiser.set_meta("parked", true)
+		while street.switching:
+			await frames(5)
+		street._enter_car(cruiser)
+		await frames(110)
+		check(street.wanted == 0, "with the perk, taking a police car adds no stars")
+		prog.unlocks.erase("perk:emergency_vehicles")
 
 	print("OK: %d failure(s)" % fails if fails == 0 else "FAILED: %d failure(s)" % fails)
 	quit(1 if fails > 0 else 0)

@@ -88,6 +88,7 @@ var _corpses: Array[Node3D] = []
 var _hp := {}                        # Ped / Officer -> health left
 var _shot_report := 0.0
 var _panic_report := 0.0
+var _crash_report := 0.0
 var _local_cash := 250              # used when there is no Progress autoload (tests)
 var _last_stars := 0
 
@@ -122,7 +123,9 @@ func _ready() -> void:
 	add_child(combat)
 	combat.setup(self)
 	_build_hud()
-	player.damaged.connect(func(a, _from): hud.hurt(a))
+	player.damaged.connect(func(a, _from):
+		hud.hurt(a)
+		camera.shake(clampf(a / 45.0, 0.25, 0.9)))
 
 
 func setup(c: City) -> void:
@@ -267,7 +270,7 @@ func _carjack(tc: Object) -> void:
 	pos.y = maxf(pos.y, 0.0) + 0.15
 	var c := spawn_car(info.model, pos, atan2(fwd.x, fwd.z), info.tint)
 	c.set_meta("player_owned", true)
-	_commit(&"carjack", pos)
+	_commit(&"carjack", pos, &"", _free_ride(c))
 	goodness_action.emit(&"steal_car")
 	await get_tree().physics_frame
 	# Step to the door facing the car, then the haul-out.
@@ -314,10 +317,17 @@ func _enter_car(c: DrivableCar) -> void:
 	switching = true
 	car = c
 	if c.get_meta("parked", false) and not c.get_meta("player_owned", false):
-		_commit(&"car_theft", c.global_position)
-		goodness_action.emit(&"steal_car")
+		var p := _progress()
+		if p and int(p.counts.get("lock_picks", 0)) > 0:
+			# A lock pick from the black market (missions/): quiet, and nobody's the wiser.
+			hud.note("Picked the lock (%d left)" % p.count("lock_picks", -1))
+		else:
+			_commit(&"car_theft", c.global_position, &"", _free_ride(c))
+			goodness_action.emit(&"steal_car")
 	c.set_meta("player_owned", true)
 	c.handling = float(perk("car_handling", 1.0))
+	if not c.crashed.is_connected(_on_car_crashed):
+		c.crashed.connect(_on_car_crashed.bind(c))
 	c.set_driver(player)        # the car is ours now; input is ignored until we're seated
 	c.set_physics_process(false)
 	vehicle_changed.emit(c)
@@ -534,6 +544,7 @@ func _process(delta: float) -> void:
 	_shot_report = maxf(_shot_report - delta, 0.0)
 	heat.fade_per_star = Wanted.FADE_PER_STAR * (0.6 if has_perk("chop_double") else 1.0)
 	_panic_report = maxf(_panic_report - delta, 0.0)
+	_crash_report = maxf(_crash_report - delta, 0.0)
 	var police = life.get("police") if life else null
 	if police and wanted > 0 and police.seen:
 		heat.report_seen(Vector3.ZERO, suspect_position())
@@ -547,10 +558,17 @@ func _process(delta: float) -> void:
 		var kmh := absf(car.speed()) * 3.6
 		_speedo.text = "%d km/h" % roundi(kmh)
 		_hint.text = "E  get out" if absf(car.speed()) < 6.0 and not switching else ""
-		camera.fov_boost = clampf(absf(car.speed()) / 35.0, 0.0, 1.0)
+		# Wider and leaning into corners at speed.
+		var sp := absf(car.speed())
+		camera.fov_boost = pow(clampf(sp / 38.0, 0.0, 1.0), 1.4)
+		camera.lean = clampf(-car.angular_velocity.y * sp * 0.0035, -0.07, 0.07)
+		var w = life.get("weather") if life else null
+		car.weather_grip = w.grip() if w and w.has_method("grip") else 1.0
 	else:
 		_speedo.text = ""
-		camera.fov_boost = 0.0
+		var run := Vector2(player.velocity.x, player.velocity.z).length()
+		camera.fov_boost = clampf((run - 4.0) / 4.0, 0.0, 1.0) * 0.3   # a touch wider when sprinting
+		camera.lean = 0.0
 		var near := false
 		for v in get_tree().get_nodes_in_group("vehicles"):
 			if (v as Node3D).global_position.distance_to(player.global_position) < enter_radius:
@@ -592,6 +610,21 @@ func set_wanted(stars: int) -> void:
 	heat.set_level(stars)
 
 
+func _on_car_crashed(strength: float, c: DrivableCar) -> void:
+	if c != car:
+		return
+	camera.shake(0.25 + strength * 0.9)
+	# A real smash draws a crowd (citylife/): people jump clear, then stop and stare.
+	if strength >= 0.3 and _crash_report <= 0.0 and life and life.has_method("report_crash"):
+		_crash_report = 1.5
+		life.report_crash(c.global_position, 1 if strength < 0.5 else (2 if strength < 0.8 else 3))
+
+
+func _free_ride(c: DrivableCar) -> bool:
+	## The +75 perk: taking an ambulance, police car or fire engine adds no stars.
+	return c.is_emergency() and has_perk("emergency_vehicles")
+
+
 func damage_player(amount: float, from_pos := Vector3.ZERO, _source := "") -> void:
 	## Police (or anything else) hurting the player. In a car the car soaks it.
 	if down or not active:
@@ -614,10 +647,10 @@ func _on_escaped() -> void:
 		hud.note("Lost them")
 
 
-func _commit(kind: StringName, pos: Vector3, weapon := &"") -> void:
+func _commit(kind: StringName, pos: Vector3, weapon := &"", quiet := false) -> void:
 	# The +50 perk: cops ignore minor crimes (they still count for missions).
 	var minor := kind in MINOR_CRIMES or (kind == &"assault" and weapon == &"fists")
-	if not (minor and has_perk("minor_crimes_ignored")):
+	if not quiet and not (minor and has_perk("minor_crimes_ignored")):
 		heat.commit(kind, pos)
 	crime.emit(kind)
 
