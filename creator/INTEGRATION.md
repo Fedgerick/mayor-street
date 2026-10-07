@@ -66,5 +66,5 @@ Run them on a scratch copy, not the shared folder.
 ## Round 3 update: rebuilt characters
 - CharacterLook now dresses player/ CharacterModel through set_outfit(): styles top (tee, longsleeve, hoodie, jacket, tank), bottom (jeans, shorts, skirt), shoes (sneakers, boots), hat (cap, beanie), hair, face.
 - Free: tee, longsleeve, jeans, shorts, sneakers. Sold: other styles (ClothingStock.STYLE_ITEMS, ids like "top:hoodie") and colors cloth:12..19.
-- Resident.open_shop() opens the shop screen (returns 0 if refused). Hook it to the clothing shop counter once the interior and the clothing_shop catalog entry exist.
+- Resident.open_shop() opens the shop screen (returns 0 if refused). Wired: inside the "shop_clothes" room E at the racks or fitting_room markers opens the shop, E at the mirror opens the free wardrobe (needs resident.use_interiors(interiors); no main.gd change).
 - perk:shop_discount gives 15% off.

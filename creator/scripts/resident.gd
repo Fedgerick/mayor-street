@@ -16,6 +16,7 @@ extends Node
 signal home_entered        # walked in the front door (autosave already done)
 
 const DOOR_RADIUS := 2.6
+const SHOP_ROOM := "shop_clothes"   # interiors/ clothing shop (Threads Clothing)
 const SPOT_RADIUS := 1.7    # how close to the wardrobe or save spot in the home room
 
 var profile := ResidentProfile.new()
@@ -94,13 +95,22 @@ func _on_interior_entered(id: String, _b: Dictionary) -> void:
 
 
 func _home_spot() -> String:
-	## "wardrobe" or "save" when standing at that spot in the home room, else "".
-	if interiors == null or street == null or interiors.get("current_id") != "home" or interiors.current == null:
+	## What E does where the player stands: "wardrobe", "save" or "shop" (clothing shop racks
+	## and fitting room), else "".
+	if interiors == null or street == null or interiors.current == null:
 		return ""
-	for spot in ["wardrobe", "save"]:
-		var m: Node3D = interiors.current.marker(spot)
+	var id: String = interiors.get("current_id")
+	var spots: Dictionary
+	if id == "home":
+		spots = {"wardrobe": "wardrobe", "save": "save"}
+	elif id == SHOP_ROOM:
+		spots = {"racks": "shop", "fitting_room": "shop", "mirror": "wardrobe"}
+	else:
+		return ""
+	for marker_name in spots:
+		var m: Node3D = interiors.current.marker(marker_name)
 		if m and street.player.global_position.distance_to(m.global_position) < SPOT_RADIUS:
-			return spot
+			return spots[marker_name]
 	return ""
 
 
@@ -233,7 +243,7 @@ func _near_door() -> bool:
 func _process(_delta: float) -> void:
 	if _hint:
 		var spot := _home_spot()
-		_hint.text = {"wardrobe": "E  Wardrobe", "save": "E  Save game"}.get(spot, "E  Go inside (wardrobe, save)")
+		_hint.text = {"wardrobe": "E  Wardrobe", "save": "E  Save game", "shop": "E  Browse clothes"}.get(spot, "E  Go inside (wardrobe, save)")
 		_hint.visible = _menu == null and not _busy and (spot != "" or _near_door())
 
 
@@ -252,6 +262,10 @@ func _maybe_enter() -> void:
 				await open_wardrobe()
 				get_tree().paused = was_paused
 				_busy = false
+			return
+		"shop":
+			if not _busy and _menu == null:
+				await open_shop()
 			return
 		"save":
 			var prog := progress()
