@@ -164,6 +164,7 @@ func _process(delta: float) -> void:
 
 func step(dt: float) -> void:
 	net.time += dt
+	var t := Prof.now()  # script time by system, for the benchmark report
 	if _roads_dirty:
 		_roads_dirty = false
 		net.rebuild()
@@ -173,6 +174,7 @@ func step(dt: float) -> void:
 		police.refresh_stations()
 		compute_weights()  # building contributions only land on road cells
 		_area_timer = 0.0
+		t = Prof.lap("life: road rebuild", t)
 	_update_view()
 	_area_timer -= dt
 	if _area_timer <= 0.0:
@@ -182,6 +184,7 @@ func step(dt: float) -> void:
 	_fill(false)
 	_garbage(dt)
 	_buses(dt)
+	t = Prof.lap("life: spawning", t)
 	crowd.hour = city.time_of_day()
 	if weather != null:
 		crowd.rain = weather.rain
@@ -189,20 +192,28 @@ func step(dt: float) -> void:
 		crowd.umbrella_share = weather.umbrella_share()
 		traffic.wet = weather.wet
 	police.step(dt)
+	t = Prof.lap("police", t)
 	traffic.step(dt)
+	t = Prof.lap("traffic", t)
 	if cam_height < PED_HEIGHT:
 		crowd.step(dt)
+	t = Prof.lap("crowd", t)
 	signals.update(dt)
 	traffic.shadows = cam_height < 140.0
 	crowd.shadows = cam_height < 70.0
 	crowd.visible = cam_height < PED_HEIGHT
 	signals.visible = cam_height < 260.0
 	spots.update_view(cam_height)
+	t = Prof.lap("life: signals and spots", t)
 	traffic.render()
+	t = Prof.lap("traffic: drawing", t)
 	police.render()
+	t = Prof.lap("police", t)
 	if crowd.visible:
 		crowd.update_heroes(dt)
+		t = Prof.lap("crowd: close-up people", t)
 		crowd.render()
+		t = Prof.lap("crowd: drawing", t)
 
 
 # ---------------------------------------------------------------- garbage ---
