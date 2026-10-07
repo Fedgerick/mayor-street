@@ -667,7 +667,7 @@
 				"end": {"tag": "hideout", "from": "start", "min_m": 300}
 			},
 			"steps": [
-				{"do": "goto", "at": "start", "car": false, "interior": "bank", "text": "Walk into {start}"},
+				{"do": "goto", "at": "start", "car": false, "interior": "federal_reserve", "text": "Walk into {start}"},
 				{"do": "wanted", "stars": 2},
 				{"do": "hold", "at": "start", "seconds": 40, "radius": 14, "car": false, "marker": "vault", "text": "Crack the Reserve's vault"},
 				{"do": "wanted", "stars": 5},
