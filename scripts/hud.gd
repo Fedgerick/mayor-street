@@ -8,6 +8,7 @@ signal speed_selected(speed: int)
 signal quality_selected(level: int)
 signal start_chosen(demo: bool)
 signal load_chosen(slot: String)
+signal benchmark_chosen
 
 const TOOLS := ["Inspect", "Road", "Residential", "Commercial", "Industrial", "Bulldoze", "Build"]
 const TOOL_COLORS := [Color(0.85, 0.88, 0.95), Color(0.75, 0.78, 0.85), Color(0.3, 0.85, 0.4),
@@ -333,6 +334,13 @@ func show_start() -> void:
 	b.custom_minimum_size = Vector2(0, 52)
 	b.pressed.connect(func(): _close_start(true))
 	v.add_child(b)
+	var bm := Button.new()
+	bm.text = "Benchmark (90 seconds)"
+	bm.custom_minimum_size = Vector2(0, 40)
+	bm.pressed.connect(func():
+		_clear_title()
+		benchmark_chosen.emit())
+	v.add_child(bm)
 	var q := Button.new()
 	q.text = "Quit"
 	q.custom_minimum_size = Vector2(0, 40)
@@ -355,12 +363,16 @@ func _show_load() -> void:
 
 
 func _close_start(demo: bool) -> void:
+	_clear_title()
+	start_chosen.emit(demo)
+
+
+func _clear_title() -> void:
 	start_panel.queue_free()
 	start_panel = null
 	for c in _title_hidden:
 		c.visible = true
 	_title_hidden.clear()
-	start_chosen.emit(demo)
 
 
 func set_tool(i: int) -> void:

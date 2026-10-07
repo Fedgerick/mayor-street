@@ -12,6 +12,7 @@ const MAYOR_KEYS := [
 	["1 to 6", "Inspect, road, zones, bulldoze"],
 	["7 / B", "Build menu"],
 	["J", "Quest log"],
+	["V", "City map"],
 	["O", "Overlays"],
 	["Space  ,  .", "Pause, slower, faster"],
 	["N", "Skip an hour"],
@@ -29,8 +30,10 @@ const STREET_KEYS := [
 	["Space", "Handbrake"],
 	["H", "Horn"],
 	["R", "Put the car back on its wheels"],
+	["C", "Car radio station"],
+	["B", "Bribe a cop (1 to 3 stars)"],
 	["Y / K", "Take a radio job / give up a job"],
-	["J", "Quest log"],
+	["J / V", "Quest log / city map"],
 ]
 # The corner hint for each situation: key, what it does.
 const HINTS := {
@@ -41,11 +44,16 @@ const HINTS := {
 		["J", "Quests"], ["Tab", "Mayor view"], ["Esc", "Menu"]],
 }
 
+signal benchmark_requested
+signal map_requested  # the City map button; main opens navigation's map above the menu
+
 var is_open := false
 var _theme: Theme
 var _menu: Control
 var _panel: PanelContainer
 var _saves: SavePanel
+var _bench_box: PanelContainer
+var _bench_go: Button
 var _save_btn: Button
 var _resume: Button
 var _screen: Button
@@ -79,6 +87,8 @@ func _input(e: InputEvent) -> void:
 	elif is_open and (key == KEY_ESCAPE or e.is_action_pressed("ui_cancel") or is_start_button(e)):
 		if _saves.visible:
 			_saves.close()  # back to the menu
+		elif _bench_box.visible:
+			_close_benchmark()
 		else:
 			close()
 		get_viewport().set_input_as_handled()
@@ -100,6 +110,7 @@ func open() -> void:
 	_hint.visible = false
 	_menu.visible = true
 	_saves.visible = false
+	_bench_box.visible = false
 	_panel.visible = true
 	_save_btn.disabled = not Hud.progress().playing
 	_resume.grab_focus()
@@ -262,6 +273,8 @@ func _build_menu() -> void:
 	v.add_child(row2)
 	_save_btn = _button(row2, "Save game", func(): _show_saves(true))
 	_button(row2, "Load game", func(): _show_saves(false))
+	_button(row2, "City map", func(): map_requested.emit())
+	_button(row2, "Benchmark", _show_benchmark)
 	v.add_child(_small("F11 or Alt+Enter also switch between full screen and a window", HORIZONTAL_ALIGNMENT_CENTER))
 	v.add_child(HSeparator.new())
 
@@ -277,6 +290,55 @@ func _build_menu() -> void:
 	_saves.closed.connect(func():
 		_panel.visible = true
 		_resume.grab_focus())
+	_build_benchmark_box(center)
+
+
+func _build_benchmark_box(parent: Control) -> void:
+	## "Run the benchmark?" with what it does and how to get back to the game.
+	_bench_box = PanelContainer.new()
+	var ps := Hud.panel_style(Color(0.07, 0.09, 0.13, 0.96), 16)
+	ps.content_margin_left = 36
+	ps.content_margin_right = 36
+	ps.content_margin_top = 26
+	ps.content_margin_bottom = 22
+	_bench_box.add_theme_stylebox_override("panel", ps)
+	_bench_box.visible = false
+	parent.add_child(_bench_box)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 16)
+	_bench_box.add_child(v)
+	var t := Label.new()
+	t.text = "BENCHMARK"
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t.add_theme_font_size_override("font_size", 30)
+	t.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
+	v.add_child(t)
+	var l := Label.new()
+	l.text = ("A 90-second tour of the demo city that measures how well this computer runs the game: "
+		+ "the island from above, downtown on foot, a drive, a police chase and the street at night. "
+		+ "It drives itself, and Esc stops it.\n\nYour game is saved first. Afterwards, pick Continue "
+		+ "on the title screen to carry on where you were.")
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size = Vector2(620, 0)
+	v.add_child(l)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 14)
+	v.add_child(row)
+	_bench_go = _button(row, "Start the benchmark", func(): benchmark_requested.emit())
+	_button(row, "Back", _close_benchmark)
+
+
+func _show_benchmark() -> void:
+	_panel.visible = false
+	_bench_box.visible = true
+	_bench_go.grab_focus()
+
+
+func _close_benchmark() -> void:
+	_bench_box.visible = false
+	_panel.visible = true
+	_resume.grab_focus()
 
 
 func _show_saves(saving: bool) -> void:

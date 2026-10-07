@@ -70,6 +70,7 @@ func _ready() -> void:
 	_load_dir("roads")
 	_load_dir("props")
 	_load_dir("cars")
+	VehicleKit.install(self)  # the round-3 cars (vehicles/) replace the old car meshes
 
 
 func _make_materials() -> void:

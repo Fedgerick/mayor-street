@@ -386,6 +386,24 @@ void fragment() {
 		emit *= 0.3;
 	}
 
+	// Rain: what faces up darkens and turns glossy, puddles gather on roads and paving, and
+	// walls darken a little. The sky's reflection in the gloss is the wet sheen.
+	float wet_k = 0.0;
+	if (weather_wet > 0.001 && kind == 0) {
+		float up = smoothstep(0.5, 0.9, wnrm.y) * (pattern == 7 ? 0.25 : 1.0);
+		wet_k = weather_wet * mix(0.3, 1.0, up);
+		alb *= 1.0 - wet_k * (pattern == 0 || pattern == 4 ? 0.2 : 0.36);
+		r = mix(r, 0.14, weather_wet * up);
+		sp = mix(sp, 0.6, weather_wet * up);
+		if (pattern == 8 || pattern == 6 || pattern == 10) {
+			float puddle = smoothstep(0.56, 0.62, fbm(wpos.xz * 0.11 + 21.0))
+				* smoothstep(0.35, 0.9, weather_wet) * up;
+			alb *= 1.0 - puddle * 0.4;
+			r = mix(r, 0.03, puddle);
+			wet_k = max(wet_k, puddle);
+		}
+	}
+
 	ALBEDO = alb;
 	ROUGHNESS = r;
 	METALLIC = m;
@@ -394,7 +412,8 @@ void fragment() {
 		BACKLIGHT = alb * 0.45;
 	}
 	if (kind != 3) {
-		emit += alb * lamp_light(wpos, wnrm);
+		// Lamp pools spread and shine on wet ground.
+		emit += alb * lamp_light(wpos, wnrm) * (1.0 + wet_k * 1.5);
 	}
 	emit += preview_tint(wpos) * (ground_level ? 1.0 : 0.5);
 	EMISSION = emit;

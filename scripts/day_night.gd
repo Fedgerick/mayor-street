@@ -47,7 +47,11 @@ var quality := 1
 # light bounced off the sunlit walls across the street.
 var exposure_scale := 1.0
 var ambient_scale := 1.0
+## weather/ Weather (cloud, rain, fog, each 0..1): grey skies, a weaker sun with softer
+## shadows, thicker fog. Null keeps the sky to the day-to-day cloud cover.
+var weather: Object
 var _glow_night := 0.22
+var _fog_base := 0.0003
 
 
 func _ready() -> void:
@@ -157,6 +161,15 @@ func update_time(hour: float, day := 0) -> void:
 	var k := _keyed(SKY_KEYS, elev)
 	var night := 1.0 - smoothstep(-5.0, 9.0, elev)
 	var sun_energy: float = s[1]
+	var cloud := 0.0
+	var fog := 0.0
+	var rain := 0.0
+	if weather:
+		cloud = clampf(weather.cloud, 0.0, 1.0)
+		fog = clampf(weather.fog, 0.0, 1.0)
+		rain = clampf(weather.rain, 0.0, 1.0)
+	var overcast := smoothstep(0.1, 0.9, maxf(cloud, fog * 0.8))  # a clear day's 0.08 stays clear
+	sun_energy *= 1.0 - 0.62 * overcast
 	var moon_k := smoothstep(-4.5, -10.0, elev)
 	# The moon trails the sun by half a day, at a fixed height.
 	var moon := Vector3(-sun.x, 0.0, -sun.z)
@@ -167,18 +180,25 @@ func update_time(hour: float, day := 0) -> void:
 		var flat := Vector3(sun.x, 0.0, sun.z).normalized()
 		var e := deg_to_rad(maxf(elev, 4.0))
 		to_light = flat * cos(e) + Vector3.UP * sin(e)
-		light.light_color = s[0]
+		light.light_color = (s[0] as Color).lerp(Color(0.9, 0.93, 1.0), overcast * 0.6)
 		light.light_energy = sun_energy
 	else:
 		to_light = moon
 		light.light_color = MOON_COLOR
 		light.light_energy = MOON_ENERGY * moon_k
 	light.visible = light.light_energy > 0.001
+	light.shadow_opacity = 1.0 - 0.6 * overcast  # overcast light comes from the whole sky
 	light.basis = Basis.looking_at(-to_light, Vector3.UP)
 
 	var zenith: Color = k[0]
 	var horizon: Color = k[1]
 	var dusk: Color = k[2]
+	if overcast > 0.0:
+		# Grey the sky toward its own brightness, a little darker under rain clouds.
+		var dim := 1.0 - 0.25 * rain
+		zenith = zenith.lerp(Color.WHITE * (zenith.get_luminance() * 1.15 * dim), overcast * 0.8)
+		horizon = horizon.lerp(Color.WHITE * (horizon.get_luminance() * dim), overcast * 0.75)
+		dusk = dusk.lerp(horizon, overcast * 0.7)
 	var sunset := clampf(1.0 - absf(elev - 1.0) / 13.0, 0.0, 1.0)
 	sunset = sunset * sunset * (3.0 - 2.0 * sunset)
 	sky_mat.set_shader_parameter("zenith", _v3(zenith))
@@ -194,9 +214,9 @@ func update_time(hour: float, day := 0) -> void:
 	sky_mat.set_shader_parameter("pollution", night)
 	# Some days are clearer than others; blend across midnight so the sky never jumps.
 	var cover := lerpf(_cloud_cover(day), _cloud_cover(day + 1), hour / 24.0)
-	sky_mat.set_shader_parameter("cloud_cover", cover)
+	sky_mat.set_shader_parameter("cloud_cover", lerpf(cover, 0.95, overcast))
 
-	env.ambient_light_energy = k[3] * ambient_scale
+	env.ambient_light_energy = k[3] * ambient_scale * (1.0 + 0.3 * overcast)
 	# Over half the ambient is a neutral, warm version of the sky (light bounced off the
 	# sunlit city), so shade reads blue-grey rather than saturated blue.
 	var grey := horizon.get_luminance() * 0.6 + zenith.get_luminance() * 0.4
@@ -205,6 +225,7 @@ func update_time(hour: float, day := 0) -> void:
 	env.glow_intensity = glow
 	env.tonemap_exposure = k[4] / (1.0 - glow) * exposure_scale
 	env.fog_light_color = horizon.lerp(dusk, sunset * 0.35)
+	env.fog_density = _fog_base * (1.0 + 9.0 * fog + 1.5 * rain)
 	env.fog_sun_scatter = 0.06 + 0.2 * sunset
 	RenderingServer.global_shader_parameter_set("night", night)
 	RenderingServer.global_shader_parameter_set("sun_dir", to_light)
@@ -230,7 +251,8 @@ static func _v3(c: Color) -> Vector3:
 
 func set_view_distance(dist: float) -> void:
 	light.directional_shadow_max_distance = clampf(dist * 2.4, 140.0, 1300.0)
-	env.fog_density = clampf(0.11 / (dist + 300.0), 0.0001, 0.00045)
+	_fog_base = clampf(0.11 / (dist + 300.0), 0.0001, 0.00045)
+	env.fog_density = _fog_base
 
 
 # ---------------------------------------------------------------- grading ---

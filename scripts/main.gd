@@ -12,6 +12,8 @@ extends Node3D
 ##   --shots=dir            render the LOOK_SHOTS set into dir and quit (--only=day,night picks some)
 ##   --nohud                hide the HUD
 ##   --perf                 show the frame rate readout (F3)
+##   --benchmark            run the 90 s benchmark tour, write benchmark.txt and quit
+##   --weather=rain         fix the weather: clear, cloudy, rain or fog
 
 enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE, BUILD }
 
@@ -29,9 +31,14 @@ var services_panel: ServicesPanel
 var interiors: InteriorManager  # enterable buildings (interiors/)
 var missions: Missions  # jobs, payphones, goodness and quests (missions/)
 var resident: Resident  # the character you create, and their home (creator/)
+var weather: Weather  # clear, cloudy, rain and fog on a calendar (weather/)
+var rain_fx: RainFX  # rain and splashes around the street camera
+var nav: CityNav  # minimap, GPS route and the city map on V (navigation/)
+var bench: Benchmark  # the benchmark tour, while one runs
 var skip_creator := false  # no character creator; test scripts, --demo and look-dev runs skip it too
 var _dive_home := false  # after the creator, the first dive lands outside the Resident's front door
 var _gliding := false
+var _benchmark_run := false  # this game is the benchmark's demo city
 
 var tool := Tool.INSPECT
 var build_kind := ""  # the catalog building in hand while tool is BUILD
@@ -92,11 +99,19 @@ func _ready() -> void:
 	hud.start_chosen.connect(_start)
 	hud.load_chosen.connect(func(slot): Progress.load_game(slot))
 	hud.build_menu.chosen.connect(_choose_building)
+	hud.benchmark_chosen.connect(_begin_benchmark)
 	cam.moved.connect(day_night.set_view_distance)
 	menu = GameMenu.new()
 	add_child(menu)
+	menu.benchmark_requested.connect(_benchmark_from_menu)
+	menu.map_requested.connect(func(): if nav: nav.open_map())
 
 	quality = int(_args.get("quality", "1"))
+	if Benchmark.pending_quality >= 0:
+		quality = Benchmark.pending_quality  # the level the game was played at
+		Benchmark.pending_quality = -1
+	var benchmark := Benchmark.pending or _args.has("benchmark")
+	Benchmark.pending = false
 	_set_quality(quality)
 	_set_tool(Tool.INSPECT)
 	_set_overlay(int(_args.get("overlay", "0")))
@@ -104,6 +119,8 @@ func _ready() -> void:
 
 	if not save.is_empty():
 		_start(false, save)
+	elif benchmark:
+		_begin_benchmark()
 	elif _args.has("demo") or _args.has("screenshot"):
 		_start(_args.has("demo"))
 	else:
@@ -129,7 +146,7 @@ func _start(demo: bool, save := {}) -> void:
 		view.setup(city)
 	Progress.begin(city, save)
 	Progress.notice.connect(_on_notice)
-	if _args.has("screenshot") or _args.has("shots") or _args.has("nosave"):
+	if _args.has("screenshot") or _args.has("shots") or _args.has("nosave") or _benchmark_run:
 		Progress.autosave_enabled = false
 	services = CityServices.new(city)  # sets city.growth_check and adjusts land value itself
 	Progress.register_section("services", services)
@@ -178,6 +195,24 @@ func _start(demo: bool, save := {}) -> void:
 	add_child(resident)
 	resident.setup(city, street, cam)  # registers "resident"; a load fills it here
 	resident.use_interiors(interiors)
+	weather = Weather.new()
+	weather.name = "Weather"
+	add_child(weather)
+	weather.setup(city)  # follows city.minutes, so game speed and pause apply
+	day_night.weather = weather  # grey skies, a weaker sun and thicker fog
+	if _args.has("weather"):
+		weather.set_weather(["clear", "cloudy", "rain", "fog"].find(String(_args["weather"])), true)
+	life.set_weather(weather)  # rain thins the crowd, opens umbrellas and slows the traffic
+	Progress.register_section("weather", weather)
+	rain_fx = RainFX.new()
+	rain_fx.name = "RainFX"
+	add_child(rain_fx)
+	rain_fx.setup(weather, cam)
+	rain_fx.set_quality(quality)
+	nav = CityNav.new()
+	nav.name = "Navigation"
+	add_child(nav)
+	nav.setup(city, street, {"life": life, "missions": missions, "resident": resident, "interiors": interiors})
 	street.street_entered.connect(_on_street_entered)
 	street.street_exited.connect(_on_street_exited)
 	street.vehicle_changed.connect(func(_car): _update_hint())
@@ -197,7 +232,8 @@ func _start(demo: bool, save := {}) -> void:
 	Progress.register_section("mayor", self)
 	Progress.started()
 	_update_hint()
-	var look_dev := _args.has("screenshot") or _args.has("shots") or _args.has("street") or _args.has("demo")
+	var look_dev := _args.has("screenshot") or _args.has("shots") or _args.has("street") or _args.has("demo") \
+		or _benchmark_run
 	var test_run: bool = get_tree().get_script() != null  # a test script drives the game
 	if save.is_empty() and not resident.profile.loaded and not look_dev and not test_run and not skip_creator:
 		# A new game: create the Resident and pick a home while the clock waits.
@@ -210,6 +246,30 @@ func _start(demo: bool, save := {}) -> void:
 		hud.visible = true
 		_set_speed(speed)
 		_update_hint()
+
+
+func _begin_benchmark() -> void:
+	## The benchmark tour on the demo city: from the title screen, the Esc menu (which
+	## restarts the scene) or --benchmark (which quits when it's done).
+	_benchmark_run = true
+	_start(true)
+	bench = Benchmark.new()
+	bench.name = "Benchmark"
+	bench.quit_when_done = _args.has("benchmark")
+	bench.shots_dir = _args.get("bench-shots", "")
+	add_child(bench)
+	bench.run.call_deferred(self)
+
+
+func _benchmark_from_menu() -> void:
+	## Save the game, then restart into the benchmark. Continue on the title screen brings
+	## the game back afterwards.
+	Progress.autosave()
+	Progress.playing = false
+	Benchmark.pending = true
+	Benchmark.pending_quality = quality
+	get_tree().paused = false
+	get_tree().reload_current_scene()
 
 
 ## The mayor's view, for saves: camera, speed and overlay.
@@ -309,6 +369,7 @@ func go_street() -> void:
 	cam.set_process_unhandled_input(false)
 	street.enter_street(cam, at)
 	life.set_camera(street.camera)
+	rain_fx.set_camera(street.camera)
 	_update_hint()
 
 
@@ -346,6 +407,7 @@ func _on_street_exited() -> void:
 	day_night.exposure_scale = 1.0
 	day_night.ambient_scale = 1.0
 	life.set_camera(cam)
+	rain_fx.set_camera(cam)
 	hud.visible = true
 	_set_speed(_speed_before_street)
 	_update_hint()
@@ -354,7 +416,7 @@ func _on_street_exited() -> void:
 func _update_hint() -> void:
 	## The corner key hint follows where the player is; it hides during the zooms.
 	var kind := &""
-	if started and not _args.has("nohud"):
+	if started and not _args.has("nohud") and not (bench and bench.running):
 		if street.active:
 			kind = &"car" if street.car else &"foot"
 		elif not street.busy:
@@ -417,6 +479,8 @@ func _set_quality(q: int) -> void:
 	hud.set_quality(q)
 	if life:
 		life.density = LIFE_DENSITY[q]
+	if rain_fx:
+		rain_fx.set_quality(q)
 
 
 # ------------------------------------------------------------------- input ---
@@ -426,6 +490,8 @@ func _input(e: InputEvent) -> void:
 	## button used to keep the keyboard and swallow Tab. F11 and Alt+Enter live in GameMenu.
 	var key := _pressed_key(e)
 	var alt := e is InputEventWithModifiers and (e as InputEventWithModifiers).alt_pressed
+	if bench and bench.running:
+		return  # the tour drives itself; Benchmark._input takes every key and click
 	if resident and resident.get("_busy") == true and not menu.is_open:
 		return  # the character creator or the home picker has the keyboard (Esc skips there)
 	if street and not _dragging and not alt and e.is_action_pressed("street_toggle_view"):
@@ -672,7 +738,7 @@ func _process(delta: float) -> void:
 			view._map_dirty = true
 		# Cars and people move in real time at every sim speed, and stop when paused
 		# (screenshots pause the clock but still let traffic settle).
-		if speed_index > 0 or _args.has("screenshot") or _args.has("shots"):
+		if speed_index > 0 or _args.has("screenshot") or _args.has("shots") or (bench and bench.running):
 			life.step(minf(delta, 0.1))
 	day_night.update_time(city.time_of_day(), city.game_day())
 	if _perf != null and _perf.visible:

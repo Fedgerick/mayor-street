@@ -54,6 +54,26 @@ textures/default_filters/anisotropic_filtering_level=2
 
 [shader_globals]
 
+weather_cloud={
+"type": "float",
+"value": 0.0
+}
+weather_rain={
+"type": "float",
+"value": 0.0
+}
+weather_fog={
+"type": "float",
+"value": 0.0
+}
+weather_wet={
+"type": "float",
+"value": 0.0
+}
+weather_wind={
+"type": "float",
+"value": 0.0
+}
 night={
 "type": "float",
 "value": 0.0
