@@ -32,6 +32,7 @@ const STREET_KEYS := [
 	["R", "Put the car back on its wheels"],
 	["C", "Car radio station"],
 	["B", "Bribe a cop (1 to 3 stars)"],
+	["P / G", "Black market phone / call the crew (perks)"],
 	["Y / K", "Take a radio job / give up a job"],
 	["J / V", "Quest log / city map"],
 ]

@@ -33,6 +33,7 @@ var missions: Missions  # jobs, payphones, goodness and quests (missions/)
 var resident: Resident  # the character you create, and their home (creator/)
 var weather: Weather  # clear, cloudy, rain and fog on a calendar (weather/)
 var rain_fx: RainFX  # rain and splashes around the street camera
+var dresser: StreetDresser  # trees, benches, signs, shop fronts near the street camera (art/dresser/)
 var nav: CityNav  # minimap, GPS route and the city map on V (navigation/)
 var bench: Benchmark  # the benchmark tour, while one runs
 var skip_creator := false  # no character creator; test scripts, --demo and look-dev runs skip it too
@@ -209,6 +210,10 @@ func _start(demo: bool, save := {}) -> void:
 	add_child(rain_fx)
 	rain_fx.setup(weather, cam)
 	rain_fx.set_quality(quality)
+	dresser = StreetDresser.new()
+	dresser.name = "StreetDresser"
+	add_child(dresser)
+	dresser.setup(city, services, life.spots)  # hides itself above 70 m camera height
 	nav = CityNav.new()
 	nav.name = "Navigation"
 	add_child(nav)

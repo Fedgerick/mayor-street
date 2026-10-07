@@ -59,6 +59,13 @@ const CAR_TINTS := [
 	Color(0.7, 0.72, 0.75), Color(0.95, 0.75, 0.1), Color(0.1, 0.45, 0.3), Color(0.55, 0.1, 0.15),
 ]
 
+## Meshes with several surfaces are merged into one that carries each vertex's material
+## number in CUSTOM0, so a building costs one draw call a pass instead of one per material
+## (PERFORMANCE.md). The look of every material is in these tables, read by kit.gdshader.
+## Set to false to get the per-material surfaces back (for comparing).
+var merge_surfaces := true
+var merged_material: ShaderMaterial
+var material_ids := {}  # material name -> number in the tables
 var materials := {}
 var meshes := {}
 var variants := {}  # "r_1_1" -> Array[String]
@@ -80,22 +87,56 @@ func _make_materials() -> void:
 		m.shader = KIT_SHADER
 		m.resource_name = name
 		var c: Color = d[0]
-		m.set_shader_parameter("base_color", Vector3(c.r, c.g, c.b))
-		m.set_shader_parameter("tint_src", d[1])
-		m.set_shader_parameter("tint_amount", d[2])
-		m.set_shader_parameter("pattern", d[3])
-		m.set_shader_parameter("kind", d[4])
-		m.set_shader_parameter("rough", d[5])
-		m.set_shader_parameter("metal", d[6])
-		m.set_shader_parameter("spec", d[7])
-		m.set_shader_parameter("ground_level", d[8])
+		m.set_shader_parameter("u_base_color", Vector3(c.r, c.g, c.b))
+		m.set_shader_parameter("u_tint_src", d[1])
+		m.set_shader_parameter("u_tint_amount", d[2])
+		m.set_shader_parameter("u_pattern", d[3])
+		m.set_shader_parameter("u_kind", d[4])
+		m.set_shader_parameter("u_rough", d[5])
+		m.set_shader_parameter("u_metal", d[6])
+		m.set_shader_parameter("u_spec", d[7])
+		m.set_shader_parameter("u_ground_level", d[8])
 		materials[name] = m
 	var leaves: ShaderMaterial = materials["Leaves"].duplicate()
-	leaves.set_shader_parameter("wind", true)
+	leaves.set_shader_parameter("u_wind", true)
 	materials["LeavesWind"] = leaves
 	var car_glass: ShaderMaterial = materials["Glass"].duplicate()
-	car_glass.set_shader_parameter("kind", 7)
+	car_glass.set_shader_parameter("u_kind", 7)
 	materials["CarGlass"] = car_glass
+	_make_merged_material()
+
+
+func _make_merged_material() -> void:
+	## One material that reads the look of all the others from tables, by number.
+	var ids := {}
+	var a := PackedVector4Array()  # base colour, tint amount
+	var b := PackedVector4Array()  # roughness, metallic, specular, tint source
+	var c := PackedVector4Array()  # pattern, kind, wind, ground level
+	var rows := {}  # name -> [MATS row, kind override, wind]
+	for name in MATS:
+		rows[name] = [MATS[name], -1, false]
+	rows["LeavesWind"] = [MATS["Leaves"], -1, true]
+	rows["CarGlass"] = [MATS["Glass"], 7, false]
+	for name in rows:
+		var d: Array = rows[name][0]
+		var col: Color = d[0]  # (set raw on the u_ uniform too: a Vector3 gets no sRGB conversion)
+		ids[name] = a.size()
+		a.append(Vector4(col.r, col.g, col.b, d[2]))
+		b.append(Vector4(d[5], d[6], d[7], float(d[1])))
+		c.append(Vector4(float(d[3]), float(d[4] if rows[name][1] < 0 else rows[name][1]),
+			1.0 if rows[name][2] else 0.0, 1.0 if d[8] else 0.0))
+	assert(a.size() <= 32, "kit.gdshader's tables hold 32 materials")
+	a.resize(32)
+	b.resize(32)
+	c.resize(32)
+	material_ids = ids
+	merged_material = ShaderMaterial.new()
+	merged_material.shader = KIT_SHADER
+	merged_material.resource_name = "Merged"
+	merged_material.set_shader_parameter("merged", true)
+	merged_material.set_shader_parameter("mat_a", a)
+	merged_material.set_shader_parameter("mat_b", b)
+	merged_material.set_shader_parameter("mat_c", c)
 
 
 const NAMES := {
@@ -133,6 +174,7 @@ func _load_mesh_at(path: String, nm: String, sub: String) -> bool:
 		inst.free()
 		return false
 	var mesh: Mesh = mi.mesh
+	var keys := PackedStringArray()
 	for s in mesh.get_surface_count():
 		var mat := mesh.surface_get_material(s)
 		var key := mat.resource_name if mat else "Wall"
@@ -144,9 +186,108 @@ func _load_mesh_at(path: String, nm: String, sub: String) -> bool:
 			mesh.surface_set_material(s, materials[key])
 		else:
 			push_warning("Kit: unknown material %s in %s" % [key, nm])
+			key = "Wall"
+		keys.append(key)
+	if merge_surfaces and sub != "cars" and mesh.get_surface_count() > 1 and mesh is ArrayMesh:
+		mesh = _merge(mesh as ArrayMesh, keys)
 	meshes[nm] = mesh
 	inst.free()
 	return true
+
+
+func _merge(src: ArrayMesh, keys: PackedStringArray) -> ArrayMesh:
+	## Every surface of src in one, with the material number of each vertex in CUSTOM0.
+	var ids := PackedFloat32Array()
+	var indices := PackedInt32Array()
+	var base := 0
+	var wanted := [Mesh.ARRAY_VERTEX, Mesh.ARRAY_NORMAL, Mesh.ARRAY_COLOR, Mesh.ARRAY_TEX_UV, Mesh.ARRAY_TEX_UV2]
+	var present := {}
+	var parts: Array = []
+	for s in src.get_surface_count():
+		var arr := src.surface_get_arrays(s)
+		parts.append(arr)
+		for k in wanted:
+			if arr[k] != null and arr[k].size() > 0:
+				present[k] = true
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var uv := PackedVector2Array()
+	var uv2 := PackedVector2Array()
+	for s in parts.size():
+		var arr: Array = parts[s]
+		var pv: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var n := pv.size()
+		verts.append_array(pv)
+		var pn = arr[Mesh.ARRAY_NORMAL]
+		if present.has(Mesh.ARRAY_NORMAL):
+			if pn != null and pn.size() == n:
+				normals.append_array(pn)
+			else:
+				var up := PackedVector3Array()
+				up.resize(n)
+				up.fill(Vector3.UP)
+				normals.append_array(up)
+		var pc = arr[Mesh.ARRAY_COLOR]
+		if present.has(Mesh.ARRAY_COLOR):
+			if pc != null and pc.size() == n:
+				colors.append_array(pc)
+			else:
+				var white := PackedColorArray()
+				white.resize(n)
+				white.fill(Color.WHITE)
+				colors.append_array(white)
+		var p1 = arr[Mesh.ARRAY_TEX_UV]
+		if present.has(Mesh.ARRAY_TEX_UV):
+			if p1 != null and p1.size() == n:
+				uv.append_array(p1)
+			else:
+				var z := PackedVector2Array()
+				z.resize(n)
+				uv.append_array(z)
+		var p2 = arr[Mesh.ARRAY_TEX_UV2]
+		if present.has(Mesh.ARRAY_TEX_UV2):
+			if p2 != null and p2.size() == n:
+				uv2.append_array(p2)
+			else:
+				var z2 := PackedVector2Array()
+				z2.resize(n)
+				uv2.append_array(z2)
+		var id := float(material_ids.get(keys[s], 0))
+		var ida := PackedFloat32Array()
+		ida.resize(n)
+		ida.fill(id)
+		ids.append_array(ida)
+		var pi = arr[Mesh.ARRAY_INDEX]
+		if pi != null and pi.size() > 0:
+			for i in pi:
+				indices.append(i + base)
+		else:
+			for i in n:
+				indices.append(i + base)
+		base += n
+	var out: Array = []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = verts
+	if present.has(Mesh.ARRAY_NORMAL):
+		out[Mesh.ARRAY_NORMAL] = normals
+	if present.has(Mesh.ARRAY_COLOR):
+		out[Mesh.ARRAY_COLOR] = colors
+	if present.has(Mesh.ARRAY_TEX_UV):
+		out[Mesh.ARRAY_TEX_UV] = uv
+	if present.has(Mesh.ARRAY_TEX_UV2):
+		out[Mesh.ARRAY_TEX_UV2] = uv2
+	out[Mesh.ARRAY_CUSTOM0] = ids
+	out[Mesh.ARRAY_INDEX] = indices
+	# The glTF import made LODs for each surface; the merged surface needs its own, which
+	# ImporterMesh builds the same way the import does.
+	var flags: int = Mesh.ARRAY_CUSTOM_R_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	var im := ImporterMesh.new()
+	im.add_surface(Mesh.PRIMITIVE_TRIANGLES, out, [], {}, merged_material, "", flags)
+	im.generate_lods(25.0, 60.0, [])
+	var mesh := im.get_mesh()
+	mesh.resource_name = src.resource_name
+	return mesh
 
 
 func _find_mesh(n: Node) -> MeshInstance3D:

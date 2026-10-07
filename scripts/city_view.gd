@@ -3,7 +3,7 @@ extends Node3D
 ## Draws the City: terrain, sea, and chunked MultiMeshes for roads, buildings, lamps
 ## and trees. Also owns the data textures the shaders read (zones, traffic, lamps).
 
-const CHUNK := 16
+const CHUNK := 4  # draw cells (PERFORMANCE.md): small so shadow and view culling skip most of the city
 const TERRAIN_MARGIN := 640.0
 const TERRAIN_STEP := 6.0
 const GROW_TIME := 1.4

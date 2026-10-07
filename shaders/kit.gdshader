@@ -5,19 +5,26 @@ render_mode depth_draw_opaque, cull_back;
 
 #include "res://shaders/common.gdshaderinc"
 
-uniform vec3 base_color : source_color = vec3(0.9);
-uniform int tint_src = 0;          // 0 none, 1 instance COLOR, 2 instance CUSTOM.rgb
-uniform float tint_amount = 1.0;
+// A mesh has either one of these materials per surface (the u_ uniforms), or, merged by
+// kit.gd, a single surface whose vertices carry a material number in CUSTOM0 that picks a
+// row from the mat_ tables (one draw call instead of one per material).
+uniform bool merged = false;
+uniform vec4 mat_a[32];  // base colour, tint amount
+uniform vec4 mat_b[32];  // roughness, metallic, specular, tint source
+uniform vec4 mat_c[32];  // pattern, kind, wind, ground level
+uniform vec3 u_base_color : source_color = vec3(0.9);
+uniform int u_tint_src = 0;          // 0 none, 1 instance COLOR, 2 instance CUSTOM.rgb
+uniform float u_tint_amount = 1.0;
 // 0 plain, 1 stucco, 2 brick, 3 concrete panels, 4 corrugated metal, 5 roof tiles,
 // 6 paving, 7 grass, 8 asphalt, 9 awning stripes, 10 sidewalk, 11 gravel roof
-uniform int pattern = 0;
+uniform int u_pattern = 0;
 // 0 solid, 1 window glass, 2 sign, 3 lamp, 4 foliage, 5 headlight, 6 taillight, 7 plain glass
-uniform int kind = 0;
-uniform float rough = 0.85;
-uniform float metal = 0.0;
-uniform float spec = 0.5;
-uniform bool wind = false;
-uniform bool ground_level = false;  // receives tool previews and overlays like the ground
+uniform int u_kind = 0;
+uniform float u_rough = 0.85;
+uniform float u_metal = 0.0;
+uniform float u_spec = 0.5;
+uniform bool u_wind = false;
+uniform bool u_ground_level = false;  // receives tool previews and overlays like the ground
 
 varying vec3 opos;
 varying vec3 onrm;
@@ -27,8 +34,23 @@ varying vec4 icolor;
 varying vec4 icustom;
 varying vec3 origin;
 varying vec3 oview;  // camera -> vertex in object space (window glass only)
+varying flat vec4 m_a;  // this surface's row of the tables: base colour and tint amount,
+varying flat vec4 m_b;  // roughness, metallic, specular and tint source,
+varying flat vec4 m_c;  // pattern, kind, wind and ground level
 
 void vertex() {
+	if (merged) {
+		int mid = int(CUSTOM0.r + 0.5);
+		m_a = mat_a[mid];
+		m_b = mat_b[mid];
+		m_c = mat_c[mid];
+	} else {
+		m_a = vec4(u_base_color, u_tint_amount);
+		m_b = vec4(u_rough, u_metal, u_spec, float(u_tint_src));
+		m_c = vec4(float(u_pattern), float(u_kind), u_wind ? 1.0 : 0.0, u_ground_level ? 1.0 : 0.0);
+	}
+	int kind = int(m_c.y + 0.5);
+	bool wind = m_c.z > 0.5;
 	opos = VERTEX;
 	onrm = NORMAL;
 	icolor = COLOR;
@@ -237,6 +259,15 @@ vec3 window_flat(vec2 uv, vec2 uv2, vec3 n, vec3 p_obj, float seed, out vec3 emi
 }
 
 void fragment() {
+	vec3 base_color = m_a.rgb;
+	float tint_amount = m_a.w;
+	float rough = m_b.x;
+	float metal = m_b.y;
+	float spec = m_b.z;
+	int tint_src = int(m_b.w + 0.5);
+	int pattern = int(m_c.x + 0.5);
+	int kind = int(m_c.y + 0.5);
+	bool ground_level = m_c.w > 0.5;
 	vec3 n = normalize(onrm);
 	vec3 tint = tint_src == 1 ? icolor.rgb : (tint_src == 2 ? icustom.rgb : vec3(1.0));
 	vec3 alb = base_color * mix(vec3(1.0), tint, tint_amount);
