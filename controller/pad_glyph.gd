@@ -40,9 +40,15 @@ func _pill() -> bool:
 		and button not in [PadGlyphs.DPAD, PadGlyphs.LS, PadGlyphs.RS, JOY_BUTTON_LEFT_STICK, JOY_BUTTON_RIGHT_STICK]
 
 
+func _stadia_middle() -> bool:
+	return family == PadGlyphs.Family.STADIA and button in [JOY_BUTTON_BACK, JOY_BUTTON_START]
+
+
 func _resize() -> void:
 	var w := size_px
-	if _pill():
+	if _stadia_middle():
+		w = size_px
+	elif _pill():
 		var f := get_theme_default_font()
 		var fs := int(size_px * 0.46)
 		w = maxf(size_px * 1.25, f.get_string_size(PadGlyphs.label(family, button), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + size_px * 0.6)
@@ -66,6 +72,17 @@ func _draw() -> void:
 			draw_circle(c, r, col.darkened(0.15) if family == PadGlyphs.Family.XBOX else dark)
 			draw_arc(c, r, 0, TAU, 32, Color(1, 1, 1, 0.3), 1.5, true)
 			_text(PadGlyphs.label(family, button), c, int(s * 0.55), light)
+	elif _stadia_middle():
+		# Stadia's small round Options (three dots) and Menu (three lines) buttons.
+		draw_circle(c, r * 0.8, dark)
+		draw_arc(c, r * 0.8, 0, TAU, 28, Color(1, 1, 1, 0.3), 1.5, true)
+		if button == JOY_BUTTON_BACK:
+			for i in 3:
+				draw_circle(c + Vector2((i - 1) * r * 0.32, 0), maxf(1.5, r * 0.09), light)
+		else:
+			for i in 3:
+				var y := (i - 1) * r * 0.26
+				draw_line(c + Vector2(-r * 0.35, y), c + Vector2(r * 0.35, y), light, maxf(1.5, s * 0.06), true)
 	elif PadGlyphs.DPAD_NAMES.has(button) or button == PadGlyphs.DPAD:
 		_dpad(c, r)
 	elif button in [PadGlyphs.LS, PadGlyphs.RS, JOY_BUTTON_LEFT_STICK, JOY_BUTTON_RIGHT_STICK]:

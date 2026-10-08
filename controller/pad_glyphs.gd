@@ -4,13 +4,14 @@ extends RefCounted
 ## Godot names buttons by position (JOY_BUTTON_A is always the bottom face button), so one
 ## layout works for every pad; only the printed labels and colours differ.
 
-enum Family { XBOX, PLAYSTATION, NINTENDO }
+enum Family { XBOX, PLAYSTATION, NINTENDO, STADIA }
 
-const FAMILY_NAMES := ["Xbox", "PlayStation", "Nintendo"]
+const FAMILY_NAMES := ["Xbox", "PlayStation", "Nintendo", "Stadia"]
 
 const SONY := 0x054C
 const NINTENDO := 0x057E
 const MICROSOFT := 0x045E
+const GOOGLE := 0x18D1
 
 # Pseudo buttons for the sticks and triggers, after the real JOY_BUTTON_* range.
 const LS := 100        # left stick (move)
@@ -40,6 +41,14 @@ const LABELS := {
 		JOY_BUTTON_LEFT_SHOULDER: "L", JOY_BUTTON_RIGHT_SHOULDER: "R", LT: "ZL", RT: "ZR",
 		JOY_BUTTON_LEFT_STICK: "L3", JOY_BUTTON_RIGHT_STICK: "R3", LS: "L", RS: "R",
 		JOY_BUTTON_BACK: "-", JOY_BUTTON_START: "+", LB_RB: "L R", LT_RT: "ZL ZR",
+	},
+	# Google Stadia: Xbox letters on plain dark buttons, PlayStation-style shoulder names,
+	# Options (three dots) and Menu (three lines) in the middle; PadGlyph draws those two.
+	Family.STADIA: {
+		JOY_BUTTON_A: "A", JOY_BUTTON_B: "B", JOY_BUTTON_X: "X", JOY_BUTTON_Y: "Y",
+		JOY_BUTTON_LEFT_SHOULDER: "L1", JOY_BUTTON_RIGHT_SHOULDER: "R1", LT: "L2", RT: "R2",
+		JOY_BUTTON_LEFT_STICK: "L3", JOY_BUTTON_RIGHT_STICK: "R3", LS: "L", RS: "R",
+		JOY_BUTTON_BACK: "Options", JOY_BUTTON_START: "Menu", LB_RB: "L1 R1", LT_RT: "L2 R2",
 	},
 }
 
@@ -72,6 +81,8 @@ static func from_name(name: String, info := {}) -> Family:
 	for w in ["dualsense", "dualshock", "playstation", "ps3", "ps4", "ps5", "sony", "wireless controller"]:
 		if w in n:
 			return Family.PLAYSTATION
+	if "stadia" in n:
+		return Family.STADIA
 	for w in ["nintendo", "switch", "pro controller", "joy-con", "joycon"]:
 		if w in n:
 			return Family.NINTENDO
@@ -83,6 +94,8 @@ static func from_name(name: String, info := {}) -> Family:
 		return Family.PLAYSTATION
 	if vendor == NINTENDO:
 		return Family.NINTENDO
+	if vendor == GOOGLE:
+		return Family.STADIA
 	return Family.XBOX
 
 
@@ -96,7 +109,7 @@ static func label(family: int, button: int) -> String:
 
 static func color(family: int, button: int) -> Color:
 	var table: Dictionary = PS_COLORS if family == Family.PLAYSTATION else XBOX_COLORS
-	if family == Family.NINTENDO:
+	if family == Family.NINTENDO or family == Family.STADIA:
 		return Color(0.82, 0.84, 0.88)
 	return table.get(button, Color(0.82, 0.84, 0.88))
 

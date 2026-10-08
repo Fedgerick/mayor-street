@@ -210,6 +210,8 @@ func _glyph_checks() -> void:
 	check(PadGlyphs.from_name("Nintendo Switch Pro Controller") == PadGlyphs.Family.NINTENDO, "Switch Pro gets Nintendo icons")
 	check(PadGlyphs.from_name("Gamepad", {"vendor_id": "1356"}) == PadGlyphs.Family.PLAYSTATION, "Sony vendor id gets PlayStation icons")
 	check(PadGlyphs.from_name("8BitDo SN30 Pro") == PadGlyphs.Family.XBOX, "an unknown pad gets Xbox icons")
+	check(PadGlyphs.from_name("Stadia Controller rev. A") == PadGlyphs.Family.STADIA, "Stadia pad gets Stadia icons")
+	check(PadGlyphs.from_name("Bluetooth Gamepad", {"vendor_id": "6353"}) == PadGlyphs.Family.STADIA, "Google vendor id gets Stadia icons")
 	check(PadGlyphs.label(PadGlyphs.Family.NINTENDO, JOY_BUTTON_A) == "B", "Nintendo's bottom button is labelled B")
 
 

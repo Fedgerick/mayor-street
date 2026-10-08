@@ -1,7 +1,7 @@
 # Controller (gamepad) support
 
 Full game controls on any pad Windows knows: Xbox, PlayStation (DualShock 4, DualSense),
-Nintendo Switch Pro and most generic Bluetooth pads (SDL's mapping database, built into Godot 4.5).
+Nintendo Switch Pro, Google Stadia and most generic Bluetooth pads (SDL's mapping database, built into Godot 4.5).
 The layout is Xbox style by button position; prompts show the right icons for the pad in hand
 (auto-detected from its name and vendor id, or picked in the quick menu).
 
