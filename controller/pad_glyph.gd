@@ -31,6 +31,7 @@ static func make(fam: int, b: int, px := 30.0) -> PadGlyph:
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_resize()
 
 

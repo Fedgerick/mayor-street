@@ -34,16 +34,7 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 	_bar = _row()
-	_bar.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_bar.offset_right = -18
-	_bar.offset_bottom = -14
 	_context = _row()
-	_context.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_context.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_context.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_context.offset_bottom = -112
 	_ring = _Ring.new()
 	_ring.hud = self
 	_ring.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -57,6 +48,7 @@ func _ready() -> void:
 
 func _row() -> HBoxContainer:
 	var h := HBoxContainer.new()
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
 	h.add_theme_constant_override("separation", 14)
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(h)
@@ -93,7 +85,19 @@ func _process(delta: float) -> void:
 	if csig != _ctx_sig:
 		_ctx_sig = csig
 		_fill(_context, ctx, 32.0, 21)
+	_place()
 	_stick_quick()
+
+
+func _place() -> void:
+	## Sized to their contents each check: bottom-right row, and the context row centred above it.
+	var vs := _root.get_viewport_rect().size
+	_bar.size = _bar.get_combined_minimum_size()
+	_bar.position = vs - _bar.size - Vector2(18, 14)
+	if pad.mode == &"mayor":
+		_bar.position.y = 84.0  # under the top bar; the tool bar and services panel own the bottom
+	_context.size = _context.get_combined_minimum_size()
+	_context.position = Vector2((vs.x - _context.size.x) * 0.5, vs.y - 112.0 - _context.size.y)
 
 
 func _fill(box: HBoxContainer, rows: Array, px: float, fs := 15) -> void:
@@ -101,6 +105,7 @@ func _fill(box: HBoxContainer, rows: Array, px: float, fs := 15) -> void:
 		c.queue_free()
 	for r in rows:
 		var item := HBoxContainer.new()
+		item.alignment = BoxContainer.ALIGNMENT_CENTER
 		item.add_theme_constant_override("separation", 6)
 		item.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		for b in r[0]:
@@ -112,6 +117,7 @@ func _fill(box: HBoxContainer, rows: Array, px: float, fs := 15) -> void:
 		l.add_theme_constant_override("outline_size", 5)
 		item.add_child(l)
 		box.add_child(item)
+	_place.call_deferred()
 
 
 # ------------------------------------------------------------------ prompts ---
