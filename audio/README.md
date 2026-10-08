@@ -22,9 +22,10 @@ One autoload, `Audio` (`audio_director.gd`), drives all sound. Hook-up: [INTEGRA
 
 ## Files
 
-- `sfx/` one-shots and short loops, `ambience/` 24 s beds, `music/` four 83 s stems (92 BPM, A minor).
+- `sfx/` one-shots and short loops, `ambience/` 24 s beds, `music/` four 77 s stems (100 BPM, A minor).
 - `tools/synth_audio.py` regenerates all of them: `pip install numpy scipy soundfile`, then
   `python3 audio/tools/synth_audio.py` (or `--only sfx|missions|action|ambience|music`). About two minutes.
+- `tools/synth_fixes.py` holds the sounds reworked after Fedge's sound check (doors, dive whooshes, sirens, Busted, Wasted, city day, crickets, light rain, close thunder). The other generators call it, so a full regenerate keeps them.
 - `tools/synth_round3.py` makes the round-3 sounds: `--only weather|radio` (rain, gusts, thunder, the
   radio tuning burst and the four ~110 s radio stations in `music/radio_*.ogg`).
 - `weather_audio.gd` (class WeatherAudio) reads rain and wind and plays thunder; `car_radio.gd` (class CarRadio) is the radio. The director creates both.

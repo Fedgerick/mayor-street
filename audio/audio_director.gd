@@ -634,7 +634,7 @@ func _update_ambience(delta: float, street: bool, started: bool) -> void:
 	var d := density
 	_amb_target["amb_city_day"] = (0.15 + 0.85 * d) * day * (0.35 + 0.65 * ground) if started else 0.0
 	_amb_target["amb_city_night"] = (0.15 + 0.7 * d) * night * (0.35 + 0.65 * ground) if started else 0.0
-	_amb_target["amb_birds"] = day * (1.0 - 0.8 * d) * low * (1.0 - 0.5 * water)
+	_amb_target["amb_birds"] = 0.6 * day * (1.0 - 0.8 * d) * low * (1.0 - 0.5 * water)  # trimmed after the sound check
 	_amb_target["amb_crickets"] = night * (1.0 - 0.85 * d) * low * 0.8
 	_amb_target["amb_wind"] = 0.12 + 0.8 * smoothstep(120.0, 700.0, height)
 	var crowd := 0.0

@@ -144,6 +144,8 @@ def weather():
     write("sfx/thunder_2.ogg", thunder(2, 9.0, 0.6), peak=0.85)
     write("sfx/radio_tune.ogg", radio_tune(), peak=0.6)
     S.rng = old
+    import synth_fixes   # light rain and thunder_1 were reworked after the sound check
+    synth_fixes.apply("weather")
 
 
 def bus_stop():

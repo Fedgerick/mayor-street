@@ -694,7 +694,7 @@ def amb_sea():
 
 # ------------------------------------------------------------------- music ---
 
-BPM = 92
+BPM = 100   # was 92; Fedge asked for the street music a little faster (all stems share the tempo)
 BEAT = 60.0 / BPM
 BARS = 32
 SWING = 0.58
@@ -894,7 +894,34 @@ def music():
         for s in range(0, 16, 2):
             add_at(s_perc, pan(hat() * (0.3 if s % 4 == 2 else 0.18), 0.25), n_of(step_time(b, s)))
         add_at(s_perc, pan(clap() * 0.4, -0.1), n_of(step_time(b, 12)))
-    street = 0.75 * s_arp + 0.75 * s_bass + 0.6 * s_perc
+    # Progressive layers (sound check, 2026-10-08): a dotted-eighth echo on the arpeggio, a pad whose
+    # filter opens over every eight-bar phrase, and a soft noise riser into each new phrase.
+    dot = n_of(BEAT * 0.75)
+    s_arp = s_arp + 0.5 * np.roll(s_arp, dot, axis=0) + 0.25 * np.roll(s_arp, 2 * dot, axis=0)
+    s_pad = buf()
+    for b, (chord, root) in enumerate(SONG):
+        for i, mm in enumerate(chord[1:4]):
+            f = midi(mm + 12)
+            m = n_of(4 * BEAT + 0.5)
+            tm = tt(m)
+            v = sum(signal.sawtooth(2 * np.pi * f * 2 ** (d / 12) * tm + (i + 2) * (1 + k)) for k, d in enumerate((-0.09, 0.0, 0.09)))
+            v = v * adsr(m, 0.35, 0.3, 0.8, 0.4) * 0.07
+            add_at(s_pad, pan(v, -0.5 + 0.5 * i), n_of(bar_start(b)))
+    pad_lo, pad_mid, pad_hi = (cfilt(s_pad, "lowpass", fc) for fc in (500, 1500, 4500))
+    ts = tt(n) / (8 * 4 * BEAT)               # position inside an eight-bar phrase, 0..1
+    ph = (ts % 1.0)
+    w_hi = np.clip((ph - 0.35) / 0.65, 0, 1)
+    w_mid = np.sin(np.pi * np.clip(ph * 1.1, 0, 1)) ** 2
+    w_lo = np.clip(1 - ph * 1.6, 0, 1)
+    norm = np.sqrt(w_lo ** 2 + w_mid ** 2 + w_hi ** 2) + 1e-6
+    s_pad = (pad_lo * (w_lo / norm)[:, None] + pad_mid * (w_mid / norm)[:, None] + pad_hi * (w_hi / norm)[:, None])
+    s_rise = buf()
+    for b in range(7, BARS, 8):
+        m = n_of(2 * 4 * BEAT)
+        tr = tt(m) / (2 * 4 * BEAT)
+        r = filt(white(m), "bandpass", [1500, 9000]) * tr ** 3 * 0.12
+        add_at(s_rise, np.stack([r, r], axis=1), n_of(bar_start(b - 1)))
+    street = 0.75 * s_arp + 0.75 * s_bass + 0.6 * s_perc + 0.8 * s_pad + s_rise
     street = circ_reverb(street, 1.6, 0.2, lp=6000)
 
     # ---- drive: full drums plus a sub octave, layered on top of street -----
@@ -1228,6 +1255,11 @@ def main():
     if a.only in (None, "music"):
         print("music")
         music()
+    # Fixes from the sound check replace the sounds Fedge marked "fix" or "replace".
+    import synth_fixes
+    for group in ("sfx", "action", "ambience"):
+        if a.only in (None, group) or (group == "sfx" and a.only == "missions"):
+            synth_fixes.apply(group)
 
 
 if __name__ == "__main__":

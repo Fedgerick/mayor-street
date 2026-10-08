@@ -54,6 +54,12 @@ group, and reads:
 `audio_radio_next` (C, D-pad up) and reads `City.specials_of("radio_tower")` to put KMAY on air.
 Suggested README line for the street controls table: `| Radio | C switches station (in a car) |`.
 
+## Sound check fixes (2026-10-08)
+
+All four music stems moved from 92 to 100 BPM (77 s each) so they stay in sync; nothing else needs
+changing. Regenerating: `python3 audio/tools/synth_audio.py` (it calls `synth_fixes.py` for the
+reworked doors, dive whooshes, sirens, Busted, Wasted, city day, crickets, light rain and thunder).
+
 ## What the director reads (please keep these names, or tell the audio thread)
 
 | From | Read |
