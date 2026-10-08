@@ -159,15 +159,38 @@ func _add_building(body: StaticBody3D, b: Dictionary) -> void:
 			aabb = footprint(nm, mesh).intersection(lot.grow(0.6))
 			if aabb.size.x < 1.0 or aabb.size.z < 1.0:
 				return
+	var xf := Transform3D(Basis(Vector3.UP, b.rot * PI * 0.5), city.building_center(b))
+	aabb = _clear_door(aabb, xf.affine_inverse() * city.door_position(b))
 	var size := Vector3(aabb.size.x, maxf(aabb.end.y, 3.0), aabb.size.z)
 	var center := aabb.get_center()
-	var xf := Transform3D(Basis(Vector3.UP, b.rot * PI * 0.5), city.building_center(b))
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
 	bs.size = size
 	cs.shape = bs
 	cs.transform = xf * Transform3D(Basis.IDENTITY, Vector3(center.x, size.y * 0.5, center.z))
 	body.add_child(cs)
+
+
+## Pull the box face nearest the front door back behind it, so awnings, steps and signs
+## in the footprint don't keep the player out of the doorway (interiors/ DoorTrigger
+## stands just outside the door).
+static func _clear_door(box: AABB, door: Vector3) -> AABB:
+	const BACK := 0.15
+	if door.x <= box.position.x or door.x >= box.end.x or door.z <= box.position.z or door.z >= box.end.z:
+		return box
+	var gaps := [door.x - box.position.x, box.end.x - door.x, door.z - box.position.z, box.end.z - door.z]
+	var k := 0
+	for i in 4:
+		if gaps[i] < gaps[k]:
+			k = i
+	var lo := box.position
+	var hi := box.end
+	match k:
+		0: lo.x = door.x + BACK
+		1: hi.x = door.x - BACK
+		2: lo.z = door.z + BACK
+		3: hi.z = door.z - BACK
+	return AABB(lo, hi - lo)
 
 
 ## The XZ extent of a mesh's parts above 1.2 m (walls, not paving), full height in Y.
