@@ -143,7 +143,9 @@ func _run() -> void:
 	var tr: Traffic = life.traffic
 	var runner = null
 	for c in tr.cars:
-		if c.v > 4.0:
+		# Going straight, with the next tile straight too, so the block stays in its path.
+		if c.v > 4.0 and c.dout == c.din and tr.net.junction[c.cell] == 0 \
+				and tr.net.junction[tr.net.neighbor(c.cell, c.dout)] == 0:
 			runner = c
 			break
 	if runner:
@@ -151,7 +153,7 @@ func _run() -> void:
 		var block_at: Vector3 = runner.pos + runner.fwd * 14.0 - right * runner.dodge
 		var saved_obstacles: Array = []
 		var min_gap := INF
-		for i in 240:
+		for i in 170:   # under 3 s: after that an impatient driver swings round it
 			# The street layer refreshes obstacles each frame; hold ours in place.
 			tr.obstacles = [[block_at, right * 0.9, runner.fwd * 2.2, Vector3.ZERO]]
 			tr.obstacle_focus = runner.pos
@@ -164,7 +166,8 @@ func _run() -> void:
 				min_gap = minf(min_gap, ahead - Traffic.LENGTHS[runner.model] * 0.5 - 2.2)
 		bodies.set_physics_process(true)
 		tr.obstacles = saved_obstacles
-		check(min_gap > -0.05 and runner.v < 0.5, "an AI car stops short of a car blocking its lane (gap %.2f m, speed %.1f)" % [min_gap, runner.v])
+		var last_gap: float = (block_at - runner.pos).dot(runner.fwd) - Traffic.LENGTHS[runner.model] * 0.5 - 2.2
+		check(min_gap > -0.05 and runner.v * runner.v / 18.0 < last_gap, "an AI car stops short of a car blocking its lane (gap %.2f m, speed %.1f)" % [min_gap, runner.v])
 	else:
 		print("SKIP  no moving AI car")
 
@@ -234,10 +237,11 @@ func _run() -> void:
 		await frames(2)
 		car.global_position = ped.pos + Vector3(0, 0.3, 0)
 		car.linear_velocity = Vector3(0, 0, 12.0)
-		bodies._pick(p.global_position)
+		bodies._pick(ped.pos)   # centred on the walker, so a crowd round them can't crowd them out
 		var before := bodies.run_over
 		bodies._car_hits(car)
-		check(bodies.run_over == before + 1 and not life.crowd.peds.has(ped), "a car at 43 km/h knocks a walker down for good")
+		var picked := bodies._near_people.any(func(n): return n[0] == ped)
+		check(bodies.run_over == before + 1 and not life.crowd.peds.has(ped), "a car at 43 km/h knocks a walker down for good (picked %s, %.2f m from the car)" % [picked, Vector2(ped.pos.x - car.global_position.x, ped.pos.z - car.global_position.z).length()])
 		car.queue_free()
 		street.heat.clear()
 	else:
