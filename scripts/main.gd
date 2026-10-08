@@ -12,7 +12,7 @@ extends Node3D
 ##   --shots=dir            render the LOOK_SHOTS set into dir and quit (--only=day,night picks some)
 ##   --nohud                hide the HUD
 ##   --perf                 show the frame rate readout (F3)
-##   --benchmark            run the 90 s benchmark tour, write benchmark.txt and quit
+##   --benchmark            run the two-minute benchmark tour, write benchmark.txt and quit
 ##   --weather=rain         fix the weather: clear, cloudy, rain or fog
 
 enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE, BUILD }
@@ -260,7 +260,8 @@ func _begin_benchmark() -> void:
 	_start(true)
 	bench = Benchmark.new()
 	bench.name = "Benchmark"
-	bench.quit_when_done = _args.has("benchmark")
+	bench.quit_when_done = _args.has("benchmark") and not _args.has("bench-render-thread")
+	bench.render_thread = _args.get("bench-render-thread", "")
 	bench.shots_dir = _args.get("bench-shots", "")
 	add_child(bench)
 	bench.run.call_deferred(self)

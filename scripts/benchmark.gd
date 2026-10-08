@@ -1,6 +1,6 @@
 class_name Benchmark
 extends Node
-## The benchmark: a fixed 90-second tour of the demo city that measures how well this
+## The benchmark: a fixed two-minute tour of the demo city that measures how well this
 ## computer runs the game, part by part, and writes the numbers to benchmark.txt next to
 ## the saves (%APPDATA%\MayorStreet on Windows).
 ##
@@ -25,6 +25,8 @@ const SETTLE := 0.6  # seconds at the start of each part that aren't counted
 
 # Budgets for Med at 1080p (PERFORMANCE.md).
 const FPS_TARGET := 30.0
+const SPIKE_MS := 100.0  # a frame this slow is a visible hitch
+const COST_SECONDS := 2.0  # each step of the cost check
 const STREET_DRAWS := 2000
 const STREET_TRIS := 4000000
 const MAYOR_DRAWS := 2500
@@ -80,6 +82,12 @@ var _proc_end := 0
 var _phys_start := 0
 var _phys_acc := 0
 var _phys_frame := 0
+# Script time by system: a _Probe sits just before each system in the tree, so the time from
+# one probe to the next is that system's. Prof.lap() splits city life's own step further.
+var _probes: Array[Node] = []
+var _sys_key := ""
+var _sys_t := 0
+var _sysf := {}  # this frame's microseconds by system
 
 var _car: Node3D
 var _car_y := 0.0
@@ -189,7 +197,76 @@ func run(m: Node) -> void:
 	await _frames(30)
 	if not await _part_run(4, func(t: float): _place_walker(t)):
 		return
+
+	# 6. Standing still downtown by day, switch one thing off at a time to see what it costs.
+	_banner_text("Checking what costs the most")
+	_set_hour(DAY_HOUR)
+	_set_weather(Weather.Kind.CLEAR)
+	_place_walker(0.25)
+	await _frames(30)
+	if not await _cost_check():
+		return
 	_finish()
+
+
+var render_thread := ""  # "separate" when relaunched with rendering on its own thread
+var costs: Array[Dictionary] = []  # the cost check: what turning each thing off saves
+
+
+func _cost_check() -> bool:
+	## Measures the same view with one graphics feature or system off at a time.
+	var dn: DayNight = main.day_night
+	var vp := get_viewport()
+	var scale := vp.scaling_3d_scale
+	var shadow_mode := dn.light.directional_shadow_mode
+	var q: int = main.quality
+	var checks := [
+		["Everything on (Med)", func(): pass, func(): pass],
+		["No ambient occlusion (SSAO)", func(): dn.env.ssao_enabled = false, func(): dn.env.ssao_enabled = true],
+		["No glow", func(): dn.env.glow_enabled = false, func(): dn.env.glow_enabled = true],
+		["No fog", func(): dn.env.fog_enabled = false, func(): dn.env.fog_enabled = true],
+		["No sun shadows", func(): dn.light.shadow_enabled = false, func(): dn.light.shadow_enabled = true],
+		["One shadow map, not two splits", func(): dn.light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL,
+			func(): dn.light.directional_shadow_mode = shadow_mode],
+		["3D drawn at 67%, not 80%", func(): vp.scaling_3d_scale = 0.67, func(): vp.scaling_3d_scale = scale],
+		["3D drawn at 50%", func(): vp.scaling_3d_scale = 0.5, func(): vp.scaling_3d_scale = scale],
+		["No cars or people drawn", func(): main.life.visible = false, func(): main.life.visible = true],
+		["No street props drawn", func(): if main.dresser: main.dresser.visible = false,
+			func(): if main.dresser: main.dresser.visible = true],
+		["No buildings or roads drawn", func(): main.view.visible = false, func(): main.view.visible = true],
+		["Low graphics", func(): main._set_quality(0), func(): main._set_quality(q)],
+		["Everything on again", func(): pass, func(): pass],
+	]
+	costs.clear()
+	for c in checks:
+		_banner_text("What costs the most: %s" % c[0])
+		c[1].call()
+		var r: Dictionary = await _measure(COST_SECONDS)
+		c[2].call()
+		if _stopped:
+			return false
+		r.title = c[0]
+		costs.append(r)
+	return true
+
+
+func _measure(secs: float) -> Dictionary:
+	## Frames over secs seconds (after SETTLE), standing still.
+	_rec = {"key": "cost", "title": "", "street": true, "ms": PackedFloat32Array(), "sys": {}, "worst_sys": {},
+		"spikes": 0, "draws": 0, "draws_max": 0, "tris": 0, "tris_max": 0, "objects": 0, "gpu": 0.0, "cpu": 0.0,
+		"game": 0.0, "physics": 0.0, "cars": 0, "people": 0, "cops": 0, "samples": 0, "seconds": secs}
+	var start := Time.get_ticks_usec()
+	_last = start
+	while not _stopped:
+		var t := float(Time.get_ticks_usec() - start) / 1e6
+		if t >= secs + SETTLE:
+			break
+		_measuring = t >= SETTLE
+		await get_tree().process_frame
+	_measuring = false
+	var r := _rec
+	r.merge(_stats(r), true)
+	return r
 
 
 ## Stop early (Esc): the parts measured so far still go in the report.
@@ -209,7 +286,9 @@ func _part_run(i: int, step: Callable) -> bool:
 	_part = i
 	var secs: float = PARTS[i][2]
 	_banner_text("%d/%d  %s" % [i + 1, PARTS.size(), PARTS[i][1]])
+	_install_probes()
 	_rec = {"key": PARTS[i][0], "title": PARTS[i][1], "street": PARTS[i][3], "ms": PackedFloat32Array(),
+		"sys": {}, "worst_sys": {}, "spikes": 0,
 		"draws": 0, "draws_max": 0, "tris": 0, "tris_max": 0, "objects": 0, "gpu": 0.0, "cpu": 0.0,
 		"game": 0.0, "physics": 0.0, "cars": 0, "people": 0, "cops": 0, "samples": 0, "seconds": 0.0}
 	var start := Time.get_ticks_usec()
@@ -243,10 +322,22 @@ func _process(_delta: float) -> void:
 	_phys_frame = _phys_acc
 	_phys_acc = 0
 	_proc_start = now
+	_sys_close()
+	var frame_sys := _take_sys()
+	_sys_key = "engine and autoloads"
+	_sys_t = now
 	if _measuring:
 		var rs := RenderingServer
 		var r := _rec
-		r.ms.append(float(now - _last) / 1000.0)
+		var frame_ms := float(now - _last) / 1000.0
+		r.ms.append(frame_ms)
+		for k in frame_sys:
+			r.sys[k] = r.sys.get(k, 0.0) + frame_sys[k]
+		if frame_ms > SPIKE_MS:
+			r.spikes += 1
+		if r.ms.size() == 1 or frame_ms > r.get("worst_frame", 0.0):
+			r.worst_frame = frame_ms
+			r.worst_sys = frame_sys
 		var d := rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
 		var tr := rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
 		r.draws += d
@@ -269,6 +360,8 @@ func _process(_delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	_phys_start = Time.get_ticks_usec()
+	_sys_key = "engine and autoloads"
+	_sys_t = _phys_start
 	if _driving and is_instance_valid(_car):
 		_drive(delta)
 
@@ -284,9 +377,99 @@ class _Tail extends Node:
 
 	func _process(_delta: float) -> void:
 		bench._proc_end = Time.get_ticks_usec()
+		bench._sys_close()
 
 	func _physics_process(_delta: float) -> void:
 		bench._phys_acc += Time.get_ticks_usec() - bench._phys_start
+		bench._sys_close()
+
+
+class _Probe extends Node:
+	## Marks where one system's turn starts, in both process and physics.
+	var bench: Benchmark
+	var key := ""
+
+	func _ready() -> void:
+		process_mode = Node.PROCESS_MODE_ALWAYS
+
+	func _process(_delta: float) -> void:
+		bench._sys_mark(key)
+
+	func _physics_process(_delta: float) -> void:
+		bench._sys_mark(key)
+
+
+func _install_probes() -> void:
+	## A probe before main and before each of its children, and one level further down in
+	## the busy ones. Put in again at the start of each part, since the street adds nodes.
+	for pr in _probes:
+		if is_instance_valid(pr):
+			pr.get_parent().remove_child(pr)
+			pr.free()
+	_probes.clear()
+	Prof.on = true
+	Prof.acc.clear()
+	_add_probe(main, "main")
+	for c in main.get_children():
+		if c == self or c is _Probe:
+			continue
+		_add_probe(c, _sys_name(c))
+		if c in [main.life, main.street, main.missions, main.nav, main.resident]:
+			for g in c.get_children():
+				if not g is _Probe:
+					_add_probe(g, _sys_name(c) + " / " + _sys_name(g))
+
+
+func _add_probe(before: Node, key: String) -> void:
+	var pr := _Probe.new()
+	pr.bench = self
+	pr.key = key
+	pr.name = "_Probe"
+	var parent := before.get_parent()
+	parent.add_child(pr, false, Node.INTERNAL_MODE_DISABLED)
+	parent.move_child(pr, before.get_index())
+	_probes.append(pr)
+
+
+static func _sys_name(n: Node) -> String:
+	var s: Script = n.get_script()
+	if s and s.get_global_name() != &"":
+		return String(s.get_global_name())
+	return String(n.name).trim_prefix("@").get_slice("@", 0)
+
+
+func _sys_mark(key: String) -> void:
+	var t := Time.get_ticks_usec()
+	if _sys_key != "":
+		_sysf[_sys_key] = _sysf.get(_sys_key, 0) + t - _sys_t
+	_sys_key = key
+	_sys_t = t
+
+
+func _sys_close() -> void:
+	_sys_mark("")
+
+
+func _take_sys() -> Dictionary:
+	## This frame's script time by system in ms, with city life's own step split by Prof.
+	var out := {}
+	for k in _sysf:
+		out[k] = _sysf[k] / 1000.0
+	_sysf.clear()
+	if not Prof.acc.is_empty():
+		var life_key := _sys_name(main.life) if main.life else ""
+		var split := 0.0
+		for k in Prof.acc:
+			out[k] = out.get(k, 0.0) + Prof.acc[k] / 1000.0
+			split += Prof.acc[k] / 1000.0
+		Prof.acc.clear()
+		# The laps ran inside whichever system called life.step: city life itself, or main.
+		for k in [life_key, "main"]:
+			var take: float = minf(out.get(k, 0.0), split)
+			if take > 0.0:
+				out[k] -= take
+				split -= take
+	return out
 
 
 func _fly(c: Vector3, t: float) -> void:
@@ -457,6 +640,8 @@ func make_report() -> String:
 	lines.append("MAYOR STREET BENCHMARK   version %s, %s%s" % [ProjectSettings.get_setting("application/config/version", "?"),
 		_started_at.replace("T", " ").left(16), "   (stopped early)" if _stopped else ""])
 	lines.append("")
+	if render_thread != "":
+		lines.append("Rendering on its own thread (--render-thread %s)" % render_thread)
 	lines.append("Graphics  %s: 3D drawn at %d%% and upscaled with FSR, %s" % [["Low", "Med", "High"][q],
 		roundi(vp.scaling_3d_scale * 100.0), ["FXAA, 1 shadow map", "FXAA, SSAO, glow, 2 shadow splits",
 		"SMAA, SSAO, SSIL, SSR, glow, 4 shadow splits"][q]])
@@ -516,12 +701,40 @@ func make_report() -> String:
 	lines.append("")
 	lines.append(_limit_line())
 	lines.append("")
+	if not costs.is_empty():
+		var base: Dictionary = costs[0]
+		lines.append("What each thing costs, standing downtown by day (one switched off at a time):")
+		lines.append("  %-34s %6s %8s %8s %8s %10s" % ["", "fps", "frame ms", "GPU ms", "game ms", "triangles"])
+		for c in costs:
+			if c.ms.is_empty():
+				lines.append("  %-34s no frames finished in %.0f seconds" % [c.title, COST_SECONDS])
+				continue
+			var frame := 1000.0 / maxf(c.fps, 0.001)
+			lines.append("  %-34s %6.1f %8.1f %8.1f %8.1f %10s%s" % [c.title, c.fps, frame, c.gpu_avg, c.game_avg,
+				_mil(c.tris_avg), "" if c == base else "   (GPU %+.1f ms)" % (c.gpu_avg - base.gpu_avg)])
+		lines.append("")
+	lines.append("Game script time by system, ms a frame (most first), and what the slowest frame spent it on:")
+	for r in results:
+		lines.append("  %s: %s" % [r.title, _sys_line(r.sys, float(maxi(r.samples, 1)), 8)])
+		lines.append("    slowest frame %.0f ms (%d frames over %d ms): %s" % [r.get("worst_frame", 0.0), r.spikes,
+			roundi(SPIKE_MS), _sys_line(r.worst_sys, 1.0, 5)])
+	lines.append("")
 	lines.append("Raw numbers, for comparing runs:")
 	for r in results:
 		lines.append("  %s fps=%.2f low1=%.2f worst_ms=%.1f draws=%d draws_max=%d tris=%d tris_max=%d objects=%d gpu_ms=%.2f cpu_ms=%.2f game_ms=%.2f physics_ms=%.2f cars=%d people=%d cops=%d frames=%d" % [
 			r.key, r.fps, r.low, r.worst, roundi(r.draws_avg), r.draws_max, roundi(r.tris_avg), r.tris_max,
 			roundi(r.objects_avg), r.gpu_avg, r.cpu_avg, r.game_avg, r.physics_avg, r.cars, r.people, r.cops, r.samples])
 	return "\n".join(lines) + "\n"
+
+
+static func _sys_line(sys: Dictionary, frames: float, most: int) -> String:
+	var keys := sys.keys()
+	keys.sort_custom(func(a, b): return sys[a] > sys[b])
+	var parts := PackedStringArray()
+	for k in keys.slice(0, most):
+		if sys[k] / frames >= 0.05:
+			parts.append("%s %.1f" % [k, sys[k] / frames])
+	return ", ".join(parts) if not parts.is_empty() else "nothing measurable"
 
 
 static func _stats(r: Dictionary) -> Dictionary:
@@ -552,7 +765,7 @@ func _limit_line() -> String:
 	var gpu := _avg("gpu_avg")
 	if gpu <= 0.0:
 		return "This renderer can't time the GPU, so it's unknown whether the GPU or the processor holds the frame rate back."
-	if gpu >= frame * 0.85:
+	if gpu >= frame * 0.7:
 		return "What holds it back: the graphics chip. The GPU is busy %d%% of each frame." % roundi(100.0 * minf(gpu / frame, 1.0))
 	return "What holds it back: the processor. Game scripts take %.1f ms and the render thread %.1f ms a frame, and the GPU is busy %d%% of each frame." % [
 		_avg("game_avg") + _avg("physics_avg"), _avg("cpu_avg"), roundi(100.0 * gpu / frame)]
@@ -652,6 +865,12 @@ func _show_results() -> void:
 		DisplayServer.clipboard_set(report)
 		copy.text = "Copied")
 	_button(row, "Open the folder").pressed.connect(func(): OS.shell_open(ProjectSettings.globalize_path("user://")))
+	if render_thread == "" and not OS.has_feature("editor"):
+		# Godot can only choose this at start-up, so the game starts again to try it.
+		_button(row, "Run again, rendering on its own thread").pressed.connect(func():
+			OS.create_process(OS.get_executable_path(), ["--render-thread", "separate", "--", "--benchmark",
+				"--bench-render-thread=separate"])
+			get_tree().quit())
 	var done := _button(row, "Back to the title screen")
 	done.pressed.connect(leave)
 	done.grab_focus()

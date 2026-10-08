@@ -335,7 +335,7 @@ func show_start() -> void:
 	b.pressed.connect(func(): _close_start(true))
 	v.add_child(b)
 	var bm := Button.new()
-	bm.text = "Benchmark (90 seconds)"
+	bm.text = "Benchmark (2 minutes)"
 	bm.custom_minimum_size = Vector2(0, 40)
 	bm.pressed.connect(func():
 		_clear_title()

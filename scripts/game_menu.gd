@@ -315,7 +315,7 @@ func _build_benchmark_box(parent: Control) -> void:
 	t.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
 	v.add_child(t)
 	var l := Label.new()
-	l.text = ("A 90-second tour of the demo city that measures how well this computer runs the game: "
+	l.text = ("A two-minute tour of the demo city that measures how well this computer runs the game: "
 		+ "the island from above, downtown on foot, a drive, a police chase and the street at night. "
 		+ "It drives itself, and Esc stops it.\n\nYour game is saved first. Afterwards, pick Continue "
 		+ "on the title screen to carry on where you were.")

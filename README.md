@@ -135,4 +135,4 @@ godot --headless --path . --script res://tests/bench.gd -- --demo   # script cos
 
 ## Benchmark and performance
 
-The title screen and the Esc menu have a **Benchmark** button: a fixed 90-second tour (the island from above, downtown on foot, a drive, a police chase, downtown at night in the rain) that writes `benchmark.txt` next to the saves (`%APPDATA%\MayorStreet`), shows the results with a Copy button, and adds each run to `benchmark-history.txt`. `MayorStreet.exe -- --benchmark` does the same and quits. The budgets and how every part is measured are in `PERFORMANCE.md`.
+The title screen and the Esc menu have a **Benchmark** button: a fixed two-minute tour (the island from above, downtown on foot, a drive, a police chase, downtown at night in the rain, then a check of what each graphics feature costs) that writes `benchmark.txt` next to the saves (`%APPDATA%\MayorStreet`), shows the results with a Copy button, and adds each run to `benchmark-history.txt`. `MayorStreet.exe -- --benchmark` does the same and quits. The budgets and how every part is measured are in `PERFORMANCE.md`.

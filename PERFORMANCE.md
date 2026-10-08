@@ -69,7 +69,7 @@ Rule of thumb for what is left: about 600 draw calls, and about 0 triangles (bui
 
 ## How to measure
 
-- **On a real computer**: Benchmark on the title screen or in the Esc menu (90 seconds), or
+- **On a real computer**: Benchmark on the title screen or in the Esc menu (two minutes), or
   `MayorStreet.exe -- --benchmark`, which quits when it's done. The report is saved as
   `benchmark.txt` next to the saves (`%APPDATA%\MayorStreet` on Windows), every run is added to
   `benchmark-history.txt`, and the results screen has a Copy button. It flies the same tour
@@ -100,3 +100,27 @@ Median tour numbers from the cloud's software renderer (fps there means nothing;
 What changed: every kit mesh is one surface (a material number per vertex in CUSTOM0 picks a row of tables in `kit.gdshader`, so a building is one draw call per pass instead of about five), and the draw cells shrank from 16 to 4 tiles so shadow and view culling skip most of the city. `Kit.merge_surfaces = false` brings the old per-material surfaces back for comparing.
 
 What is still over: triangles. Street-level buildings are 3.2M of the 4.45M, because high-rises are 7k to 22k triangles each (`godot --headless --script res://tests/kit_stats.gd` lists them) and the island view draws everything. Next: distant box stand-ins, fewer shadow casters, and chunkier but cheaper kit buildings. The first real benchmark from the laptop retunes all of this.
+
+### The first run on the laptop (0.4.1, 2026-10-07)
+
+Fedge's Ryzen 7 5700U with Radeon graphics, 1080p Med, Vulkan:
+
+| Part | fps | GPU ms | game ms | draw calls | triangles |
+|---|---|---|---|---|---|
+| Island from above | 12.4 | 74.5 | 13.1 | 2,853 | 9.2M |
+| Downtown on foot | 14.5 | 53.3 | 31.6 | | |
+| Driving | 15.5 | 45.6 | 35.9 | | |
+| Police chase | 11.7 | 47.4 | 58.6 | | |
+| Night in the rain | 17.9 | 50.3 | 12.4 | | |
+
+Both halves are over: the GPU needs 45 to 75 ms where 33 is the limit, and the game's scripts
+take 30 to 60 ms at street level. The same scripts take 5 to 10 ms in the cloud with no
+renderer, so most of that is the main thread waiting on the renderer (Godot renders on the
+main thread by default), not GDScript. In the cloud's software renderer the buildings are
+about 85% of the GPU time, and the close-up crowd's rigged people the biggest script cost.
+
+So the benchmark now also reports, for each part, script time by system (probes in the tree
+and `Prof.lap()` inside city life), the slowest frame's breakdown, and a cost check that
+switches one feature off at a time (SSAO, glow, fog, shadows, render scale, cars and people,
+props, buildings, Low). Its results screen can restart the game with rendering on its own
+thread (`--render-thread separate`) to see whether that frees the main thread.
