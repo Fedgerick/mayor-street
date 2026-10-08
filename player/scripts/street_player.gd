@@ -55,7 +55,7 @@ func _init() -> void:
 func _ready() -> void:
 	StreetInput.ensure()
 	add_to_group("street_player")
-	collision_mask = 1 | DrivableCar.LAYER
+	collision_mask = 1 | DrivableCar.LAYER | StreetBodies.TRAFFIC_LAYER | StreetBodies.PEOPLE_LAYER
 	if not has_node("Shape"):
 		var cs := CollisionShape3D.new()
 		cs.name = "Shape"

@@ -46,6 +46,7 @@ const CAR_COLORS := [Color(0.85, 0.12, 0.1), Color(0.95, 0.95, 0.95), Color(0.12
 @export var pickups_per_drop := 4
 
 const PED_HEALTH := 40.0
+const PARK_OUT := 2.85   # kerbside parking, out far enough that traffic can squeeze past
 const OFFICER_HEALTH := 70.0
 const MAX_CORPSES := 10
 const CORPSE_SECONDS := 40.0
@@ -58,6 +59,7 @@ var city: City
 var player: StreetPlayer
 var camera: StreetCamera
 var collision: CityCollision
+var bodies: StreetBodies            # solid traffic, people and police near the player
 var car: DrivableCar = null         # the car being driven, if any
 var active := false                 # player has control at street level
 var busy := false                   # a zoom is playing
@@ -134,6 +136,10 @@ func setup(c: City) -> void:
 	collision.name = "Collision"
 	add_child(collision)
 	collision.setup(c)
+	bodies = StreetBodies.new()
+	bodies.name = "Bodies"
+	add_child(bodies)
+	bodies.setup(self)
 	var progress := _progress()
 	if progress and progress.has_method("register_section"):
 		progress.register_section("street", self)
@@ -142,6 +148,8 @@ func setup(c: City) -> void:
 func set_life(l: Node) -> void:
 	## CityLife: traffic to carjack, people and police to fight, and the cops who chase.
 	life = l
+	if bodies:
+		bodies.set_life(l)
 	if l == null:
 		return
 	if l.has_method("set_suspect"):
@@ -455,10 +463,10 @@ func spawn_parked_cars_near(p: Vector3, count: int) -> void:
 		var pos: Vector3
 		var yaw: float
 		if m == 2 | 8:   # road runs along X: park at a kerb, drive on the right
-			pos = c + Vector3(_rng.randf_range(-2.5, 2.5), 0.15, side * 2.75)
+			pos = c + Vector3(_rng.randf_range(-2.5, 2.5), 0.15, side * PARK_OUT)
 			yaw = PI * 0.5 if side > 0.0 else -PI * 0.5
 		else:            # along Z
-			pos = c + Vector3(side * 2.75, 0.15, _rng.randf_range(-2.5, 2.5))
+			pos = c + Vector3(side * PARK_OUT, 0.15, _rng.randf_range(-2.5, 2.5))
 			yaw = 0.0 if side < 0.0 else PI
 		var clear := true
 		for v in get_tree().get_nodes_in_group("vehicles"):
@@ -692,7 +700,7 @@ func trace_shot(from: Vector3, dir: Vector3, reach: float, melee := false) -> Di
 	## What a shot from `from` along `dir` hits first: the world, a car, a person or an
 	## officer. Returns {kind, pos, target}; kind is &"none" when nothing is in reach.
 	var out := {"kind": &"none", "pos": from + dir * reach, "target": null, "t": reach}
-	var q := PhysicsRayQueryParameters3D.create(from, from + dir * reach, 1 | DrivableCar.LAYER, [player.get_rid()])
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * reach, 1 | DrivableCar.LAYER | StreetBodies.TRAFFIC_LAYER, [player.get_rid()])
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if not hit.is_empty():
 		var t := from.distance_to(hit.position)

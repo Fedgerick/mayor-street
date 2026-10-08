@@ -70,6 +70,9 @@ var max_dogs := 48
 var rain := 0.0                  # 0..1 from Weather: people hurry, put umbrellas up
 var wet := 0.0                   # 0..1 how wet the streets (and benches) are
 var umbrella_share := 0.0
+## Real bodies on the sidewalk (the player on foot), set each frame by the street layer.
+## Walkers about to bump into one stop for a moment and step aside.
+var blockers: Array[Vector3] = []
 
 var _mmi: MultiMeshInstance3D
 var _buf := PackedFloat32Array()
@@ -709,6 +712,8 @@ func step(dt: float) -> void:
 				p.phase = 0.0
 				_place(p)
 				continue
+		if not blockers.is_empty() and _blocked(p):
+			continue
 		var pace: float = p.speed * (1.0 + 0.2 * rain)
 		p.t += pace * dt
 		p.phase = fmod(p.phase + pace * dt * 4.2, TAU)
@@ -728,6 +733,26 @@ func step(dt: float) -> void:
 				p.pause = rng.randf_range(2.0, 7.0)
 				p.film = not p.dog and rng.randf() < 0.4
 		_place(p)
+
+
+func _blocked(p: Ped) -> bool:
+	for b in blockers:
+		var to := b - p.pos
+		to.y = 0.0
+		var ahead := to.dot(p.fwd)
+		if ahead <= 0.0 or ahead > 1.1:
+			continue
+		var right := Vector3(-p.fwd.z, 0, p.fwd.x)
+		var lat := to.dot(right)
+		if absf(lat) > 0.75:
+			continue
+		# Stop, then sidestep away from whoever is in the way.
+		p.pause = 0.35
+		p.phase = 0.0
+		p.side = clampf(p.side + (-0.6 if lat > 0.0 else 0.6), -0.9, 0.9)
+		_place(p)
+		return true
+	return false
 
 
 func _run(p: Ped, dt: float) -> void:

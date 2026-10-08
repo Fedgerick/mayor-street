@@ -57,6 +57,8 @@ class Car:
 	var steer := 0.0     # front wheel angle, + left
 	var brake := false   # brake lights on
 	var seed := 0.0      # which driver sits inside
+	var dodge := 0.0     # metres steered left of the lane centre to pass something at the kerb
+	var blocked := 0.0   # seconds held up by an obstacle (impatient drivers swing wider)
 
 signal car_taken(pos: Vector3, fwd: Vector3)  # a driver was pulled out at pos
 signal bus_stopped(car: Car, stop: Object)    # a bus pulled in at a stop (StreetSpots.Spot)
@@ -85,6 +87,16 @@ var sirens: Array = []  # [pos, fwd] of emergency vehicles running sirens (set b
 var garbage_cells := PackedInt32Array()  # depot road cells where garbage trucks start
 var stops := {}        # cell * 4 + heading -> bus stop (StreetSpots.stop_at)
 var wet := 0.0         # 0..1 from Weather: drivers slow down and leave longer gaps
+## Real bodies in the road (the player, the player's car, parked and wrecked cars), set
+## each frame by the street layer: [centre, half-width axis, half-length axis, velocity
+## (optional)]. Cars ahead
+## of one brake for it, or steer round it when it only sticks out from the kerb.
+var obstacles: Array = []
+var obstacle_focus := Vector3.ZERO   # obstacles are only checked by cars near here
+const OBSTACLE_REACH := 70.0
+const DODGE := 1.0        # how far left a driver swerves to pass something at the kerb
+const DODGE_IMPATIENT := 2.8
+var _ob_lead_v := 0.0
 const BUS_DWELL := 9.0
 
 
@@ -163,6 +175,21 @@ func nearest_car(pos: Vector3, radius: float) -> Car:
 			bd = d
 			best = c
 	return best
+
+
+## Take a car out of traffic without its driver getting out (a crash: the street layer
+## swaps in a real physics car). Same result as take_car.
+func knock_out(c: Car) -> Dictionary:
+	var back := -c.fwd
+	var right := Vector3.UP.cross(back).normalized()
+	var xf := Transform3D(Basis(right, Vector3.UP, back), c.pos)
+	var model: String = MODELS[c.model]
+	var kit := _kit()
+	if kit and kit.mesh(model) == null:
+		model = OLD_NAME.get(model, "car_sedan")
+	var out := {"xform": xf, "model": model, "tint": c.tint, "v": c.v}
+	remove(c)
+	return out
 
 
 ## Take a car out of traffic so the player can spawn a real one in its place.
@@ -396,6 +423,14 @@ func _drive(c: Car, dt: float) -> void:
 			if stop < gap:
 				gap = stop
 				lead_v = 0.0
+	if not obstacles.is_empty() and c.pos.distance_squared_to(obstacle_focus) < OBSTACLE_REACH * OBSTACLE_REACH:
+		var og := _obstacle_gap(c, my_len, dt)
+		if og < gap:
+			gap = og
+			lead_v = _ob_lead_v
+	elif c.dodge != 0.0:
+		c.dodge = move_toward(c.dodge, 0.0, dt * 1.2)
+		c.blocked = 0.0
 	var v0 := _desired_speed(c) * (1.0 - 0.15 * wet)
 	# Emergency vehicle close by: ease to the kerb and stop until it has passed.
 	var yield_now := false
@@ -449,6 +484,48 @@ func _drive(c: Car, dt: float) -> void:
 		if net.junction[c.cell] == 1:
 			why = "in_junction"
 		wait_reason[why] = wait_reason.get(why, 0) + 1
+
+
+## Distance to the nearest obstacle this car can't steer past, and the swerve it wants for
+## the ones it can (sets c.dodge). Obstacle extents are projected on the car's own axes.
+func _obstacle_gap(c: Car, my_len: float, dt: float) -> float:
+	var right := Vector3(-c.fwd.z, 0, c.fwd.x)
+	var half_w := 1.0 if LENGTHS[c.model] < 6.0 else 1.35
+	var off := c.pull * (0.5 if c.bus else 1.3) - c.dodge   # where c.pos sits right of the lane
+	var reach := DODGE_IMPATIENT if c.blocked > 3.0 or c.dodge > DODGE + 0.05 else DODGE
+	var want := 0.0
+	var gap := INF
+	_ob_lead_v = 0.0
+	for o in obstacles:
+		var to: Vector3 = o[0] - c.pos
+		to.y = 0.0
+		if to.length_squared() > (LOOKAHEAD + 6.0) * (LOOKAHEAD + 6.0):
+			continue
+		var ax: Vector3 = o[1]
+		var az: Vector3 = o[2]
+		var ol := absf(c.fwd.dot(ax)) + absf(c.fwd.dot(az))
+		var ahead := to.dot(c.fwd)
+		if ahead < -(ol + my_len * 0.5) or ahead > LOOKAHEAD:
+			continue
+		var ow := absf(right.dot(ax)) + absf(right.dot(az))
+		var lat := to.dot(right) + off   # obstacle centre, right of the lane centre
+		if lat - ow >= half_w or lat + ow <= -half_w:
+			continue   # clear of our lane
+		# Swerve left far enough that our right side clears its left side, if we can.
+		var need := half_w + ow - lat
+		var g := ahead - my_len * 0.5 - ol - 0.6
+		if need <= reach:
+			want = maxf(want, need)
+			if c.dodge < need - 0.1 and g < 8.0 and g < gap:
+				gap = g   # still swinging out: ease off until there's room
+				_ob_lead_v = 0.0
+		else:
+			if g < gap:
+				gap = g
+				_ob_lead_v = maxf((o[3] as Vector3).dot(c.fwd), 0.0) if o.size() > 3 else 0.0
+	c.dodge = move_toward(c.dodge, want if want > 0.0 else (0.0 if gap == INF else c.dodge), dt * (1.6 if want > 0.0 else 1.2))
+	c.blocked = c.blocked + dt if gap < 4.0 else 0.0
+	return maxf(gap, 0.0)
 
 
 func _try_grant(c: Car, j: int, to_end: float) -> bool:
@@ -538,8 +615,8 @@ func _place(c: Car) -> void:
 	var smp := net.sample(m, c.s)
 	c.fwd = smp[1]
 	c.pos = net.center(c.cell) + smp[0] + Vector3(0, ROAD_Y, 0)
-	if c.pull > 0.0:
-		c.pos += Vector3(-c.fwd.z, 0, c.fwd.x) * (c.pull * (0.5 if c.bus else 1.3))
+	if c.pull > 0.0 or c.dodge != 0.0:
+		c.pos += Vector3(-c.fwd.z, 0, c.fwd.x) * (c.pull * (0.5 if c.bus else 1.3) - c.dodge)
 
 
 # ---------------------------------------------------------------- render ---

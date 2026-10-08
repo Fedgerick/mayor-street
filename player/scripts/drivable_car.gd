@@ -110,7 +110,7 @@ func _ready() -> void:
 	StreetInput.ensure()
 	add_to_group("vehicles")
 	collision_layer = LAYER
-	collision_mask = 1 | LAYER
+	collision_mask = 1 | LAYER | 16   # 16: StreetBodies.TRAFFIC_LAYER, the AI cars' stand-ins
 	var spec: Array = MODELS.get(model, MODELS["car_sedan"])
 	_radius = spec[0]
 	_feel = FEEL.get(model, FEEL["default"])
