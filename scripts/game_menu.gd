@@ -47,6 +47,7 @@ const HINTS := {
 
 signal benchmark_requested
 signal map_requested  # the City map button; main opens navigation's map above the menu
+signal controller_requested  # the Controller button; main opens the pad layout card (controller/)
 
 var is_open := false
 var _theme: Theme
@@ -275,7 +276,10 @@ func _build_menu() -> void:
 	_save_btn = _button(row2, "Save game", func(): _show_saves(true))
 	_button(row2, "Load game", func(): _show_saves(false))
 	_button(row2, "City map", func(): map_requested.emit())
+	_button(row2, "Controller", func(): controller_requested.emit())
 	_button(row2, "Benchmark", _show_benchmark)
+	for b in row2.get_children():
+		b.custom_minimum_size.x = 200  # five to a row, and still inside a 1280-wide window
 	v.add_child(_small("F11 or Alt+Enter also switch between full screen and a window", HORIZONTAL_ALIGNMENT_CENTER))
 	v.add_child(HSeparator.new())
 

@@ -36,6 +36,7 @@ var rain_fx: RainFX  # rain and splashes around the street camera
 var dresser: StreetDresser  # trees, benches, signs, shop fronts near the street camera (art/dresser/)
 var nav: CityNav  # minimap, GPS route and the city map on V (navigation/)
 var bench: Benchmark  # the benchmark tour, while one runs
+var pad: PadControls  # gamepad controls and button prompts (controller/)
 var skip_creator := false  # no character creator; test scripts, --demo and look-dev runs skip it too
 var _dive_home := false  # after the creator, the first dive lands outside the Resident's front door
 var _gliding := false
@@ -111,6 +112,13 @@ func _ready() -> void:
 	add_child(menu)
 	menu.benchmark_requested.connect(_benchmark_from_menu)
 	menu.map_requested.connect(func(): if nav: nav.open_map())
+	menu.controller_requested.connect(func(): if pad: pad.hud.open_card())
+	# Gamepad controls work from the title screen on; it moves itself to main's last child,
+	# so it reads the pad before the rest of the game.
+	pad = PadControls.new()
+	pad.name = "PadControls"
+	add_child(pad)
+	pad.setup(self)
 
 	quality = int(_args.get("quality", "1"))
 	if Benchmark.pending_quality >= 0:
@@ -224,6 +232,7 @@ func _start(demo: bool, save := {}) -> void:
 	nav.name = "Navigation"
 	add_child(nav)
 	nav.setup(city, street, {"life": life, "missions": missions, "resident": resident, "interiors": interiors})
+	move_child(pad, -1)  # still the last child, after everything a game adds
 	street.street_entered.connect(_on_street_entered)
 	street.street_exited.connect(_on_street_exited)
 	street.vehicle_changed.connect(func(_car): _update_hint())
