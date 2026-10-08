@@ -12,6 +12,8 @@ const TERRAIN_SHADER := preload("res://shaders/terrain.gdshader")
 const WATER_SHADER := preload("res://shaders/water.gdshader")
 const BEACON_SHADER := preload("res://shaders/beacon.gdshader")
 const BEACON_HEIGHT := 40.0  # towers taller than this get red aircraft warning lights
+const STANDIN_SHADER := preload("res://shaders/standin.gdshader")
+const DETAIL_MARGIN := 40.0  # metres of overlap so a chunk doesn't flicker at the switch
 
 const N := 1
 const E := 2
@@ -36,6 +38,10 @@ var _map_dirty := false
 var services: Object = null  # CityServices: buildings without power go dark at night
 var _tops := {}  # mesh name -> its highest vertex
 var _beacon_mesh: SphereMesh
+# Past detail_distance a chunk's buildings, trees and props give way to one mesh of plain
+# boxes (PERFORMANCE.md): main sets it per view and graphics level. 0 keeps full detail.
+var detail_distance := 0.0
+var _standin_mat: ShaderMaterial
 
 
 func setup(c: City) -> void:
@@ -356,6 +362,7 @@ func _rebuild_chunk(key: Vector2i) -> void:
 	var groups := {}  # mesh name -> [xforms, colors, customs, shadow]
 	var lamps: Array[Vector3] = []
 	var beacons: Array[Vector3] = []
+	var boxes := []  # [world AABB, wall colour, seed] of each building, for the stand-in
 	var x0 := key.x * CHUNK
 	var y0 := key.y * CHUNK
 	for y in range(y0, mini(y0 + CHUNK, City.SIZE)):
@@ -377,6 +384,9 @@ func _rebuild_chunk(key: Vector2i) -> void:
 					var nm := _building_mesh(b)
 					if nm != "":
 						_push(groups, nm, _building_xform(b), _wall_tint(b), _accent(b), true)
+						var mesh := Kit.mesh(nm)
+						if mesh != null:
+							boxes.append([_building_xform(b) * mesh.get_aabb(), _wall_tint(b), fposmod(float(b.seed), 1.0)])
 						var top := _top_of(nm)
 						if top.y > BEACON_HEIGHT:
 							beacons.append(_building_xform(b) * (top + Vector3(0, 0.35, 0)))
@@ -417,10 +427,102 @@ func _rebuild_chunk(key: Vector2i) -> void:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g[3] else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if not (nm as String).begins_with("road_"):
+			mmi.set_meta(&"detail", true)  # roads stay; the rest ends at detail_distance
 		node.add_child(mmi)
 	if not beacons.is_empty():
 		node.add_child(_make_beacons(beacons))
+	if not boxes.is_empty():
+		var standin := MeshInstance3D.new()
+		standin.name = "StandIn"
+		standin.mesh = _standin_mesh(boxes)
+		standin.material_override = _standin_material()
+		standin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		standin.set_meta(&"standin", true)
+		node.add_child(standin)
+	_apply_detail(node)
 	lamp_positions[key] = lamps
+
+
+func set_detail_distance(d: float) -> void:
+	## Where buildings, trees and props switch to the box stand-ins (0: never).
+	if is_equal_approx(d, detail_distance):
+		return
+	detail_distance = d
+	for key in chunks:
+		_apply_detail(chunks[key])
+
+
+func _apply_detail(node: Node3D) -> void:
+	var d := detail_distance
+	for c in node.get_children():
+		if not c is GeometryInstance3D:
+			continue
+		var gi := c as GeometryInstance3D
+		if gi.has_meta(&"detail"):
+			gi.visibility_range_end = d
+			gi.visibility_range_end_margin = DETAIL_MARGIN if d > 0.0 else 0.0
+		elif gi.has_meta(&"standin"):
+			gi.visible = d > 0.0
+			gi.visibility_range_begin = d
+			gi.visibility_range_begin_margin = DETAIL_MARGIN if d > 0.0 else 0.0
+
+
+func _standin_material() -> ShaderMaterial:
+	if _standin_mat == null:
+		_standin_mat = ShaderMaterial.new()
+		_standin_mat.shader = STANDIN_SHADER
+	return _standin_mat
+
+
+static func _standin_mesh(boxes: Array) -> ArrayMesh:
+	## Four walls and a roof per building, with wall metres in UV for the window grid.
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	var uv := PackedVector2Array()
+	var uv2 := PackedVector2Array()
+	var col := PackedColorArray()
+	var idx := PackedInt32Array()
+	for bx in boxes:
+		var a: AABB = bx[0]
+		var c: Color = bx[1]
+		var sd: float = bx[2]
+		var lo := a.position
+		var hi := a.end
+		var h := hi.y - lo.y
+		var corners := [Vector3(lo.x, 0, lo.z), Vector3(hi.x, 0, lo.z), Vector3(hi.x, 0, hi.z), Vector3(lo.x, 0, hi.z)]
+		for k in 4:
+			var p0: Vector3 = corners[k]
+			var p1: Vector3 = corners[(k + 1) % 4]
+			var w := p0.distance_to(p1)
+			var nrm := Vector3.UP.cross(p1 - p0).normalized()
+			var b := v.size()
+			for q in [[p0, 0.0, 0.0], [p1, w, 0.0], [p1, w, h], [p0, 0.0, h]]:
+				v.append(q[0] + Vector3(0, lo.y + q[2], 0))
+				n.append(nrm)
+				uv.append(Vector2(q[1], q[2]))
+				uv2.append(Vector2(sd, 0))
+				col.append(c)
+			idx.append_array([b, b + 2, b + 1, b, b + 3, b + 2])
+		var r := v.size()
+		for p in corners:
+			v.append(Vector3(p.x, hi.y, p.z))
+			n.append(Vector3.UP)
+			uv.append(Vector2(0, -1))
+			uv2.append(Vector2(sd, 0))
+			col.append(c)
+		idx.append_array([r, r + 2, r + 1, r, r + 3, r + 2])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = v
+	arr[Mesh.ARRAY_NORMAL] = n
+	arr[Mesh.ARRAY_TEX_UV] = uv
+	arr[Mesh.ARRAY_TEX_UV2] = uv2
+	arr[Mesh.ARRAY_COLOR] = col
+	arr[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return m
 
 
 func _top_of(nm: String) -> Vector3:

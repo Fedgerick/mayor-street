@@ -73,6 +73,10 @@ const LOOK_SHOTS := [
 ]
 const LIFE_DENSITY := [0.55, 1.0, 1.25]  # cars and people per graphics level
 const HERO_MAX := [6, 12, 24]  # close-up people on the full rigged model, per graphics level
+# Where buildings, trees and props give way to box stand-ins (CityView.detail_distance), per
+# graphics level; 0 never. The street sees less of the city past the first blocks.
+const STREET_DETAIL := [250.0, 400.0, 700.0]
+const MAYOR_DETAIL := [600.0, 1000.0, 0.0]
 
 
 func _ready() -> void:
@@ -400,8 +404,14 @@ func go_mayor() -> void:
 	_update_hint()
 
 
+func _update_detail() -> void:
+	if view:
+		view.set_detail_distance((STREET_DETAIL if in_street() else MAYOR_DETAIL)[quality])
+
+
 func _on_street_entered() -> void:
 	day_night.set_view_distance(30.0)
+	view.set_detail_distance(STREET_DETAIL[quality])
 	day_night.exposure_scale = 1.25
 	day_night.ambient_scale = 1.4
 	_update_hint()
@@ -412,6 +422,7 @@ func _on_street_exited() -> void:
 	cam.set_process(true)
 	cam.set_process_unhandled_input(true)
 	day_night.set_view_distance(cam.dist)
+	view.set_detail_distance(MAYOR_DETAIL[quality])
 	day_night.exposure_scale = 1.0
 	day_night.ambient_scale = 1.0
 	life.set_camera(cam)
@@ -485,6 +496,7 @@ func _set_quality(q: int) -> void:
 	quality = q
 	day_night.apply_quality(q)
 	hud.set_quality(q)
+	_update_detail()
 	if life:
 		life.density = LIFE_DENSITY[q]
 		life.crowd.hero_max = HERO_MAX[q]
