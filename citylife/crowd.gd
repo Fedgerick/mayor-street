@@ -946,6 +946,7 @@ func _put_dog(p: Ped, k: int, moving: bool) -> void:
 # triangles, 17 bones). A small pool is reused; everyone else stays a MultiMesh instance.
 
 const HERO_MAX := 24
+var hero_max := HERO_MAX  # main lowers it on Low and Med graphics: each costs script time
 const HERO_RADIUS := 28.0
 const HERO_KEEP := 34.0        # hysteresis so people don't flicker at the edge
 const HERO_SPAWNS_PER_FRAME := 2
@@ -976,7 +977,7 @@ func update_heroes(dt: float) -> void:
 		cand.sort_custom(func(a, b): return a[0] < b[0])
 		var made := 0
 		for c in cand:
-			if _hero_count >= HERO_MAX:
+			if _hero_count >= hero_max:
 				break
 			if _pool.is_empty():
 				if made >= HERO_SPAWNS_PER_FRAME:

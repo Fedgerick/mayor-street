@@ -72,6 +72,7 @@ const LOOK_SHOTS := [
 	["street_night", 22.0, 562.0, 612.0, 80.0, 0.0, 0.0],
 ]
 const LIFE_DENSITY := [0.55, 1.0, 1.25]  # cars and people per graphics level
+const HERO_MAX := [6, 12, 24]  # close-up people on the full rigged model, per graphics level
 
 
 func _ready() -> void:
@@ -178,6 +179,7 @@ func _start(demo: bool, save := {}) -> void:
 	life.auto_step = false  # stepped from _process so it freezes while the game is paused
 	add_child(life)
 	life.setup(city, cam)
+	life.crowd.hero_max = HERO_MAX[quality]
 	street = preload("res://player/scenes/street_mode.tscn").instantiate()
 	add_child(street)
 	street.setup(city)  # registers its own save section, "street"
@@ -485,6 +487,7 @@ func _set_quality(q: int) -> void:
 	hud.set_quality(q)
 	if life:
 		life.density = LIFE_DENSITY[q]
+		life.crowd.hero_max = HERO_MAX[q]
 	if rain_fx:
 		rain_fx.set_quality(q)
 

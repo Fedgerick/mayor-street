@@ -250,7 +250,8 @@ static func _v3(c: Color) -> Vector3:
 
 
 func set_view_distance(dist: float) -> void:
-	light.directional_shadow_max_distance = clampf(dist * 2.4, 140.0, 1300.0)
+	# High over the island the shadow maps would hold every building; Low and Med stop sooner.
+	light.directional_shadow_max_distance = clampf(dist * 2.4, 140.0, [450.0, 800.0, 1300.0][clampi(quality, 0, 2)])
 	_fog_base = clampf(0.11 / (dist + 300.0), 0.0001, 0.00045)
 	env.fog_density = _fog_base
 
