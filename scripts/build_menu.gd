@@ -2,6 +2,7 @@ class_name BuildMenu
 extends PanelContainer
 ## The Mayor's build menu: every catalog building by group. Locked ones stay visible,
 ## greyed out, with the goal that unlocks them, so the next milestone is always in view.
+## Hovering one says what it is and which street jobs it opens up (missions/street_uses.gd).
 
 signal chosen(kind: String)
 
@@ -59,7 +60,8 @@ func _ready() -> void:
 	_desc = Label.new()
 	_desc.add_theme_font_size_override("font_size", 14)
 	_desc.add_theme_color_override("font_color", Color(0.75, 0.8, 0.88))
-	_desc.custom_minimum_size = Vector2(0, 22)
+	_desc.custom_minimum_size = Vector2(0, 40)
+	_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_desc)
 	Hud.progress().unlocked.connect(func(_id, _s): _refresh_if_open())
 	Hud.progress().tier_reached.connect(func(_t, _n, _ids): _refresh_if_open())
@@ -114,7 +116,8 @@ func _entry(id: String) -> Button:
 	var detail := "Already built" if built else (Catalog.lock_text(id) if not unlocked else _price(d))
 	_line(v, d.name, 15, d.accent.lerp(Color.WHITE, 0.55) if open_ else Color(0.56, 0.59, 0.66))
 	_line(v, detail, 13, Color(0.78, 0.82, 0.9) if open_ else Color(0.5, 0.53, 0.6))
-	b.mouse_entered.connect(func(): _desc.text = d.desc)
+	var street := StreetUses.text(d.tags, d.name)
+	b.mouse_entered.connect(func(): _desc.text = d.desc + ("\n" + street if street != "" else ""))
 	b.pressed.connect(func():
 		visible = false
 		chosen.emit(id))
