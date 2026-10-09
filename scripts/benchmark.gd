@@ -841,26 +841,22 @@ func _show_results() -> void:
 	title.add_theme_font_size_override("font_size", 30)
 	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
 	v.add_child(title)
-	var body := Label.new()
-	var mono := SystemFont.new()
-	mono.font_names = PackedStringArray(["Consolas", "Cascadia Mono", "DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"])
-	body.add_theme_font_override("font", mono)
-	body.add_theme_font_size_override("font_size", 13)
-	var shown := report.split("\nRaw numbers")[0]
-	body.text = shown.strip_edges()
-	v.add_child(body)
+	# The results go on the clipboard straight away, and the buttons sit above the report:
+	# a long report used to push them off the bottom of the screen.
+	DisplayServer.clipboard_set(report)
 	var where := Label.new()
-	where.text = "Saved to %s. Copy the results and paste them into the project chat, or send that file." % ProjectSettings.globalize_path(FILE)
+	where.text = "The results are copied. Click in the project chat and press Ctrl+V to paste them.\nThey are also saved to %s." % ProjectSettings.globalize_path(FILE)
+	where.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	where.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	where.custom_minimum_size = Vector2(900, 0)
-	where.add_theme_font_size_override("font_size", 14)
-	where.add_theme_color_override("font_color", Color(0.7, 0.76, 0.86))
+	where.add_theme_font_size_override("font_size", 17)
+	where.add_theme_color_override("font_color", Color(0.75, 0.95, 0.75))
 	v.add_child(where)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 14)
 	v.add_child(row)
-	var copy := _button(row, "Copy results")
+	var copy := _button(row, "Copy results again")
 	copy.pressed.connect(func():
 		DisplayServer.clipboard_set(report)
 		copy.text = "Copied")
@@ -871,6 +867,18 @@ func _show_results() -> void:
 			OS.create_process(OS.get_executable_path(), ["--render-thread", "separate", "--", "--benchmark",
 				"--bench-render-thread=separate"])
 			get_tree().quit())
+	var body := Label.new()
+	var mono := SystemFont.new()
+	mono.font_names = PackedStringArray(["Consolas", "Cascadia Mono", "DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"])
+	body.add_theme_font_override("font", mono)
+	body.add_theme_font_size_override("font_size", 13)
+	body.text = report.split("\nRaw numbers")[0].strip_edges()
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	var vs := get_viewport().get_visible_rect().size
+	scroll.custom_minimum_size = Vector2(minf(1180.0, vs.x - 120.0), maxf(vs.y - 330.0, 200.0))
+	scroll.add_child(body)
+	v.add_child(scroll)
 	var done := _button(row, "Back to the title screen")
 	done.pressed.connect(leave)
 	done.grab_focus()
