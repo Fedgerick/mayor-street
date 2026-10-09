@@ -2,10 +2,12 @@ class_name StreetHud
 extends Control
 ## The street-level HUD, drawn in code: wanted stars, cash, health and armor bars and the
 ## current weapon in the top-right corner, a crosshair while a gun is up, a red edge when
-## hurt, short pickup notes, and the big WASTED / BUSTED cards.
+## hurt, a hit marker when a shot or punch lands on someone, short pickup notes, and the
+## big WASTED / BUSTED cards.
 
 var street: Node   # StreetMode
 var flash := 0.0   # 0..1 red damage edge, decays
+var hitmark := 0.0 # 0..1 the hit marker round the crosshair, decays
 var _banner := ""
 var _banner_col := Color.WHITE
 var _banner_t := 0.0
@@ -38,6 +40,10 @@ func note(text: String) -> void:
 	_note_t = 2.2
 
 
+func hit_marker() -> void:
+	hitmark = 1.0
+
+
 func hurt(amount: float) -> void:
 	flash = clampf(flash + amount / 40.0, 0.25, 1.0)
 
@@ -54,6 +60,7 @@ func _process(delta: float) -> void:
 		size = vs
 	_time += delta
 	flash = maxf(flash - delta * 1.6, 0.0)
+	hitmark = maxf(hitmark - delta * 4.0, 0.0)
 	_note_t = maxf(_note_t - delta, 0.0)
 	_banner_t += delta
 	if street:
@@ -145,6 +152,15 @@ func _draw() -> void:
 			draw_line(c + d * g, c + d * (g + l), Color(0, 0, 0, 0.6), 4.0 * s)
 			draw_line(c + d * g, c + d * (g + l), Color(1, 1, 1, 0.95), 2.0 * s)
 		draw_circle(c, 1.6 * s, Color(1, 1, 1, 0.9))
+
+	# Hit marker: four short ticks on the diagonals, gone in a quarter second.
+	if hitmark > 0.0 and not p.dead:
+		var c := vp * 0.5
+		var a := hitmark
+		for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+			var n: Vector2 = d.normalized()
+			draw_line(c + n * 9.0 * s, c + n * 20.0 * s, Color(0, 0, 0, 0.6 * a), 4.5 * s)
+			draw_line(c + n * 9.0 * s, c + n * 20.0 * s, Color(1, 1, 1, a), 2.5 * s)
 
 	# Pickup note.
 	if _note_t > 0.0:

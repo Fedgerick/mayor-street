@@ -67,6 +67,7 @@ var switching := false              # getting into or out of a car
 var down := false                   # Wasted or Busted is playing
 var heat: Wanted                    # wanted level; `wanted` / `wanted_stars` read it
 var combat: StreetCombat
+var sanctioned := false             # missions: a good job's fight, so gunfire isn't reported
 var hud: StreetHud
 var life: Node = null               # CityLife, for traffic, people and police
 var hospitals: Array[Vector3] = []  # respawn overrides; otherwise read from the city
@@ -720,6 +721,13 @@ func trace_shot(from: Vector3, dir: Vector3, reach: float, melee := false) -> Di
 				var t := _ray_person(from, dir, o.pos, radius)
 				if t >= 0.0 and t < out.t:
 					out = {"kind": &"officer", "pos": from + dir * t, "target": o, "t": t}
+	# Anyone else who can be shot (missions/' armed crews): nodes in "street_targets" list
+	# them with targets() (things with a pos) and take the hit in hurt().
+	for g in get_tree().get_nodes_in_group("street_targets"):
+		for e in g.targets():
+			var t := _ray_person(from, dir, e.pos, radius)
+			if t >= 0.0 and t < out.t:
+				out = {"kind": &"target", "pos": from + dir * t, "target": e, "owner": g, "t": t}
 	return out
 
 
@@ -758,13 +766,17 @@ func apply_hit(hit: Dictionary, damage: float, dir: Vector3, weapon: StringName)
 			hurt_person(hit.target, damage, dir, weapon)
 		&"officer":
 			hurt_officer(hit.target, damage, dir, weapon)
+		&"target":
+			hit.owner.hurt(hit.target, damage, dir, weapon)
+	if hit.kind in [&"ped", &"officer", &"target"] and hud:
+		hud.hit_marker()
 	if hit.kind != &"none":
-		hit_landed.emit(hit.kind, hit.pos, weapon)
+		hit_landed.emit(&"ped" if hit.kind == &"target" else hit.kind, hit.pos, weapon)
 
 
 func on_shot_fired(_weapon: StringName, pos: Vector3) -> void:
 	## Gunfire is a crime when someone hears it, and it clears the sidewalks.
-	if _shot_report <= 0.0:
+	if _shot_report <= 0.0 and not sanctioned:
 		_shot_report = 3.0
 		_commit(&"shots_fired", pos)
 	_scare(pos, 3)
