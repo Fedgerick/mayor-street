@@ -24,6 +24,7 @@ var _ctx_sig := ""
 var _t := 0.0
 var _hidden: Array[CanvasItem] = []  # keyboard hints faded out while the pad is in use
 var _stick_ready := true
+var _diag: Label
 
 
 func _ready() -> void:
@@ -65,6 +66,8 @@ func _process(delta: float) -> void:
 	if pad.using_pad:
 		_ring.queue_redraw()
 	_t += delta
+	if card_open() and _t >= CHECK:
+		_update_diag()
 	if _t < CHECK:
 		_stick_quick()
 		return
@@ -356,10 +359,8 @@ func _stick_quick() -> void:
 func handle_button(b: int, down: bool) -> bool:
 	## Called by PadControls first; true when the quick menu or the card took the press.
 	if card_open():
-		if down and b in [JOY_BUTTON_A, JOY_BUTTON_B, JOY_BUTTON_START, JOY_BUTTON_BACK]:
-			_card.visible = false
-			_unpause()
-			refresh()
+		if down and b in [JOY_BUTTON_A, JOY_BUTTON_B, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_START, JOY_BUTTON_BACK]:
+			close_card()
 		return true
 	if not quick_open():
 		return false
@@ -420,6 +421,42 @@ const LAYOUT := {
 }
 
 
+func close_card() -> void:
+	if _card:
+		_card.visible = false
+	_unpause()
+	refresh()
+
+
+func _input(e: InputEvent) -> void:
+	## The card and the quick menu also close from the keyboard and mouse, so they can never
+	## trap someone whose pad isn't reaching the game.
+	if not card_open() and not quick_open():
+		return
+	var esc: bool = e is InputEventKey and e.pressed and not e.echo and (e as InputEventKey).keycode in [KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]
+	var click: bool = e is InputEventMouseButton and e.pressed and e.device != PadControls.SYNTH
+	if card_open() and (esc or (click and not _card.get_global_rect().has_point((e as InputEventMouseButton).position))):
+		close_card()
+		get_viewport().set_input_as_handled()
+	elif quick_open() and (esc or click):
+		close_quick()
+		get_viewport().set_input_as_handled()
+
+
+func _update_diag() -> void:
+	if _diag == null or not is_instance_valid(_diag):
+		return
+	var pads := Input.get_connected_joypads()
+	var lines: Array[String] = []
+	if pads.is_empty():
+		lines.append("No controller found: Windows isn't passing one to the game. Check it's paired, then press a button on it.")
+	for d in pads:
+		lines.append("Controller %d: %s   (%s icons, id %s)" % [d, Input.get_joy_name(d),
+			PadGlyphs.FAMILY_NAMES[PadGlyphs.detect(d)], Input.get_joy_guid(d)])
+	lines.append("Last controller input: " + (pad.last_input if pad.last_input != "" else "none yet, press a button or move a stick"))
+	_diag.text = "\n".join(lines)
+
+
 func open_card() -> void:
 	if _card:
 		_card.queue_free()
@@ -459,10 +496,24 @@ func open_card() -> void:
 			l.add_theme_font_size_override("font_size", 14)
 			row.add_child(l)
 			col.add_child(row)
+	# What Windows hands the game, live: the first thing to check when a pad does nothing.
+	_diag = Label.new()
+	_diag.add_theme_font_size_override("font_size", 14)
+	_diag.modulate = Color(0.75, 0.9, 1.0)
+	v.add_child(_diag)
+	_update_diag()
+	var foot_row := HBoxContainer.new()
+	foot_row.add_theme_constant_override("separation", 16)
+	v.add_child(foot_row)
+	var close := Button.new()
+	close.text = "Close"
+	close.custom_minimum_size = Vector2(120, 36)
+	close.pressed.connect(close_card)
+	foot_row.add_child(close)
 	var foot := Label.new()
-	foot.text = "Press any face button to close. Button icons can be switched in the quick menu."
+	foot.text = "Esc, a click or any face button closes this. Button icons can be switched in the quick menu."
 	foot.modulate = Color(1, 1, 1, 0.6)
-	v.add_child(foot)
+	foot_row.add_child(foot)
 	if not get_tree().paused:
 		get_tree().paused = true
 		_paused_by_us = true

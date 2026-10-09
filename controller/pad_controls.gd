@@ -36,6 +36,7 @@ var device := 0
 var cursor := Vector2(960, 540)
 var mode := &"menu"          # menu, mayor, street, bench
 
+var last_input := ""         # the last pad button or stick seen, for the layout card's check line
 var _now := 0.0
 var _back_since := -1.0
 var _a_down := false
@@ -53,6 +54,8 @@ func setup(m: Node) -> void:
 	hud.pad = self
 	add_child(hud)
 	Input.joy_connection_changed.connect(_on_joy)
+	_log("game started, %d controller(s): %s" % [Input.get_connected_joypads().size(),
+		", ".join(Input.get_connected_joypads().map(func(d): return "%d %s %s" % [d, Input.get_joy_name(d), Input.get_joy_guid(d)]))])
 	_pick_device()
 	_hook_rumble.call_deferred()
 
@@ -72,8 +75,17 @@ func _to_front() -> void:
 
 # ------------------------------------------------------------------ devices ---
 
-func _on_joy(_id: int, _connected: bool) -> void:
+func _on_joy(id: int, connected: bool) -> void:
+	_log("%s controller %d: %s %s" % ["connected" if connected else "disconnected", id, Input.get_joy_name(id), Input.get_joy_guid(id)])
 	_pick_device()
+
+
+func _log(line: String) -> void:
+	## user://controller_log.txt (on Windows %APPDATA%/MayorStreet/controller_log.txt): what Windows reported.
+	var f := FileAccess.open("user://controller_log.txt", FileAccess.READ_WRITE if FileAccess.file_exists("user://controller_log.txt") else FileAccess.WRITE)
+	if f:
+		f.seek_end()
+		f.store_line("%s  %s" % [Time.get_datetime_string_from_system(), line])
 
 
 func _pick_device() -> void:
@@ -169,6 +181,10 @@ func _input(e: InputEvent) -> void:
 	if e is InputEventKey and _mine.has(e):
 		_mine.erase(e)
 		return
+	if e is InputEventJoypadButton and e.pressed:
+		last_input = "button %d on controller %d" % [(e as InputEventJoypadButton).button_index, e.device]
+	elif e is InputEventJoypadMotion and absf((e as InputEventJoypadMotion).axis_value) > 0.5:
+		last_input = "stick/trigger axis %d on controller %d" % [(e as InputEventJoypadMotion).axis, e.device]
 	if e is InputEventJoypadButton or (e is InputEventJoypadMotion and absf((e as InputEventJoypadMotion).axis_value) > 0.5):
 		if e.device != device and e.device in Input.get_connected_joypads():
 			device = e.device

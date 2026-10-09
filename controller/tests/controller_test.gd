@@ -185,6 +185,21 @@ func _run() -> void:
 	_press(JOY_BUTTON_B)
 	await _frames(2)
 	check(not pad.hud.card_open() and not paused, "B closes it")
+	check(pad.last_input.begins_with("button"), "the card's check line saw the press (%s)" % pad.last_input)
+
+	# The Esc menu's Controller button opens the card with the mouse; Esc and a click close it,
+	# so a pad that isn't reaching the game can never trap the player.
+	pad.hud.open_card()
+	await _frames(2)
+	check(pad.hud._diag != null and pad.hud._diag.text.contains("Last controller input"), "the card shows what Windows reports")
+	_key(KEY_ESCAPE)
+	await _frames(2)
+	check(not pad.hud.card_open() and not main.menu.is_open, "Esc closes the card (and only the card)")
+	pad.hud.open_card()
+	await _frames(2)
+	_mouse_click(Vector2(5, 5))
+	await _frames(2)
+	check(not pad.hud.card_open() and not paused, "a click outside closes the card")
 
 	# Keyboard use hands the hints back.
 	var k := InputEventKey.new()
@@ -237,6 +252,27 @@ func _clear_cell(vs: Vector2) -> Variant:
 func _open(x: int, y: int) -> bool:
 	var i: int = main.city.idx(x, y)
 	return main.city.land[i] == 1 and main.city.road[i] == 0 and main.city.zone[i] != 1
+
+
+func _key(k: Key) -> void:
+	for down in [true, false]:
+		var e := InputEventKey.new()
+		e.keycode = k
+		e.physical_keycode = k
+		e.pressed = down
+		Input.parse_input_event(e)
+	Input.flush_buffered_events()
+
+
+func _mouse_click(p: Vector2) -> void:
+	for down in [true, false]:
+		var e := InputEventMouseButton.new()
+		e.button_index = MOUSE_BUTTON_LEFT
+		e.pressed = down
+		e.position = p
+		e.global_position = p
+		Input.parse_input_event(e)
+	Input.flush_buffered_events()
 
 
 func _press(b: JoyButton) -> void:
