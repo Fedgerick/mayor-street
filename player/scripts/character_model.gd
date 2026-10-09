@@ -105,6 +105,8 @@ static var _skin: Skin
 static var _merged := {}          # "parts@lod" -> ArrayMesh
 static var _src_mats := {}        # material name -> the glb's material (carries the name)
 static var _lod_mat: ShaderMaterial
+static var _arrays := {}          # "part#surface" -> the surface arrays, read once
+static var _mat_cache := {}       # "slot|colour|roughness" -> StandardMaterial3D
 
 
 static func available() -> bool:
@@ -126,6 +128,11 @@ func _ready() -> void:
 		var m := mi as MeshInstance3D
 		if not _lib.has(String(m.name)):
 			_lib[String(m.name)] = m.mesh
+			# Keep a CPU copy of every part now: surface_get_arrays reads the mesh back from
+			# the GPU and stalls the renderer, which was the 0.6-1.2 s hitch each time a
+			# close-up pedestrian got a new outfit (0.4.6 benchmark on the laptop).
+			for s in m.mesh.get_surface_count():
+				_arrays[String(m.name) + "#" + str(s)] = m.mesh.surface_get_arrays(s)
 			if _skin == null:
 				_skin = m.skin
 			for s in m.mesh.get_surface_count():
@@ -253,13 +260,18 @@ func _dress() -> void:
 	colors["EyeWhite"] = Color(0.92, 0.91, 0.88)
 	mats.clear()
 	for nm in MAT_ORDER:
-		var mat := StandardMaterial3D.new()
-		mat.resource_name = nm
-		mat.albedo_color = colors.get(nm, Color(0.5, 0.5, 0.5))
-		mat.roughness = ROUGH.get(nm, 0.7)
-		mat.rim_enabled = not nm in ["Eyes", "EyeWhite"]
-		mat.rim = 0.3
-		mat.rim_tint = 0.5
+		var col: Color = colors.get(nm, Color(0.5, 0.5, 0.5))
+		var key := "%s|%s|%s" % [nm, col.to_html(), ROUGH.get(nm, 0.7)]
+		var mat: StandardMaterial3D = _mat_cache.get(key)
+		if mat == null:  # shared by everyone in the same colour; nobody edits them in place
+			mat = StandardMaterial3D.new()
+			mat.resource_name = nm
+			mat.albedo_color = col
+			mat.roughness = ROUGH.get(nm, 0.7)
+			mat.rim_enabled = not nm in ["Eyes", "EyeWhite"]
+			mat.rim = 0.3
+			mat.rim_tint = 0.5
+			_mat_cache[key] = mat
 		mats[nm] = mat
 	_apply_mesh()
 	dressed.emit()
@@ -302,13 +314,14 @@ static func _single_mesh(parts: PackedStringArray) -> ArrayMesh:
 		return _merged[key]
 	var list := []
 	for p in parts:
-		var mesh: Mesh = _lib.get(p + "_lod1", _lib.get(p))
+		var pn := p + "_lod1" if _lib.has(p + "_lod1") else p
+		var mesh: Mesh = _lib.get(pn)
 		if mesh == null:
 			continue
 		for s in mesh.get_surface_count():
 			var sm := mesh.surface_get_material(s)
 			var slot := maxi(MAT_ORDER.find(sm.resource_name if sm else ""), 0)
-			var arr := mesh.surface_get_arrays(s)
+			var arr: Array = _surface_arrays(pn, mesh, s).duplicate()
 			var n := (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
 			var col := PackedColorArray()
 			col.resize(n)
@@ -333,7 +346,9 @@ static func _merged_mesh(parts: PackedStringArray, level: int) -> ArrayMesh:
 	var by_mat := {}
 	for p in parts:
 		var nm := p + ("_lod1" if level == 1 else "")
-		var mesh: Mesh = _lib.get(nm, _lib.get(p))
+		if not _lib.has(nm):
+			nm = p
+		var mesh: Mesh = _lib.get(nm)
 		if mesh == null:
 			push_warning("CharacterModel: no wardrobe part %s" % nm)
 			continue
@@ -342,7 +357,7 @@ static func _merged_mesh(parts: PackedStringArray, level: int) -> ArrayMesh:
 			var mn := sm.resource_name if sm else ""
 			if not by_mat.has(mn):
 				by_mat[mn] = []
-			by_mat[mn].append(mesh.surface_get_arrays(s))
+			by_mat[mn].append(_surface_arrays(nm, mesh, s))
 	var out := ArrayMesh.new()
 	for mn in MAT_ORDER:
 		if not by_mat.has(mn):
@@ -351,6 +366,13 @@ static func _merged_mesh(parts: PackedStringArray, level: int) -> ArrayMesh:
 		out.surface_set_material(out.get_surface_count() - 1, _src_mats.get(mn))
 	_merged[key] = out
 	return out
+
+
+static func _surface_arrays(part: String, mesh: Mesh, s: int) -> Array:
+	var key := part + "#" + str(s)
+	if not _arrays.has(key):
+		_arrays[key] = mesh.surface_get_arrays(s)
+	return _arrays[key]
 
 
 static func _concat(list: Array) -> Array:

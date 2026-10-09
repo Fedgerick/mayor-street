@@ -192,6 +192,7 @@ func _start(demo: bool, save := {}) -> void:
 	add_child(life)
 	life.setup(city, cam)
 	life.crowd.hero_max = HERO_MAX[quality]
+	life.crowd.prewarm_heroes(HERO_MAX[quality])  # load the close-up people now, not mid-street
 	street = preload("res://player/scenes/street_mode.tscn").instantiate()
 	add_child(street)
 	street.setup(city)  # registers its own save section, "street"

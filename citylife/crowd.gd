@@ -979,11 +979,12 @@ func update_heroes(dt: float) -> void:
 		for c in cand:
 			if _hero_count >= hero_max:
 				break
-			if _pool.is_empty():
+			var p: Ped = c[1]
+			if _pool.is_empty() or _pool.back().seed_value != p.outfit:
 				if made >= HERO_SPAWNS_PER_FRAME:
-					break  # spread model creation over frames
+					break  # spread model creation and re-dressing over frames
 				made += 1
-			_take_hero(c[1])
+			_take_hero(p)
 	for p in peds:
 		if p.hero == null:
 			continue
@@ -1030,6 +1031,20 @@ func _take_hero(p: Ped) -> void:
 		m.tree.active = true
 	p.hero = m
 	_hero_count += 1
+
+
+## Makes n close-up models up front (hidden, in the pool), so walking into a crowd
+## doesn't stall on loading them. Main calls this while the city loads.
+func prewarm_heroes(n: int) -> void:
+	if not _heroes_on:
+		return
+	while _pool.size() + _hero_count < n:
+		var m := CharacterModel.new()
+		m.seed_value = randi()
+		add_child(m)
+		m.visible = false
+		m.tree.active = false
+		_pool.append(m)
 
 
 func _release_hero(p: Ped) -> void:
