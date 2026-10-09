@@ -8,7 +8,9 @@ extends Node3D
 ##     risk (bad jobs) grows with police near the route and the wealth at the start
 ## So where the Mayor puts the bank and The Bunker sets the stakes of robbing it.
 ##
-## Steps (see README.md): goto, hold, wanted, chase, vehicle, collect.
+## Steps (see README.md): goto, hold, wanted, chase, vehicle, collect, and the fighting ones:
+## fight (armed crew, optionally a named target), destroy (a car), defend (hold a spot against
+## waves), race (checkpoints in a car) and rampage (so many kills against the clock).
 
 signal offered(m: Mission)
 signal started(m: Mission)
@@ -23,7 +25,8 @@ const GOTO_RADIUS := 9.0
 const SPARSE_TAGS := ["crime_den", "abandoned_warehouse", "burning_building", "film_shoot", "armored_truck",
 	"substation", "bank", "hideout", "police_hq", "hospital", "police", "warehouse", "casino", "stadium",
 	"airfield", "radio_tower", "mansion", "vault", "park"]
-const CAR_NAMES := {"car_sedan": "sedan", "car_hatch": "hatchback", "car_van": "van", "car_truck": "pickup truck"}
+const CAR_NAMES := {"car_sedan": "sedan", "car_hatch": "hatchback", "car_van": "van", "car_truck": "pickup truck",
+	"car_sports": "sports car", "car_pickup": "pickup", "car_taxi": "taxi"}
 
 var city: City
 var tags: BuildingTags
@@ -36,6 +39,8 @@ var templates := {}  # id -> Dictionary, in file order
 var active: Mission = null
 var rng := RandomNumberGenerator.new()
 var stats := {"passed": 0, "failed": 0, "good": 0, "bad": 0, "crime": 0}
+var crew: MissionCrew        # the armed people fight, destroy and defend steps put on the street
+var kills := 0               # people, cops and crew the player has killed (rampage steps count these)
 
 
 func setup(c: City, l: StreetLink, g: Goodness, p: ProgressLink) -> void:
@@ -47,6 +52,17 @@ func setup(c: City, l: StreetLink, g: Goodness, p: ProgressLink) -> void:
 	router = RoadRouter.new(c)
 	rng.seed = 90210
 	load_templates()
+	crew = MissionCrew.new()
+	crew.name = "Crew"
+	add_child(crew)
+	crew.setup(c, l)
+	crew.died.connect(func(_e):
+		kills += 1
+		if active:
+			updated.emit(active))
+	link.crime.connect(func(kind):
+		if kind in [&"murder", &"cop_killed", &"vehicular_homicide"]:
+			kills += 1)
 	link.wasted.connect(func(): fail("Wasted"))
 	link.busted.connect(func(): fail("Busted"))
 
@@ -303,6 +319,8 @@ func _cleanup(m: Mission) -> void:
 		m.target.queue_free()
 	m.target = null
 	m.points.clear()
+	crew.clear()
+	link.set_sanctioned(false)
 
 
 func _enter_step() -> void:
@@ -321,6 +339,30 @@ func _enter_step() -> void:
 				_spawn_vehicle(m, s)
 			"collect":
 				_scatter(m, s)
+			"fight":
+				var n: int = s.get("count", 3)
+				crew.spawn(m.step_pos(), n, s.get("armed", "pistol"), s.get("boss", ""), s.get("hp", 60.0))
+				m.left = 1 if s.has("boss") else n
+				if m.side == "good":
+					link.set_sanctioned(true)  # backing up the police: your gunfire isn't a crime
+			"destroy":
+				_spawn_vehicle(m, s)
+				if s.get("guards", 0) > 0:
+					crew.spawn(m.step_pos(), s.guards, s.get("armed", "mixed"))
+			"defend":
+				m.step_time = s.get("seconds", 45.0)
+				m.off_post = 0.0
+				m.kills0 = 0  # waves sent so far
+				if m.side == "good":
+					link.set_sanctioned(true)
+			"race":
+				_checkpoints(m, s)
+			"rampage":
+				m.kills0 = kills
+				m.step_time = s.get("seconds", 60.0)
+				m.left = s.get("count", 10)
+				if s.has("give"):
+					link.give_weapon(StringName(s.give))
 		break
 	if m.step_i >= m.steps.size():
 		_pass()
@@ -387,6 +429,54 @@ func tick(delta: float) -> void:
 					fail("The suspect got away")
 			else:
 				m._escape_t = 0.0
+		"fight":
+			var was := m.left
+			m.left = (1 if crew.boss_alive() else 0) if s.has("boss") else crew.alive()
+			if m.left != was:
+				updated.emit(m)
+			if m.left == 0:
+				_advance()
+		"destroy":
+			var car = m.mission_car
+			if car == null or not is_instance_valid(car) or car.get("wrecked") == true:
+				_advance()
+		"defend":
+			if near:
+				m.off_post = 0.0
+			else:
+				m.off_post += delta
+				if m.off_post > s.get("leave_s", 10.0):
+					fail("You left your post")
+					return
+			m.step_time -= delta
+			var waves: int = s.get("waves", 3)
+			var every: float = s.get("seconds", 45.0) / waves
+			if m.kills0 < waves and s.get("seconds", 45.0) - m.step_time >= every * m.kills0:
+				m.kills0 += 1
+				_send_wave(m, s)
+			if m.step_time <= 0.0:
+				_advance()
+		"race":
+			m.step_time -= delta
+			if m.step_time <= 0.0:
+				fail("Too slow")
+				return
+			if link.car() != null and not m.points.is_empty() and flat_dist(me, m.points[0]) < s.get("radius", 11.0):
+				m.points.remove_at(0)
+				m.left = m.points.size()
+				updated.emit(m)
+				if m.points.is_empty():
+					_advance()
+		"rampage":
+			var was := m.left
+			m.left = maxi(0, int(s.get("count", 10)) - (kills - m.kills0))
+			if m.left != was:
+				updated.emit(m)
+			m.step_time -= delta
+			if m.left == 0:
+				_advance()
+			elif m.step_time <= 0.0:
+				fail("Time's up")
 		"collect":
 			for i in range(m.points.size() - 1, -1, -1):
 				if flat_dist(me, m.points[i]) < 6.0:
@@ -441,7 +531,40 @@ func _spawn_vehicle(m: Mission, s: Dictionary) -> void:
 		# StreetMode treats a "parked" car as theft (crime, goodness); a mission van is lent.
 		m.mission_car.set_meta("parked" if s.get("steal", false) else "player_owned", true)
 	if m.mission_car == null:  # no street (tests): a token the fake player can "drive"
-		m.mission_car = RefCounted.new()
+		m.mission_car = FakeCar.new()
+
+
+## Stands in for a mission car in tests (no street): "drive" it, or set `wrecked`.
+class FakeCar:
+	extends RefCounted
+	var wrecked := false
+
+
+func _send_wave(m: Mission, s: Dictionary) -> void:
+	## Defend: a few attackers come running in from down the street.
+	var at := m.step_pos()
+	var ang := rng.randf() * TAU
+	var from: Vector3 = at + Vector3(cos(ang), 0.0, sin(ang)) * s.get("from_m", 38.0)
+	crew.spawn(from, s.get("count", 3), s.get("armed", "mixed"))
+	crew.alert = true
+	for e in crew.enemies:
+		e.alert = true
+
+
+func _checkpoints(m: Mission, s: Dictionary) -> void:
+	## Race: checkpoints along the road route from one slot to another, about every 100 m.
+	var a: Vector2i = m.slots[s.at].cell
+	var b: Vector2i = m.slots[s.get("to", s.at)].cell
+	var path := router.route(a, b)
+	m.points.clear()
+	var every := int(s.get("every_m", 100.0) / City.TILE)
+	for i in range(every, path.size() - 2, every):
+		m.points.append(city.cell_center(path[i].x, path[i].y))
+	m.points.append(m.slots[s.get("to", s.at)].pos)
+	m.left = m.points.size()
+	# The clock starts at the line: so many seconds plus so many per km of road.
+	var km := path.size() * City.TILE / 1000.0
+	m.step_time = s.get("base_s", 20.0) + s.get("per_km_s", 65.0) * km
 
 
 func _scatter(m: Mission, s: Dictionary) -> void:

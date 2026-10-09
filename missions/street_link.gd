@@ -163,6 +163,25 @@ func spawn_car(model: String, pos: Vector3, yaw: float, color: Color) -> Object:
 	return null
 
 
+func damage_player(amount: float, from: Vector3) -> void:
+	## A mission enemy hurts the player (in a car, the car takes it).
+	if street and street.has_method("damage_player"):
+		street.damage_player(amount, from, "crew")
+	else:
+		fake_damage += amount
+
+
+func give_weapon(id: StringName, rounds := -1) -> void:
+	if street and street.get("combat"):
+		street.combat.give(id, rounds)
+
+
+func set_sanctioned(on: bool) -> void:
+	## A good job's fight: the police don't count your gunfire against you.
+	if street and "sanctioned" in street:
+		street.sanctioned = on
+
+
 func ground_point(p: Vector3) -> Vector3:
 	## A sidewalk spot near p, where StreetMode would put a pedestrian.
 	if street and street.has_method("sidewalk_spawn"):

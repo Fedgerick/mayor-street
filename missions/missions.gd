@@ -116,9 +116,10 @@ func setup(c: City, s: Node) -> void:
 		progress.store.goodness_changed.connect(func(v, _d, _r): goodness.value = v)
 	link.goodness_action.connect(goodness.action)
 	c.day_passed.connect(goodness.day_passed)
-	c.building_added.connect(func(_id, _a):
+	c.building_added.connect(func(id, _a):
 		_quest_t = 0.0
-		_phones_dirty = true)
+		_phones_dirty = true
+		_announce(id))
 	c.building_removed.connect(func(_id): _phones_dirty = true)
 
 	director.started.connect(_on_started)
@@ -558,6 +559,21 @@ func _on_goodness(value: float, _delta: float, reason: String) -> void:
 	progress.set_goodness(value, reason)
 
 
+func _announce(id: int) -> void:
+	## A placed special says what it opens up on the street (and to whom it matters).
+	var b: Dictionary = city.buildings.get(id, {})
+	if not b.has("kind") or not b.has("tags"):
+		return
+	var name: String = b.get("name", Catalog.get_def(String(b.kind)).get("name", ""))
+	var list := StreetUses.jobs(b.tags, name)
+	if list.is_empty():
+		return
+	var titles: PackedStringArray = []
+	for j in list.slice(0, 3):
+		titles.append(j.title + (" (pays by distance to %s)" % j.partner if j.partner != "" else ""))
+	_news("%s is open. New street jobs: %s" % [name, ", ".join(titles)], 8.0)
+
+
 func _quest_news(text: String, _q: Dictionary) -> void:
 	_news(text, 6.0)
 	if log_panel.visible:
@@ -662,9 +678,25 @@ func _update_markers() -> void:
 					if d < best:
 						best = d
 						goal = p
-			"vehicle":
+			"vehicle", "destroy":
 				if m.mission_car is Node3D and is_instance_valid(m.mission_car):
 					goal = (m.mission_car as Node3D).global_position
+					if s.do == "destroy":
+						_target_mark.visible = true
+						_target_mark.global_position = goal + Vector3.UP * (3.4 + sin(Time.get_ticks_msec() * 0.006) * 0.3)
+			"fight":
+				# Point at the hit target (or the nearest gunman) once you're close; until then the spot.
+				var e = director.crew.nearest(link.position())
+				goal = m.step_pos()
+				if e and MissionDirector.flat_dist(link.position(), e.pos) < MissionCrew.AGGRO_M + 20.0:
+					goal = e.pos
+					_target_mark.visible = true
+					_target_mark.global_position = e.pos + Vector3.UP * (2.6 + sin(Time.get_ticks_msec() * 0.006) * 0.2)
+			"race":
+				if not m.points.is_empty():
+					goal = m.points[0]
+			"rampage":
+				goal = Vector3.INF  # anywhere will do
 			_:
 				goal = m.step_pos()
 		_sync_piles(m)
@@ -677,7 +709,7 @@ func _update_markers() -> void:
 		_beacon.visible = false
 		hud.arrow_dist = -1.0
 		return
-	var show_beacon: bool = m == null or m.step().get("do", "") != "chase"
+	var show_beacon: bool = not _target_mark.visible  # a target marker over a car or person replaces it
 	_beacon.visible = show_beacon
 	var pulse := 0.25 + 0.12 * sin(Time.get_ticks_msec() * (0.012 if m == null else 0.004))
 	(_beacon.material_override as StandardMaterial3D).albedo_color = Color(col.r, col.g, col.b, pulse)
@@ -709,7 +741,7 @@ func _sync_nav(m: Mission, goal: Vector3, col: Color) -> void:
 	if nav == null:
 		return
 	var doing: String = m.step().get("do", "") if m else ""
-	var kind := "phone" if m == null else ("car" if doing in ["chase", "vehicle"] else "job")
+	var kind := "phone" if m == null else ("car" if doing in ["chase", "vehicle", "destroy"] else "job")
 	if goal == Vector3.INF:
 		if _nav_goal != Vector3.INF:
 			nav.unmark("mission:goal")
@@ -718,7 +750,7 @@ func _sync_nav(m: Mission, goal: Vector3, col: Color) -> void:
 		var where: Variant = goal
 		if doing == "chase" and m.target and is_instance_valid(m.target):
 			where = m.target  # the minimap follows the car itself
-		elif doing == "vehicle" and m.mission_car is Node3D and is_instance_valid(m.mission_car):
+		elif doing in ["vehicle", "destroy"] and m.mission_car is Node3D and is_instance_valid(m.mission_car):
 			where = m.mission_car
 		nav.mark("mission:goal", where, {"color": col, "kind": kind, "priority": 10,
 			"label": m.title if m else "Ringing payphone"})

@@ -67,6 +67,19 @@ func _play(d: MissionDirector, link: StreetLink, m: Mission) -> void:
 			"collect":
 				if not m.points.is_empty():
 					link.fake_pos = m.points[0]
+			"fight", "destroy":
+				link.fake_pos = m.step_pos()
+				d.crew.kill_all()
+				if s.do == "destroy":
+					m.mission_car.wrecked = true
+			"defend":
+				link.fake_pos = m.step_pos()
+			"race":
+				link.fake_car = RefCounted.new()
+				if not m.points.is_empty():
+					link.fake_pos = m.points[0]
+			"rampage":
+				link.crime.emit(&"murder")
 		d.tick(0.5)
 
 
@@ -173,7 +186,11 @@ func _initialize() -> void:
 	link.fake_car = null
 	link.fake_pos = bj.slots.start.pos
 	d.tick(0.1)
-	check(bj.step_i == 0, "standing outside the bank isn't enough")
+	check(bj.step().do == "fight" and d.crew.alive() == 3, "guards outside the bank")
+	d.crew.kill_all()
+	d.tick(0.1)
+	d.tick(0.1)
+	check(bj.step_i == 1, "standing outside the bank isn't enough")
 	var room := FakeRoom.new()
 	root.add_child(room)
 	var vault := Node3D.new()
@@ -184,7 +201,7 @@ func _initialize() -> void:
 	fi.current_id = "bank"
 	fi.current_building = bank
 	d.tick(0.1)
-	check(bj.step_i == 2 and link.wanted() == 1, "walking in sets off the alarm")
+	check(bj.step_i == 3 and link.wanted() == 1, "walking in sets off the alarm")
 	check(link.near_marker("vault", 3.0) == false, "no street player: marker check is off")
 	d.fail("test")
 	link.interiors = null

@@ -84,7 +84,7 @@ func _initialize() -> void:
 		if _needs_landmark(d.templates[id]):
 			continue  # late landmarks have no stand-ins: test_story.gd
 		var m := d.generate(id, link.fake_pos)
-		check(m != null and m.pay > 0 and m.route_m > 0.0,
+		check(m != null and m.pay > 0 and (m.route_m > 0.0 or d.templates[id].get("route", []).size() < 2),
 			"%s: %s" % [id, m.summary() if m else "could not generate"])
 		if m:
 			check(not ("{" in m.brief or "{" in m.title), "%s: text filled in" % id)

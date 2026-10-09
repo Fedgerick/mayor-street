@@ -228,6 +228,7 @@
 				"end": {"tag": "hideout", "from": "start", "min_m": 200}
 			},
 			"steps": [
+				{"do": "fight", "at": "start", "count": 3, "armed": "pistol", "text": "Take out the guards outside {start} ({left} left)"},
 				{"do": "goto", "at": "start", "car": false, "interior": "bank", "text": "Walk into {start}"},
 				{"do": "wanted", "stars": 1},
 				{"do": "hold", "at": "start", "seconds": 20, "radius": 12, "car": false, "marker": "vault", "text": "Crack the vault (stand in the vault)"},
@@ -286,7 +287,7 @@
 			},
 			"steps": [
 				{"do": "goto", "at": "end", "text": "Meet the squad at {end}"},
-				{"do": "hold", "at": "end", "seconds": 10, "radius": 14, "car": false, "text": "Clear out the den"}
+				{"do": "fight", "at": "end", "count": 5, "armed": "mixed", "text": "Clear out the den ({left} left)"}
 			],
 			"route": ["start", "end"],
 			"pay": {"base": 300, "per_km": 120},
@@ -527,6 +528,7 @@
 				{"do": "wanted", "stars": 1},
 				{"do": "hold", "at": "start", "seconds": 25, "radius": 14, "car": false, "marker": "counting_room", "text": "Crack the counting room"},
 				{"do": "wanted", "stars": 4},
+				{"do": "fight", "at": "start", "count": 4, "armed": "pistol", "hp": 70, "text": "Shoot your way past casino security ({left} left)"},
 				{"do": "goto", "at": "end", "text": "Escape to {end}"},
 				{"do": "wanted", "stars": 0}
 			],
@@ -648,7 +650,7 @@
 			"steps": [
 				{"do": "goto", "at": "start", "car": false, "text": "Get to the gates of {start} on foot"},
 				{"do": "wanted", "stars": 2},
-				{"do": "hold", "at": "start", "seconds": 18, "radius": 12, "car": false, "text": "Fight past the guards to Castellano"},
+				{"do": "fight", "at": "start", "count": 6, "armed": "mixed", "boss": "Castellano", "hp": 70, "text": "Get past the guards and take out Castellano"},
 				{"do": "wanted", "stars": 3},
 				{"do": "goto", "at": "end", "text": "Lie low at {end}"},
 				{"do": "wanted", "stars": 0}
@@ -667,10 +669,12 @@
 				"end": {"tag": "hideout", "from": "start", "min_m": 300}
 			},
 			"steps": [
+				{"do": "fight", "at": "start", "count": 4, "armed": "pistol", "hp": 70, "text": "Take out the Reserve's door guards ({left} left)"},
 				{"do": "goto", "at": "start", "car": false, "interior": "federal_reserve", "text": "Walk into {start}"},
 				{"do": "wanted", "stars": 2},
 				{"do": "hold", "at": "start", "seconds": 40, "radius": 14, "car": false, "marker": "vault", "text": "Crack the Reserve's vault"},
 				{"do": "wanted", "stars": 5},
+				{"do": "defend", "at": "start", "seconds": 30, "waves": 3, "count": 3, "armed": "pistol", "radius": 22, "text": "Hold the loading dock until the van pulls up ({secs} s)"},
 				{"do": "goto", "at": "end", "text": "Escape to {end}"},
 				{"do": "wanted", "stars": 0}
 			],
@@ -698,6 +702,108 @@
 			"pay": {"base": 15000, "per_km": 3000},
 			"time": {"base": 200, "per_km": 120},
 			"goodness": 30, "city_bonus": 8000, "respect": 25
+		},
+		{
+			"id": "hit_job", "side": "bad", "giver": "payphone", "lean": 0,
+			"title": "A message for {start}",
+			"brief": "Marchetti: \"The owner of {start} stopped paying. He's out front with two of his boys. Make it loud, then get to {end}.\"",
+			"slots": {
+				"start": {"tag": "shop", "near_player_m": 900},
+				"end": {"tag": "chop_shop", "from": "start", "min_m": 300, "max_m": 1500}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Find the owner at {start}"},
+				{"do": "fight", "at": "start", "count": 3, "armed": "pistol", "boss": "the owner", "text": "Take out the owner of {start}"},
+				{"do": "wanted", "stars": 2},
+				{"do": "goto", "at": "end", "text": "Lie low at {end}"},
+				{"do": "wanted", "stars": 0}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 450, "per_km": 220},
+			"time": {"base": 120, "per_km": 110},
+			"goodness": -8, "city_bonus": -40, "crime": 3
+		},
+		{
+			"id": "kill_frenzy", "side": "bad", "giver": "payphone", "lean": 10,
+			"title": "Kill frenzy",
+			"brief": "\"There's a shotgun under the bench by {start}. Show this town who runs it. Fifteen in a minute and a half.\"",
+			"slots": {
+				"start": {"tag": "shop", "near_player_m": 500}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "text": "Pick up the shotgun at {start}"},
+				{"do": "rampage", "count": 15, "seconds": 90, "give": "shotgun", "text": "KILL FRENZY: {left} more in {secs} s"}
+			],
+			"route": ["start"],
+			"pay": {"base": 900, "per_km": 0},
+			"goodness": -15, "city_bonus": -120, "crime": 6
+		},
+		{
+			"id": "street_race", "side": "bad", "giver": "payphone", "lean": 0,
+			"title": "Race to {end}",
+			"brief": "\"Pink slips tonight. There's a sports car waiting at {start}. Hit every checkpoint and beat the clock to {end}.\"",
+			"slots": {
+				"start": {"tag": "home", "near_player_m": 500},
+				"end": {"tag": "shop", "from": "start", "min_m": 600, "max_m": 2000}
+			},
+			"steps": [
+				{"do": "vehicle", "at": "start", "model": "car_sports", "color": "#d8a21e", "text": "Get in the sports car at {start}"},
+				{"do": "race", "at": "start", "to": "end", "every_m": 110, "base_s": 20, "per_km_s": 62, "text": "Checkpoint! {left} to go, {secs} s"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 300, "per_km": 260},
+			"goodness": -2, "city_bonus": 0, "crime": 1
+		},
+		{
+			"id": "torch_ride", "side": "bad", "giver": "payphone", "lean": 0,
+			"title": "Wreck the {car}",
+			"brief": "\"A rival crew parks their {car} outside {lot} like they own the block. Wreck it. They'll have friends there.\"",
+			"slots": {
+				"start": {"tag": "chop_shop"},
+				"lot": {"tag": "shop", "from": "start", "min_m": 300, "max_m": 1400}
+			},
+			"car": ["car_sports", "car_van", "car_pickup"],
+			"steps": [
+				{"do": "destroy", "at": "lot", "model": "{car}", "color": "#202024", "guards": 2, "armed": "fists", "text": "Wreck the {car} outside {lot}"},
+				{"do": "wanted", "stars": 1},
+				{"do": "goto", "at": "start", "text": "Get back to {start}"}
+			],
+			"route": ["lot", "start"],
+			"pay": {"base": 350, "per_km": 150},
+			"time": {"base": 150, "per_km": 110},
+			"goodness": -5, "city_bonus": -30, "crime": 2
+		},
+		{
+			"id": "clear_crew", "side": "good", "giver": "radio", "lean": 0,
+			"title": "Gang on {start}",
+			"brief": "Dispatch: armed gang members outside {start}. Units are tied up. If you're carrying, Captain Ruiz says go.",
+			"slots": {
+				"start": {"tag": "home", "near_player_m": 800}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "text": "Get to {start}"},
+				{"do": "fight", "at": "start", "count": 4, "armed": "mixed", "text": "Stop the gang ({left} left)"}
+			],
+			"route": ["start"],
+			"pay": {"base": 300, "per_km": 0},
+			"time": {"base": 120, "per_km": 90},
+			"goodness": 6, "city_bonus": 120
+		},
+		{
+			"id": "hold_the_line", "side": "good", "giver": "radio", "lean": 25,
+			"title": "Hold the line at {start}",
+			"brief": "Dispatch: a crew is coming to hit {start}. Stand with the owner until backup arrives.",
+			"slots": {
+				"start": {"tag": "shop", "near_player_m": 800}
+			},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "text": "Get to {start} on foot"},
+				{"do": "defend", "at": "start", "seconds": 45, "waves": 3, "count": 3, "armed": "mixed", "radius": 18, "text": "Hold {start} until backup arrives ({secs} s)"}
+			],
+			"route": ["start"],
+			"pay": {"base": 500, "per_km": 0},
+			"time": {"base": 200},
+			"goodness": 8, "city_bonus": 150
 		}
 	]
 }

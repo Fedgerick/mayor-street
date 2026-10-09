@@ -28,6 +28,19 @@ func _play(d: MissionDirector, link: StreetLink, m: Mission) -> void:
 					link.set_wanted(0)
 			"collect":
 				link.fake_pos = m.points[0]
+			"fight", "destroy":
+				link.fake_pos = m.step_pos()
+				d.crew.kill_all()
+				if s.do == "destroy":
+					m.mission_car.wrecked = true
+			"defend":
+				link.fake_pos = m.step_pos()
+			"race":
+				link.fake_car = RefCounted.new()
+				if not m.points.is_empty():
+					link.fake_pos = m.points[0]
+			"rampage":
+				link.crime.emit(&"murder")
 		d.tick(0.5)
 
 

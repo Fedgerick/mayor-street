@@ -39,6 +39,10 @@ var elapsed := 0.0        # seconds since the job started (medals)
 var damage := 0.0         # health and car damage taken during the job (medals)
 var _damage0 := 0.0
 var _escape_t := 0.0
+var left := -1            # fight / rampage / race: what is still to do, for {left} (-1: piles left)
+var step_time := 0.0      # defend / rampage: seconds left in this step, for {secs}
+var off_post := 0.0       # defend: seconds spent away from the spot
+var kills0 := 0           # rampage: the kill count when the step began
 
 
 func step() -> Dictionary:
@@ -55,7 +59,8 @@ func step_pos() -> Vector3:
 func objective() -> String:
 	var s := step()
 	var text: String = s.get("text", "")
-	return text.replace("{left}", str(points.size()))
+	text = text.replace("{left}", str(left if left >= 0 else points.size()))
+	return text.replace("{secs}", str(ceili(step_time)))
 
 
 func format(text: String) -> String:
