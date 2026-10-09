@@ -481,6 +481,8 @@ func spawn_parked_cars_near(p: Vector3, count: int) -> void:
 		need -= 1
 
 
+const SPAWN_POLE_CLEAR := 0.45  # capsule radius plus a lamp post's, metres
+
 func sidewalk_spawn(p: Vector3) -> Vector3:
 	## Nearest sidewalk to a ground point, or the point itself if there are no roads.
 	if city == null:
@@ -499,6 +501,9 @@ func sidewalk_spawn(p: Vector3) -> Vector3:
 						Vector3(0, 0, 4.9) if not (m & 4) else Vector3(4.9, 0, 0),
 						Vector3(0, 0, -4.9) if not (m & 1) else Vector3(-4.9, 0, 0)]:
 					var w: Vector3 = c + cand
+					# Not on a lamp post: the corners are where the posts stand.
+					if collision and collision.pole_near(w, SPAWN_POLE_CLEAR):
+						continue
 					var d := w.distance_squared_to(p)
 					if d < best_d:
 						best_d = d
