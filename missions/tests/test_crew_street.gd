@@ -78,6 +78,9 @@ func _run() -> void:
 
 	var died := []
 	crew.died.connect(func(x): died.append(x))
+	# The gunman moved while shooting back: aim again from where they are now.
+	from = e.pos + Vector3(1.6, 1.3, 0.4)
+	dir = (e.pos + Vector3.UP * 1.2 - from).normalized()
 	street.apply_hit(street.trace_shot(from, dir, 40.0), 999.0, dir, &"pistol")
 	check(e.dead and died.size() == 1, "a big hit puts them down")
 	check(street.trace_shot(from, dir, 40.0).kind != &"target", "the dead aren't targets")
