@@ -173,17 +173,25 @@ func run(m: Node) -> void:
 	# 4. A police chase: three stars, and the cars that come after them.
 	_banner_text("Here come the police")
 	_top = CHASE_SPEED
+	_hold_arrests(true)  # the tour films a chase; being busted would jail the rest of it
 	main.street.set_wanted(CHASE_STARS)
 	await _seconds(3.0)
 	if _stopped:
+		_hold_arrests(false)
 		return
-	if not await _part_run(3, func(_t: float): _keep_car_whole()):
+	var chased := await _part_run(3, func(_t: float): _keep_car_whole())
+	main.street.set_wanted(0)
+	_hold_arrests(false)
+	if not chased:
 		return
 
 	# 5. The walk again at night.
 	_banner_text("Waiting for nightfall")
 	main.street.set_wanted(0)
 	_driving = false
+	await _back_outside()
+	if _stopped:
+		return
 	if main.street.car:
 		main.street._leave_car()
 		await _seconds(1.4)
@@ -572,9 +580,39 @@ static func _body_yaw(fwd: Vector3) -> float:
 
 
 func _keep_car_whole() -> void:
-	## Police fire from three stars; the tour shouldn't end in a burning wreck.
+	## Police fire from three stars; the tour shouldn't end in a burning wreck or a dead driver.
 	if is_instance_valid(_car) and _car.health < DrivableCar.MAX_HEALTH * 0.9:
 		_car.health = DrivableCar.MAX_HEALTH
+	var p: StreetPlayer = main.street.player
+	if p and not p.dead and p.health < StreetPlayer.MAX_HEALTH * 0.9:
+		p.health = StreetPlayer.MAX_HEALTH
+
+
+func _back_outside() -> void:
+	## If anything still sent the player down or indoors, wait it out and walk back out, so
+	## the night walk and the cost check measure the street.
+	var t := 0.0
+	while main.street.down and t < 20.0 and not _stopped:
+		await get_tree().process_frame
+		t += get_process_delta_time()
+	var inside = main.get("interiors")
+	if inside and inside.is_inside():
+		while inside.busy and not _stopped:
+			await get_tree().process_frame
+		await inside.exit()
+
+
+func _hold_arrests(on: bool) -> void:
+	## While on, the police still chase and shoot but can't arrest (0.4.6 on the laptop: they
+	## caught the car, and the night walk and cost check were measured in the cells).
+	var police = main.life.get("police") if main.life else null
+	if police == null or not police.has_signal("busted"):
+		return
+	var bust := Callable(main.street, "bust")
+	if on and police.busted.is_connected(bust):
+		police.busted.disconnect(bust)
+	elif not on and not police.busted.is_connected(bust):
+		police.busted.connect(bust)
 
 
 func _set_hour(h: float) -> void:
