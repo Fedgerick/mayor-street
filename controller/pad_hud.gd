@@ -25,6 +25,8 @@ var _t := 0.0
 var _hidden: Array[CanvasItem] = []  # keyboard hints faded out while the pad is in use
 var _stick_ready := true
 var _diag: Label
+var remap: RemapScreen        # the controls screen: keys and pad buttons
+var _card_was_open := false
 
 
 func _ready() -> void:
@@ -42,6 +44,10 @@ func _ready() -> void:
 	_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_ring)
 	_build_quick()
+	remap = RemapScreen.new()
+	remap.pad = pad
+	remap.closed.connect(_on_remap_closed)
+	_root.add_child(remap)
 	pad.using_pad_changed.connect(func(_on: bool) -> void: refresh())
 	pad.family_changed.connect(func(_f: int) -> void: refresh())
 	refresh()
@@ -112,7 +118,7 @@ func _fill(box: HBoxContainer, rows: Array, px: float, fs := 15) -> void:
 		item.add_theme_constant_override("separation", 6)
 		item.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		for b in r[0]:
-			item.add_child(PadGlyph.make(pad.family, b, px))
+			item.add_child(PadGlyph.make(pad.family, pad.binds.physical(b), px))
 		var l := Label.new()
 		l.text = r[1]
 		l.add_theme_font_size_override("font_size", fs)
@@ -193,6 +199,28 @@ func quick_open() -> bool:
 
 func card_open() -> bool:
 	return _card != null and _card.visible
+
+
+func remap_open() -> bool:
+	return remap != null and remap.visible
+
+
+func open_remap() -> void:
+	## The card steps aside while the controls screen is up, then comes back.
+	_card_was_open = card_open()
+	if _card:
+		_card.visible = false
+	_root.move_child(remap, -1)
+	if _ring:
+		_root.move_child(_ring, -1)
+	remap.open()
+
+
+func _on_remap_closed() -> void:
+	if _card and _card_was_open:
+		_card.visible = true
+	_card_was_open = false
+	refresh()
 
 
 func _build_quick() -> void:
@@ -358,6 +386,11 @@ func _stick_quick() -> void:
 
 func handle_button(b: int, down: bool) -> bool:
 	## Called by PadControls first; true when the quick menu or the card took the press.
+	if remap_open():
+		if down and b == JOY_BUTTON_B:
+			remap.close()
+			return true
+		return false  # the pointer reads the pad here: d-pad moves it, A clicks
 	if card_open():
 		if down and b in [JOY_BUTTON_A, JOY_BUTTON_B, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_START, JOY_BUTTON_BACK]:
 			close_card()
@@ -490,7 +523,7 @@ func open_card() -> void:
 			var row := HBoxContainer.new()
 			row.add_theme_constant_override("separation", 5)
 			for b in r[0]:
-				row.add_child(PadGlyph.make(pad.family, b, 24.0))
+				row.add_child(PadGlyph.make(pad.family, pad.binds.physical(b), 24.0))
 			var l := Label.new()
 			l.text = " " + r[1]
 			l.add_theme_font_size_override("font_size", 14)
@@ -509,6 +542,11 @@ func open_card() -> void:
 	close.text = "Close"
 	close.custom_minimum_size = Vector2(120, 36)
 	close.pressed.connect(close_card)
+	var keys := Button.new()
+	keys.text = "Change buttons and keys"
+	keys.custom_minimum_size = Vector2(230, 36)
+	keys.pressed.connect(open_remap)
+	foot_row.add_child(keys)
 	foot_row.add_child(close)
 	var foot := Label.new()
 	foot.text = "Esc, a click or any face button closes this. Button icons can be switched in the quick menu."

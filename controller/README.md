@@ -13,7 +13,33 @@ The layout is Xbox style by button position; prompts show the right icons for th
 - `pad_hud.gd` (PadHud): button prompts, the pointer ring, the quick menu and the layout card.
 - `pad_glyphs.gd` (PadGlyphs): pad family detection and button names.
 - `pad_glyph.gd` (PadGlyph): draws one button icon (no image files).
+- `pad_bindings.gd` (PadBindings): every remappable key and pad button, the swap rules, and
+  what they do to the game's InputMap. Saved in `user://controller.cfg`.
+- `remap_screen.gd` (RemapScreen): the controls screen, opened from the layout card's
+  "Change buttons and keys" button.
 - `tests/controller_test.gd`: drives the real main scene with pad presses.
+- `tests/remap_test.gd`: remap rules and saved bindings, no scene.
+- `tests/remap_scene_test.gd`: remapped keys and buttons in the real main scene.
+
+## Remapping
+
+Everything in the Mayor view and on foot/driving can be changed (Pad buttons, and the
+keys on the Mayor view, Foot and driving, Anywhere tabs). Pick a row, then press the new key or
+button. Whatever used that key before moves to the old one, so two controls never share a key.
+
+Two ways a remap reaches the game, because the game reads its keys in two ways:
+- Keys the game checks by hand (the mayor's pan and tools, the quest log, the map, the
+  bribe and job keys): PadControls turns a press of the new key into the key the game expects,
+  and clears the old key so the game's polling doesn't see it held.
+- InputMap actions (the street's controls, the car radio): their keys are rebound in the
+  InputMap itself. Secondary keys that aren't on the screen (arrow keys for walking) stay.
+
+Pad buttons: each physical button is given the role it plays (A, B, X, Y, the bumpers, the
+stick clicks, View). The street's InputMap is rebound to the physical buttons, so both paths
+agree. Start always opens the Esc menu, and the d-pad always moves between buttons.
+
+Not remapped: the mouse, the sticks and triggers, arrow keys, Esc, the number keys in menus,
+and the keys the game shows as hints on screen (those hints still show the default keys).
 
 ## Wiring (main.gd)
 

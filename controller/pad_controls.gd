@@ -45,6 +45,9 @@ var _release := []           # keys to let go next frame
 var _scroll_acc := Vector2.ZERO
 var _mine: Array[InputEvent] = []  # keys made here, on their way through (keys keep device 0:
                                    # InputMap only matches actions on their own device)
+var _quiet: Array[InputEvent] = [] # releases made here to clear a key the game must not see held
+var _held := {}                    # physical key -> the key the game was given for it
+var binds := PadBindings.new()     # remapped keys and pad buttons (pad_bindings.gd)
 
 
 func setup(m: Node) -> void:
@@ -138,13 +141,22 @@ func _load() -> void:
 	if cf.load(CONFIG) == OK:
 		icons = int(cf.get_value("pad", "icons", -1))
 		vibration = bool(cf.get_value("pad", "vibration", true))
+		binds.load_from(cf)
+	else:
+		binds.apply_input_map()
 
 
 func _save() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("pad", "icons", icons)
 	cf.set_value("pad", "vibration", vibration)
+	binds.save_to(cf)
 	cf.save(CONFIG)
+
+
+func save_settings() -> void:
+	## Called by the remap screen after each change.
+	_save()
 
 
 # --------------------------------------------------------------------- mode ---
@@ -178,9 +190,17 @@ func driving() -> bool:
 func _input(e: InputEvent) -> void:
 	if e.device == SYNTH:
 		return
-	if e is InputEventKey and _mine.has(e):
-		_mine.erase(e)
-		return
+	if e is InputEventKey:
+		if _quiet.has(e):
+			_quiet.erase(e)
+			get_viewport().set_input_as_handled()
+			return
+		if _mine.has(e):
+			_mine.erase(e)
+			return
+		if _translate_key(e as InputEventKey):
+			get_viewport().set_input_as_handled()
+			return
 	if e is InputEventJoypadButton and e.pressed:
 		last_input = "button %d on controller %d" % [(e as InputEventJoypadButton).button_index, e.device]
 	elif e is InputEventJoypadMotion and absf((e as InputEventJoypadMotion).axis_value) > 0.5:
@@ -204,10 +224,11 @@ func _input(e: InputEvent) -> void:
 		return
 	var jb := e as InputEventJoypadButton
 	mode = current_mode()
-	if hud.handle_button(jb.button_index, jb.pressed):
+	var role := binds.role_of(jb.button_index)  # the button's role, whatever it is remapped to
+	if hud.handle_button(role, jb.pressed):
 		get_viewport().set_input_as_handled()
 		return
-	if _button(jb.button_index, jb.pressed):
+	if _button(role, jb.pressed):
 		get_viewport().set_input_as_handled()
 
 
@@ -365,15 +386,37 @@ func tap(key: Key) -> void:
 	_release.append(key)
 
 
-func _key(key: Key, down: bool) -> void:
+func _key(key: Key, down: bool, quiet := false) -> void:
 	var k := InputEventKey.new()
 	k.keycode = key
 	k.physical_keycode = key
 	k.pressed = down
-	_mine.append(k)
-	if _mine.size() > 16:
-		_mine.pop_front()
+	var list: Array[InputEvent] = _quiet if quiet else _mine
+	list.append(k)
+	if list.size() > 16:
+		list.pop_front()
 	Input.parse_input_event(k)
+
+
+func _translate_key(k: InputEventKey) -> bool:
+	## A remapped key becomes the key the game expects for that control. True when taken here.
+	var phys: Key = k.physical_keycode
+	var emit: int = binds.translate_key(current_mode(), phys)
+	if emit == PadBindings.NOT_BOUND or emit == phys:
+		return false
+	if k.pressed:
+		if k.echo:
+			return true
+		_held[phys] = emit
+		_key(phys, false, true)  # the game's polling (WASD pan, Shift) sees this key let go
+		if emit != KEY_NONE:
+			_key(emit as Key, true)
+	else:
+		var out: int = _held.get(phys, KEY_NONE)
+		_held.erase(phys)
+		if out != KEY_NONE:
+			_key(out as Key, false)
+	return true
 
 
 func _window_pos(p: Vector2) -> Vector2:
@@ -520,7 +563,7 @@ func _camera_step(delta: float) -> void:
 	if cam == null or cam.get("_focus_goal") == null:
 		return
 	var moved := false
-	var fast := 2.5 if Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_STICK) else 1.0
+	var fast := 2.5 if Input.is_joy_button_pressed(device, binds.physical(JOY_BUTTON_LEFT_STICK)) else 1.0
 	# Pan: right stick, or the cursor pushed into the screen edge.
 	var pan := _stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
 	var vs := get_viewport().get_visible_rect().size
@@ -542,13 +585,13 @@ func _camera_step(delta: float) -> void:
 		cam._dist_goal = clampf(float(cam._dist_goal) * (1.0 - z * delta * 1.6), MayorCamera.MIN_DIST, MayorCamera.MAX_DIST)
 		moved = true
 	# Rotate: bumpers.
-	var rot := float(Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_SHOULDER)) \
-		- float(Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_SHOULDER))
+	var rot := float(Input.is_joy_button_pressed(device, binds.physical(JOY_BUTTON_LEFT_SHOULDER))) \
+		- float(Input.is_joy_button_pressed(device, binds.physical(JOY_BUTTON_RIGHT_SHOULDER)))
 	if rot != 0.0:
 		cam._yaw_goal += rot * delta * 1.6
 		moved = true
 	# Tilt: right stick click and up/down... kept simple: R3 resets the tilt.
-	if Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_STICK) and absf(float(cam._tilt_goal)) > 0.001:
+	if Input.is_joy_button_pressed(device, binds.physical(JOY_BUTTON_RIGHT_STICK)) and absf(float(cam._tilt_goal)) > 0.001:
 		cam._tilt_goal = 0.0
 		moved = true
 	if moved:
