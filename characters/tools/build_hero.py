@@ -16,8 +16,10 @@ skeleton. What changes, for the one person the camera follows:
   * extra material slots for HeroLook (characters/scripts/hero_look.gd): Iris, Mouth,
     Lashes, Frame, Lens, Sole, Laces, Trim.
 
-No animations and no LOD1 copies: CharacterModel keeps animating with its own clips and
-casting its shadow from the crowd mesh. The file holds only LOD0 parts and the rig.
+Every part also comes as <name>_mid, decimated back to the street part's triangle budget,
+for close-up crowd people and police (HeroLook.mid): the new face, eyes and materials at
+the street cost. No animations and no LOD1 copies: CharacterModel keeps animating with its
+own clips and keeps its 1.5k-triangle crowd mesh for distance.
 """
 import math
 import os
@@ -283,10 +285,16 @@ OVERRIDES = {
 }
 
 
+# Crowd copies that need more than the street part's budget to keep the new face and trims.
+MID_TARGETS = {"Head_skin": 2600, "Brows": 120, "Hands": 1100, "Face_glasses": 300,
+               "Face_shades": 470, "Shoes_sneakers": 800, "Shoes_boots": 900}
+
+
 def build_parts(rig, m, proxy):
     parts = []
     total = 0
     for name, builder, target, mode in bc.WARDROBE:
+        street_target = target
         ob_builder, ob_target = OVERRIDES.get(name, (None, None))
         builder = ob_builder or builder
         target = ob_target or int(target * TRI_SCALE)
@@ -305,10 +313,17 @@ def build_parts(rig, m, proxy):
                 bpy.ops.object.shade_smooth()
             ob = bc.join(([ob] if ob else []) + list(TRIMS), name)
         bc.weight_part(ob, mode, proxy)
-        bc.bind(ob, rig)
-        parts.append(ob)
+        # The crowd's copy: the same sculpt at the street part's triangle budget.
+        mid = ob.copy()
+        mid.data = ob.data.copy()
+        mid.name = mid.data.name = name + "_mid"
+        bpy.context.scene.collection.objects.link(mid)
+        bc.decimate(mid, MID_TARGETS.get(name, street_target))
+        for o in (ob, mid):
+            bc.bind(o, rig)
+            parts.append(o)
         total += bc.tris(ob)
-        print(f"  {name:16s} {bc.tris(ob):6d} tris", flush=True)
+        print(f"  {name:16s} {bc.tris(ob):6d} tris   mid {bc.tris(mid):5d}", flush=True)
     return parts
 
 

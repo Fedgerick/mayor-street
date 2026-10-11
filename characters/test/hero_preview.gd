@@ -73,6 +73,7 @@ func _ready() -> void:
 			var hl = load("res://characters/scripts/hero_look.gd").new()
 			if args.has("flat"):
 				hl.detail = 0.0
+			hl.mid = args.has("mid")
 			cm.add_child(hl)
 		models.append(cm)
 	var cam := Camera3D.new()

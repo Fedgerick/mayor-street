@@ -70,7 +70,40 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 	check(sp.visual != null and sp.visual.has_node("HeroLook"), "install() upgrades the street player")
-	check(not crowd.has_node("HeroLook"), "install() leaves crowd models alone")
+	check(sp.visual.get_node("HeroLook").mid == false, "the player gets full detail")
+	check(crowd.has_node("HeroLook") and crowd.get_node("HeroLook").mid, "crowd models get mid detail")
+	crowd.lod = 0
+	crowd.set_outfit({"top": "jacket", "bottom": "jeans", "hair": "long", "face": "beard", "hat": ""})
+	await process_frame
+	var plain := CharacterModel._merged_mesh(crowd.part_names(), 0)
+	var plain_tris := 0
+	for s in plain.get_surface_count():
+		plain_tris += plain.surface_get_array_index_len(s) / 3
+	check(crowd.triangle_count() < plain_tris * 1.25, "crowd hero %d triangles vs street %d" % [crowd.triangle_count(), plain_tris])
+	check(crowd.shadow_body.mesh != crowd.get_node("HeroLook")._shadow, "crowd keeps the crowd mesh's cheap shadow")
+	var cnames := []
+	for s in crowd.body.mesh.get_surface_count():
+		cnames.append(crowd.body.mesh.surface_get_name(s))
+	check(not ("Lashes" in cnames), "crowd lashes share the brows' draw call")
+
+	# Dogs: a drop-in for citylife's DogMesh.
+	check(HeroDog.available(), "dog.glb is built")
+	var d0 := HeroDog.build(0)
+	var d1 := HeroDog.build(1)
+	check(d0.get_surface_count() == 1 and d1.get_surface_count() == 1, "one draw call per dog LOD")
+	check(HeroDog.triangle_count(0) < 3000 and HeroDog.triangle_count(1) < HeroDog.triangle_count(0) / 3,
+		"dog LOD0 %d, LOD1 %d triangles" % [HeroDog.triangle_count(0), HeroDog.triangle_count(1)])
+	var a := d0.surface_get_arrays(0)
+	var parts := {}
+	var lo := Vector3(INF, INF, INF)
+	var hi := -lo
+	for i in (a[Mesh.ARRAY_TEX_UV] as PackedVector2Array).size():
+		parts[int(a[Mesh.ARRAY_TEX_UV][i].x + 0.5)] = true
+		lo = lo.min(a[Mesh.ARRAY_VERTEX][i])
+		hi = hi.max(a[Mesh.ARRAY_VERTEX][i])
+	check(parts.size() == 7, "all seven parts tagged for the trot (%d)" % parts.size())
+	check(absf(lo.y) < 0.02 and hi.y > 0.55 and hi.y < 0.75 and lo.z < -0.55 and hi.z > 0.3,
+		"dog size and facing match DogMesh (%s .. %s)" % [lo, hi])
 
 	# Animation still drives the hero mesh: the hand moves when the arm does.
 	var bone := cm.skeleton.find_bone("LowerArm.L")

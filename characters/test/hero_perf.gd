@@ -1,7 +1,8 @@
 extends Node
 ## Cost of HeroLook on the street: the street test bed (player/test/street_test.tscn) with
 ## traffic and people, at street level, measured with and without the hero look.
-##   godot --rendering-driver vulkan -w res://characters/test/hero_perf.tscn -- --street --life [--hero] [--shot=PATH]
+##   godot --rendering-driver vulkan -w res://characters/test/hero_perf.tscn -- --street --life [--hero] [--dogs] [--shot=PATH]
+## --hero installs HeroLook on everyone; --dogs swaps the crowd's dogs for HeroDog.
 ## Prints draw calls, triangles and frame time over 30 frames after a settle.
 
 func _ready() -> void:
@@ -12,6 +13,13 @@ func _ready() -> void:
 	add_child(bed)
 	for i in 100:
 		await get_tree().process_frame
+	if "--dogs" in args and bed.life:
+		for n in bed.life.find_children("Dogs", "MultiMeshInstance3D", true, false):
+			n.multimesh.mesh = HeroDog.build()
+	var heroes := 0
+	for n in bed.find_children("HeroLook", "", true, false):
+		heroes += 1
+	print("hero looks: ", heroes)
 	var player: Node = bed.street.player
 	print("hero look on: ", player.visual.has_node("HeroLook"), "  player tris: ", player.visual.triangle_count())
 	var draws := 0.0

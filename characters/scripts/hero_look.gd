@@ -1,17 +1,19 @@
 class_name HeroLook
 extends Node
-## The high-detail look for the person the camera follows: the player on foot and the
-## character creator's preview. Add it as a child of a CharacterModel (player/), or call
-## HeroLook.install(get_tree()) once and it finds those two models by itself.
+## The detailed look for people: the person the camera follows (the player on foot and the
+## character creator's preview) at full detail, and everyone else close up (crowd heroes,
+## police, mission crews) at `mid` detail. Add it as a child of a CharacterModel (player/),
+## or call HeroLook.install(get_tree()) once and it finds every model by itself.
 ##
 ## While the model draws its close-up mesh (LOD0), HeroLook swaps in the same outfit built
-## from characters/assets/hero.glb (characters/tools/build_hero.py): about 2.5x the
-## triangles, a sculpted face, eyes with irises, clothes trims, and materials from
-## characters/shaders/ (wrap-lit skin, knit, denim, fleece, hair strands, stitching).
-## It re-applies itself after every re-dress (`dressed`) and LOD swap, and steps aside at
-## LOD1, so the crowd mesh, shadow caster and animations are CharacterModel's as before.
-## Cost: one model at ~25k triangles and up to ~15 draw calls instead of ~9k and ~8; its
-## shadow is still one draw call per shadow pass, at ~23k triangles instead of 1.5k.
+## from characters/assets/hero.glb (characters/tools/build_hero.py): a sculpted face, eyes
+## with irises, clothes trims, and materials from characters/shaders/ (wrap-lit skin, knit,
+## denim, fleece, hair strands, stitching). It re-applies itself after every re-dress
+## (`dressed`) and LOD swap, and steps aside at LOD1, so the crowd mesh and animations are
+## CharacterModel's as before.
+## Cost, full: ~25k triangles and up to ~15 draw calls instead of ~9k and ~8.
+## Cost, mid: ~10k triangles (the street parts' budget, a little more for the face) and up
+## to ~14 draw calls. Either way the shadow is one draw call per shadow pass.
 
 const SCENE := "res://characters/assets/hero.glb"
 const SKIN_SHADER := preload("res://characters/shaders/hero_skin.gdshader")
@@ -27,6 +29,11 @@ const IRIS_WEIGHT := [5.0, 3.0, 2.0, 2.0, 1.0, 0.5]
 @export var iris := Color(0, 0, 0, 0)
 ## Painted fabric and skin detail (0 = flat colours, for the Low graphics level).
 @export var detail := 1.0
+## Crowd detail: the hero parts decimated to the street parts' triangle budget.
+@export var mid := false
+## Crowd models cast their shadow from their own mid shape too (~9k triangles per shadow
+## pass instead of 1.5k); off by default.
+static var shadow_mid := false
 
 var cm: CharacterModel
 var _mesh: ArrayMesh
@@ -38,6 +45,8 @@ static var _skin: Skin
 static var _ok := false
 static var _tried := false
 static var _built := {}       # parts key -> [ArrayMesh, shadow ArrayMesh]
+static var _rest := {}        # "part#surface" -> its arrays with the rest pose baked in
+const BUILT_MAX := 48         # outfits kept merged; crowd outfits come and go
 static var _mats := {}        # material key -> ShaderMaterial
 
 
@@ -45,7 +54,8 @@ static func available() -> bool:
 	return ResourceLoader.exists(SCENE)
 
 
-## Upgrade the player's model and the creator preview whenever they appear in `tree`.
+## Upgrade every CharacterModel that appears in `tree`: the player's and the creator
+## preview's at full detail, everyone else's at mid detail.
 static func install(tree: SceneTree) -> void:
 	if not available() or tree.node_added.is_connected(_on_node_added):
 		return
@@ -65,13 +75,13 @@ static func _maybe_attach(n: Node) -> void:
 	while p and not follow:
 		follow = p is CharacterCreator
 		p = p.get_parent()
-	if follow:
-		attach(n as CharacterModel)
+	attach(n as CharacterModel, not follow)
 
 
-static func attach(model: CharacterModel) -> HeroLook:
+static func attach(model: CharacterModel, crowd := false) -> HeroLook:
 	var h := HeroLook.new()
 	h.name = "HeroLook"
+	h.mid = crowd
 	model.add_child(h)
 	return h
 
@@ -135,6 +145,13 @@ static func _load() -> bool:
 			_ok = false
 	if not _ok:
 		push_warning("HeroLook: hero.glb's rig doesn't match the street rig; keeping the street look")
+	else:
+		# Bake every part's rest pose now, while the city loads, so a crowd person getting a
+		# new outfit only merges arrays (as CharacterModel already does) and never stalls.
+		for pn in _parts:
+			var list: Array = _parts[pn]
+			for i in list.size():
+				_rest[pn + "#" + str(i)] = _with_rest(list[i][1])
 	root.free()
 	street.free()
 	return _ok
@@ -144,20 +161,24 @@ func _apply() -> void:
 	if cm == null or cm.body == null or cm.current_lod() != 0:
 		return
 	var names := cm.part_names()
-	var key := ",".join(names)
+	var key := ",".join(names) + ("@mid" if mid else "@full")
 	if not _built.has(key):
-		_built[key] = _build(names)
+		if _built.size() >= BUILT_MAX:
+			_built.erase(_built.keys()[0])   # oldest first; models wearing it keep their copy
+		_built[key] = _build(names, mid)
 	_mesh = _built[key][0]
 	_shadow = _built[key][1]
 	_key = key
 	cm.body.mesh = _mesh
 	cm.body.skin = _skin
-	# The shadow comes from the hero shape itself, merged into one surface so it costs one
-	# draw per shadow pass: the crowd mesh's shadow doesn't hug the hero mesh and darkened
-	# it in patches (hair, cheeks) wherever the two shapes part.
+	# The player's shadow comes from the hero shape itself, merged into one surface so it
+	# costs one draw per shadow pass: the crowd mesh's shadow doesn't hug the hero mesh and
+	# darkened it in patches (hair, cheeks) wherever the two shapes part. Crowd people
+	# keep the 1.5k-triangle crowd mesh's shadow: a dozen of them, further away.
 	cm.body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	cm.shadow_body.mesh = _shadow
-	cm.shadow_body.skin = _skin
+	if not mid or shadow_mid:
+		cm.shadow_body.mesh = _shadow
+		cm.shadow_body.skin = _skin
 	cm.shadow_body.visible = true
 	for s in _mesh.get_surface_count():
 		cm.body.set_surface_override_material(s, _material(_mesh.surface_get_name(s)))
@@ -166,26 +187,37 @@ func _apply() -> void:
 ## Merge the outfit's hero parts into one surface per material, with the rest pose
 ## baked in for the shaders (position in UV and UV2.x, normal in COLOR), plus the whole
 ## outfit as one plain surface for the shadow.
-static func _build(names: PackedStringArray) -> Array:
+static func _build(names: PackedStringArray, crowd: bool) -> Array:
 	var by_slot := {}
 	for pn in names:
-		for entry in _parts.get(pn, []):
-			var slot: String = entry[0]
+		var part := pn + "_mid" if crowd and _parts.has(pn + "_mid") else pn
+		var list: Array = _parts.get(part, [])
+		for i in list.size():
+			var slot: String = list[i][0]
+			if crowd and slot == "Lashes":
+				slot = "Brows"   # one draw call fewer; at crowd distance they read the same
 			if not by_slot.has(slot):
 				by_slot[slot] = []
-			by_slot[slot].append(_with_rest(entry[1]))
+			var rk := part + "#" + str(i)
+			if not _rest.has(rk):
+				_rest[rk] = _with_rest(list[i][1])
+			by_slot[slot].append(_rest[rk])
 	var out := ArrayMesh.new()
 	var all := []
+	# The shadow always comes from the mid parts: the same shape in fewer triangles.
+	for pn in names:
+		var sp := pn + "_mid" if _parts.has(pn + "_mid") else pn
+		var sl: Array = _parts.get(sp, [])
+		for i in sl.size():
+			if not sl[i][0] in ["Lens", "Iris", "EyeWhite", "Mouth", "Lashes"]:   # too small to show
+				var bare: Array = (sl[i][1] as Array).duplicate()
+				for idx in [Mesh.ARRAY_TEX_UV, Mesh.ARRAY_TEX_UV2, Mesh.ARRAY_COLOR]:
+					bare[idx] = null
+				all.append(bare)
 	for slot in SLOTS:
 		if by_slot.has(slot):
 			out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, CharacterModel._concat(by_slot[slot]))
 			out.surface_set_name(out.get_surface_count() - 1, slot)
-			if not slot in ["Lens", "Iris", "EyeWhite", "Mouth", "Lashes"]:   # too small to show in a shadow
-				for a in by_slot[slot]:
-					var bare: Array = (a as Array).duplicate()
-					for idx in [Mesh.ARRAY_TEX_UV, Mesh.ARRAY_TEX_UV2, Mesh.ARRAY_COLOR]:
-						bare[idx] = null
-					all.append(bare)
 	var shadow := ArrayMesh.new()
 	shadow.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, CharacterModel._concat(all))
 	return [out, shadow]
