@@ -28,7 +28,12 @@ const IRIS_WEIGHT := [5.0, 3.0, 2.0, 2.0, 1.0, 0.5]
 ## Iris colour; leave transparent to pick one from the model's seed.
 @export var iris := Color(0, 0, 0, 0)
 ## Painted fabric and skin detail (0 = flat colours, for the Low graphics level).
-@export var detail := 1.0
+@export var detail := 1.0:
+	set(v):
+		if v != detail:
+			detail = v
+			if cm and is_inside_tree():
+				_apply()   # materials carry the detail, so remake them
 ## Crowd detail: the hero parts decimated to the street parts' triangle budget.
 @export var mid := false
 ## Crowd models cast their shadow from their own mid shape too (~9k triangles per shadow

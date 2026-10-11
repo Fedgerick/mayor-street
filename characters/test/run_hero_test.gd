@@ -39,6 +39,10 @@ func _init() -> void:
 	check(cm.shadow_body.visible and cm.shadow_body.mesh == h._shadow and cm.shadow_body.skin == HeroLook._skin
 		and cm.shadow_body.mesh.get_surface_count() == 1, "the shadow is the hero shape in one draw call")
 
+	h.detail = 0.0
+	check(cm.body.get_surface_override_material(0).get_shader_parameter("detail") == 0.0, "detail 0 applies at once")
+	h.detail = 1.0
+
 	# Re-dressing rebuilds the hero mesh for the new outfit.
 	cm.set_outfit({"top": "tank", "face": "shades", "hat": "cap"})
 	await process_frame
