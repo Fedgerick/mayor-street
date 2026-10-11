@@ -199,6 +199,9 @@ func _start(demo: bool, save := {}) -> void:
 	add_child(street)
 	street.setup(city)  # registers its own save section, "street"
 	_warm_street_fx()
+	var tow := TowService.new()  # tow trucks fetch flipped and burnt-out cars (vehicles/)
+	tow.setup(city, street)
+	add_child(tow)
 	street.set_life(life)  # carjacking, people and cops as targets, police chases
 	interiors = InteriorManager.new()
 	interiors.name = "Interiors"
