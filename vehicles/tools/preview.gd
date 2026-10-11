@@ -187,6 +187,18 @@ func _run() -> void:
 		car(VehicleKit.mesh("car_taxi"), Vector3(5, 0, -4), deg_to_rad(145), Color.WHITE)
 		look(Vector3(-3.5, 2.6, 8.0), Vector3(0, 0.8, -1), 52)
 		await shot("night")
+	if want("tow"):
+		_stage()
+		var yaw := deg_to_rad(150)
+		var b := Basis(Vector3.UP, yaw)
+		car(VehicleKit.mesh("car_tow"), Vector3(0, 0, 0), yaw, Color.WHITE, VehicleKit.custom(true, false, false, false, 0.0, 0.2, 0.0))
+		car(VehicleKit.mesh("car_sedan"), b * Vector3(0, 1.12, 1.575), yaw, TINTS[1])
+		car(VehicleKit.damaged("car_pickup", 3), Vector3(-8.5, 0, -3), deg_to_rad(110), TINTS[0])
+		look(Vector3(11.0, 4.2, -9.0), Vector3(-1.5, 1.2, 0.5), 50)
+		await shot("tow")
+		_night(true)
+		look(Vector3(8.0, 3.4, -8.5), Vector3(0, 1.4, 0.5), 50)
+		await shot("tow_night")
 	if want("old") and kit:
 		_stage()
 		car(kit.mesh("car_sedan") if kit.meshes.has("car_sedan") else null, Vector3(0, 0, 0), deg_to_rad(145), TINTS[0])
