@@ -113,9 +113,9 @@ func setup(road_net: RoadNet, seed_value := 11) -> void:
 	var dm := MultiMesh.new()
 	dm.transform_format = MultiMesh.TRANSFORM_3D
 	dm.use_custom_data = true
-	dm.mesh = DogMesh.build()
+	dm.mesh = HeroDog.build() if HeroDog.available() else DogMesh.build()
 	var dmat := ShaderMaterial.new()
-	dmat.shader = DOG_SHADER
+	dmat.shader = preload("res://characters/dogs/hero_dog.gdshader") if HeroDog.available() else DOG_SHADER
 	dm.mesh.surface_set_material(0, dmat)
 	dm.instance_count = max_dogs
 	dm.visible_instance_count = 0
