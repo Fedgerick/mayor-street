@@ -197,6 +197,7 @@ func _start(demo: bool, save := {}) -> void:
 	street = preload("res://player/scenes/street_mode.tscn").instantiate()
 	add_child(street)
 	street.setup(city)  # registers its own save section, "street"
+	_warm_street_fx()
 	street.set_life(life)  # carjacking, people and cops as targets, police chases
 	interiors = InteriorManager.new()
 	interiors.name = "Interiors"
@@ -515,6 +516,25 @@ func _set_quality(q: int) -> void:
 	if rain_fx:
 		rain_fx.set_quality(q)
 	_hero_detail()
+
+
+func _warm_street_fx() -> void:
+	## Makes every street effect once, far under the city, while the game loads: the first
+	## smoke or explosion compiled its materials mid-chase, a 0.3 s freeze on the laptop
+	## (0.4.8 benchmark, "StreetMode / Cars 303.7 ms").
+	var warm := Node3D.new()
+	warm.name = "FxWarmUp"
+	add_child(warm)
+	warm.position = Vector3(0, -400, 0)
+	var at := warm.global_position
+	StreetFx.tracer(warm, at, at + Vector3(0, 0, 4))
+	StreetFx.muzzle(warm, at, Vector3.FORWARD)
+	StreetFx.muzzle(warm, at, Vector3.FORWARD, true)
+	StreetFx.puff(warm, at, Color(0.5, 0.1, 0.1, 0.8))
+	StreetFx.explosion(warm, at)
+	for p in [StreetFx.smoke(false), StreetFx.smoke(true), StreetFx.fire()]:
+		warm.add_child(p)
+	get_tree().create_timer(3.0).timeout.connect(warm.queue_free)
 
 
 func _hero_detail() -> void:
