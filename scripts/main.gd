@@ -86,6 +86,7 @@ func _ready() -> void:
 		_args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	# A load restarts this scene with the save waiting in Progress.
 	var save := Progress.take_pending_load()
+	HeroLook.install(get_tree())  # the player's high-detail look (characters/), before StreetMode and the creator
 	city = City.new(int(save.city.get("seed", 1337))) if not save.is_empty() else City.new()
 	city.message.connect(func(t): hud.show_toast(t))
 	day_night = DayNight.new()
@@ -422,6 +423,7 @@ func _update_detail() -> void:
 func _on_street_entered() -> void:
 	day_night.set_view_distance(30.0)
 	view.set_detail_distance(STREET_DETAIL[quality])
+	_hero_detail()
 	day_night.exposure_scale = 1.25
 	day_night.ambient_scale = 1.4
 	_update_hint()
@@ -512,6 +514,15 @@ func _set_quality(q: int) -> void:
 		life.crowd.hero_max = HERO_MAX[q]
 	if rain_fx:
 		rain_fx.set_quality(q)
+	_hero_detail()
+
+
+func _hero_detail() -> void:
+	## Low graphics drops the player's painted clothes and skin detail (characters/ HeroLook).
+	var p = street.get("player") if street else null
+	var look = p.visual.get_node_or_null("HeroLook") if p and p.visual else null
+	if look:
+		look.detail = 0.0 if quality == 0 else 1.0
 
 
 # ------------------------------------------------------------------- input ---
