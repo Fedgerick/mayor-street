@@ -21,7 +21,14 @@ const SAG := 0.15   # expected suspension compression at rest, so the kit wheels
 const MAX_HEALTH := 1000.0
 const SMOKE_AT := 400.0     # engine smokes below this
 const BURN_SECONDS := 4.5   # on fire this long before it blows
-const CRASH_DV := 7.0       # a sudden speed change above this (m/s) dents the car
+const CRASH_DV := 9.0       # a sudden speed change above this (m/s) dents the car
+const CRASH_DAMAGE := 16.0  # health lost per m/s above CRASH_DV
+const HEFT := 1.4           # spec masses are scaled by this, with engine and brakes to match
+const SETTLE_TIME := 0.3    # a new car ignores the AI stand-ins this long (it can appear on top of one)
+const MAX_KICK_UP := 3.0    # m/s of upward speed one frame may add (depenetration, kerbs) before it is clamped
+const MAX_SPIN := 5.0       # rad/s, any axis, unless the car is wrecked
+const TIP_DAMP := 3.5       # per second: roll and pitch spin bleeds off on the ground, so it won't tumble
+const RIGHTING := 9000.0    # N m per radian past 25 degrees of lean, per tonne: pushes a tipping car back down
 
 const MODELS := {
 	# model: [wheel radius, front axle z, rear axle z, half track, mass, max engine force, top speed m/s]
@@ -114,20 +121,24 @@ func _ready() -> void:
 	var spec: Array = MODELS.get(model, MODELS["car_sedan"])
 	_radius = spec[0]
 	_feel = FEEL.get(model, FEEL["default"])
-	mass = spec[4]
-	_engine = spec[5]
+	mass = spec[4] * HEFT
+	_engine = spec[5] * HEFT
 	_top_speed = spec[6]
 	steer_speed = _feel.steer
 	# Heavy vehicles need more brake to stop at all, but still take longer.
 	brake_force = 40.0 * pow(mass / 1250.0, 0.75)
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	center_of_mass = Vector3(0, 0.45, 0.1)
+	center_of_mass = Vector3(0, 0.3, 0.05)   # low, so it doesn't tip over on a kerb
 	angular_damp = 1.5
 	linear_damp = 0.05
 	continuous_cd = true
 	can_sleep = true
 	_build_visual()
 	_build_body(spec)
+	# Settle: a car spawned over an AI car's stand-in (carjack, knock-out) would be shoved
+	# out of it by the solver and fly. It ignores the stand-ins until they are gone.
+	collision_mask = 1 | LAYER
+	get_tree().create_timer(SETTLE_TIME, true, true).timeout.connect(_end_settle)
 	rig = OrbitRig.new()
 	rig.name = "Rig"
 	rig.target = self
@@ -298,7 +309,7 @@ func _build_body(spec: Array) -> void:
 			w.damping_compression = 0.8
 			w.damping_relaxation = 1.1
 			w.wheel_friction_slip = 2.6 * _feel.grip
-			w.wheel_roll_influence = 0.15
+			w.wheel_roll_influence = 0.06
 			w.use_as_steering = ax[1]
 			w.use_as_traction = true
 			add_child(w)
@@ -404,7 +415,44 @@ func _set_damage(stage: int) -> bool:
 	return _dmg_mesh == stage
 
 
+func _end_settle() -> void:
+	if is_inside_tree():
+		collision_mask = 1 | LAYER | 16   # 16: StreetBodies.TRAFFIC_LAYER
+
+
+func _steady_body(delta: float) -> void:
+	## Keeps the physics believable: no free energy from the contact solver, no tumbling.
+	if wrecked:
+		return
+	var v := linear_velocity
+	var vy_cap := maxf(_last_vel.y, 0.0) + MAX_KICK_UP
+	if v.y > vy_cap:
+		v.y = vy_cap
+		linear_velocity = v
+	var grounded := false
+	for wh in _wheels:
+		if wh.is_in_contact():
+			grounded = true
+			break
+	if grounded:
+		# Roll and pitch spin about the car's own axes bleeds off (yaw is left alone). Done
+		# with torques: assigning angular_velocity every frame fights the wheel solver.
+		var local := global_basis.inverse() * angular_velocity
+		var damp := Vector3(local.x, 0.0, local.z) * TIP_DAMP * mass * 1.2
+		apply_torque(-(global_basis * damp))
+		# Past ~25 degrees of lean, push back toward flat.
+		var up := global_basis.y
+		var lean := acos(clampf(up.dot(Vector3.UP), -1.0, 1.0))
+		if lean > 0.44 and lean < 1.9:
+			var axis := up.cross(Vector3.UP)
+			if axis.length() > 0.001:
+				apply_torque(axis.normalized() * (lean - 0.44) * RIGHTING * (mass / 1000.0))
+	if angular_velocity.length() > MAX_SPIN:
+		angular_velocity = angular_velocity.normalized() * MAX_SPIN
+
+
 func _physics_process(delta: float) -> void:
+	_steady_body(delta)
 	# Crash damage from sudden changes in velocity.
 	var dv := (linear_velocity - _last_vel).length()
 	if delta > 0.0:
@@ -417,7 +465,7 @@ func _physics_process(delta: float) -> void:
 		_heave.y -= minf(dv * 0.08, 0.6)
 		_pitch.y += randf_range(-1.0, 1.0) * minf(dv * 0.04, 0.4)
 	if dv > CRASH_DV and delta > 0.0:
-		take_hit((dv - CRASH_DV) * 28.0)
+		take_hit((dv - CRASH_DV) * CRASH_DAMAGE)
 	_body_motion(delta)
 	if burning:
 		_burn += delta
