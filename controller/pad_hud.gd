@@ -78,7 +78,8 @@ func _process(delta: float) -> void:
 		_stick_quick()
 		return
 	_t = 0.0
-	var show := pad.using_pad and pad.mode != &"bench"
+	# Shown as soon as a pad is plugged in, so the buttons are labelled before the first press.
+	var show := (pad.using_pad or not Input.get_connected_joypads().is_empty()) and pad.mode != &"bench"
 	_fade_keyboard_hints(show)
 	_bar.visible = show and not quick_open() and not card_open()
 	_context.visible = _bar.visible
@@ -125,7 +126,15 @@ func _fill(box: HBoxContainer, rows: Array, px: float, fs := 15) -> void:
 		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 		l.add_theme_constant_override("outline_size", 5)
 		item.add_child(l)
-		box.add_child(item)
+		var pill := PanelContainer.new()
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0, 0, 0, 0.55)
+		sb.set_corner_radius_all(8)
+		sb.set_content_margin_all(5)
+		pill.add_theme_stylebox_override("panel", sb)
+		pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pill.add_child(item)
+		box.add_child(pill)
 	_place.call_deferred()
 
 
@@ -424,7 +433,8 @@ const LAYOUT := {
 		[[PadGlyphs.LS], "Move the pointer (push the edge to scroll)"],
 		[[PadGlyphs.RS], "Pan the city"], [[JOY_BUTTON_LEFT_STICK], "Hold to pan faster"],
 		[[PadGlyphs.RT], "Zoom in"], [[PadGlyphs.LT], "Zoom out"], [[PadGlyphs.LB_RB], "Rotate"],
-		[[JOY_BUTTON_RIGHT_STICK], "Level the camera"],
+		[[JOY_BUTTON_RIGHT_STICK], "Tap: level the camera"],
+		[[JOY_BUTTON_RIGHT_STICK, PadGlyphs.RS], "Hold, then push the stick up or down: tilt"],
 		[[JOY_BUTTON_A], "Select, place, hold and drag to zone"], [[JOY_BUTTON_B], "Drop the tool"],
 		[[JOY_BUTTON_X], "Build menu"], [[JOY_BUTTON_Y], "Next overlay"],
 		[[JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT], "Tools"],

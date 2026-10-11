@@ -42,6 +42,8 @@ var _back_since := -1.0
 var _a_down := false
 var _x_down := false
 var _release := []           # keys to let go next frame
+var _r3_down := false        # right stick click held (tilt while held, level on a plain tap)
+var _r3_tilted := false
 var _scroll_acc := Vector2.ZERO
 var _mine: Array[InputEvent] = []  # keys made here, on their way through (keys keep device 0:
                                    # InputMap only matches actions on their own device)
@@ -281,8 +283,9 @@ func _menu_button(b: int, down: bool) -> bool:
 			if down:
 				jump_cursor(_dpad_dir(b))
 		JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER:
+			# Bumpers step through the buttons, like the d-pad's up and down (the right stick scrolls).
 			if down:
-				wheel(MOUSE_BUTTON_WHEEL_UP if b == JOY_BUTTON_LEFT_SHOULDER else MOUSE_BUTTON_WHEEL_DOWN)
+				jump_cursor(Vector2.UP if b == JOY_BUTTON_LEFT_SHOULDER else Vector2.DOWN)
 		_:
 			return b != JOY_BUTTON_BACK
 	return true
@@ -564,8 +567,9 @@ func _camera_step(delta: float) -> void:
 		return
 	var moved := false
 	var fast := 2.5 if Input.is_joy_button_pressed(device, binds.physical(JOY_BUTTON_LEFT_STICK)) else 1.0
+	var r3 := Input.is_joy_button_pressed(device, binds.physical(JOY_BUTTON_RIGHT_STICK))
 	# Pan: right stick, or the cursor pushed into the screen edge.
-	var pan := _stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
+	var pan := _stick(binds.pan_axis, (binds.pan_axis + 1) as JoyAxis)
 	var vs := get_viewport().get_visible_rect().size
 	var ls := _stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y)
 	if ls != Vector2.ZERO:
@@ -573,6 +577,8 @@ func _camera_step(delta: float) -> void:
 			pan.x += ls.x
 		if (cursor.y <= EDGE and ls.y < 0.0) or (cursor.y >= vs.y - 1.0 - EDGE and ls.y > 0.0):
 			pan.y += ls.y
+	if r3:
+		pan.y = 0.0  # held R3: the right stick's up and down tilt instead
 	if pan != Vector2.ZERO:
 		var yaw: float = cam._yaw_goal
 		var fwd := Vector3(-sin(yaw), 0, -cos(yaw))
@@ -590,10 +596,19 @@ func _camera_step(delta: float) -> void:
 	if rot != 0.0:
 		cam._yaw_goal += rot * delta * 1.6
 		moved = true
-	# Tilt: right stick click and up/down... kept simple: R3 resets the tilt.
-	if Input.is_joy_button_pressed(device, binds.physical(JOY_BUTTON_RIGHT_STICK)) and absf(float(cam._tilt_goal)) > 0.001:
+	# Tilt: hold R3 and push the right stick up or down. A plain tap of R3 levels the camera.
+	if r3:
+		var ty := Input.get_joy_axis(device, (binds.pan_axis + 1) as JoyAxis)
+		if absf(ty) > DEAD:
+			cam._tilt_goal = clampf(float(cam._tilt_goal) - ty * delta * 1.2, -0.35, 0.5)
+			_r3_tilted = true
+			moved = true
+	elif _r3_down and not _r3_tilted and absf(float(cam._tilt_goal)) > 0.001:
 		cam._tilt_goal = 0.0
 		moved = true
+	if not r3:
+		_r3_tilted = false
+	_r3_down = r3
 	if moved:
 		_motion(Vector2.ZERO)  # the ground under the cursor changed: update the build preview
 

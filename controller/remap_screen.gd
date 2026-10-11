@@ -106,6 +106,9 @@ func _rebuild() -> void:
 			var on_pad: bool = _pick.get("role", -1) == role
 			var text := "Press a button..." if on_pad else PadGlyphs.label(pad.family, pad.binds.physical(role))
 			_list.add_child(_row(PadBindings.PAD_ROLE_NAMES[role], text, _start_pad.bind(role)))
+		var on_axis: bool = _pick.has("axis")
+		var axis_text := "Push the stick..." if on_axis else "Stick: axes %d and %d" % [pad.binds.pan_axis, pad.binds.pan_axis + 1]
+		_list.add_child(_row("Pan the city with this stick (right stick on most pads)", axis_text, _start_axis))
 	else:
 		for row in PadBindings.ROWS[_tab]:
 			var on_key: bool = _pick.get("id", &"") == row[0] and _pick.get("mode", &"") == _tab
@@ -135,6 +138,8 @@ func _show_note() -> void:
 		_note.text = "Pick a control, then press the key or button to use for it. Esc closes this."
 	elif _pick.has("role"):
 		_note.text = "Press the button to use for this. Start cancels."
+	elif _pick.has("axis"):
+		_note.text = "Push the stick you want to pan with, all the way. Start cancels."
 	else:
 		_note.text = "Press the key to use for this. Esc cancels. Pad buttons can't set keys; use the keyboard here."
 
@@ -152,6 +157,11 @@ func _start_key(mode: StringName, id: StringName) -> void:
 
 func _start_pad(role: int) -> void:
 	_pick = {"role": role}
+	_rebuild()
+
+
+func _start_axis() -> void:
+	_pick = {"axis": true}
 	_rebuild()
 
 
@@ -191,6 +201,12 @@ func _input(e: InputEvent) -> void:
 				_cancel()
 			elif _pick.has("role"):
 				pad.binds.set_pad(_pick.role, b)
+				_done()
+			get_viewport().set_input_as_handled()
+		elif e is InputEventJoypadMotion and _pick.has("axis") and absf((e as InputEventJoypadMotion).axis_value) > 0.6:
+			var a := (e as InputEventJoypadMotion).axis
+			if a <= JOY_AXIS_RIGHT_Y:  # the sticks only: the triggers are not a pan stick
+				pad.binds.set_pan_stick(a)
 				_done()
 			get_viewport().set_input_as_handled()
 		elif e is InputEventMouseButton and e.pressed:

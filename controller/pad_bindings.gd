@@ -84,6 +84,7 @@ const PAD_ROLE_NAMES := {
 }
 
 var keys := {}  # mode -> {row id -> bound key}
+var pan_axis := JOY_AXIS_RIGHT_X  # the stick that pans the mayor view: its X axis (Y is the next one)
 var pad := {}   # role button -> the physical button it is on
 var _installed := {}  # InputMap action -> key currently installed for it
 
@@ -93,6 +94,7 @@ func _init() -> void:
 
 
 func reset() -> void:
+	pan_axis = JOY_AXIS_RIGHT_X
 	keys.clear()
 	for mode in ROWS:
 		var m := {}
@@ -163,6 +165,12 @@ func physical(role: int) -> int:
 	return pad.get(role, role)
 
 
+## The stick that pans: picked by pushing it on the remap screen. Pads report each stick as
+## an X axis then a Y axis (0 and 1 for the left, 2 and 3 for the right).
+func set_pan_stick(axis: int) -> void:
+	pan_axis = (axis & ~1) as JoyAxis
+
+
 func set_pad(role: int, physical_button: int) -> void:
 	for other in pad:
 		if other != role and pad[other] == physical_button:
@@ -220,6 +228,7 @@ func save_to(cf: ConfigFile) -> void:
 			cf.set_value("keys", "%s.%s" % [mode, id], keys[mode][id])
 	for role in pad:
 		cf.set_value("pad_buttons", str(role), pad[role])
+	cf.set_value("pad", "pan_axis", pan_axis)
 
 
 func load_from(cf: ConfigFile) -> void:
@@ -230,4 +239,5 @@ func load_from(cf: ConfigFile) -> void:
 			keys[mode][id] = k
 	for role in pad.keys():
 		pad[role] = int(cf.get_value("pad_buttons", str(role), role))
+	pan_axis = int(cf.get_value("pad", "pan_axis", JOY_AXIS_RIGHT_X)) as JoyAxis
 	apply_input_map()

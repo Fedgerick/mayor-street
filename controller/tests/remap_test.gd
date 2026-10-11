@@ -48,6 +48,13 @@ func _initialize() -> void:
 	check(p.physical(JOY_BUTTON_A) == JOY_BUTTON_Y, "physical(A) is Y")
 	check(p.role_of(JOY_BUTTON_START) == JOY_BUTTON_START, "Start is never remapped")
 
+	# The pan stick: pushing either axis of a stick picks that stick's X axis.
+	check(b.pan_axis == JOY_AXIS_RIGHT_X, "the right stick pans by default")
+	b.set_pan_stick(JOY_AXIS_LEFT_Y)
+	check(b.pan_axis == JOY_AXIS_LEFT_X, "pushing the left stick's Y axis picks the left stick")
+	b.set_pan_stick(JOY_AXIS_RIGHT_Y)
+	check(b.pan_axis == JOY_AXIS_RIGHT_X, "pushing the right stick's Y axis picks the right stick")
+
 	# Saved bindings come back as they were.
 	var cf := ConfigFile.new()
 	b.save_to(cf)
@@ -56,6 +63,10 @@ func _initialize() -> void:
 	c.load_from(cf)
 	check(c.bound_key(&"mayor", &"build") == KEY_B, "a saved key comes back")
 	check(c.physical(JOY_BUTTON_A) == JOY_BUTTON_Y, "a saved pad button comes back")
+	b.set_pan_stick(JOY_AXIS_LEFT_X)
+	b.save_to(cf)
+	c.load_from(cf)
+	check(c.pan_axis == JOY_AXIS_LEFT_X, "the pan stick comes back")
 
 	b.reset()
 	check(b.bound_key(&"mayor", &"build") == KEY_B and b.translate_key(&"mayor", KEY_W) == KEY_W, "reset restores the defaults")
