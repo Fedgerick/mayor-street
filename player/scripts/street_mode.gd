@@ -177,6 +177,7 @@ func enter_street(from_camera: Camera3D, ground_point: Vector3) -> void:
 	player.visible = true
 	refresh_perks()
 	player.set_in_vehicle(false)
+	player.visual.set_sitting(false)
 	player.set_controls(false)
 	# Face the way the mayor camera looks, so the dive swings in from the same side.
 	var f := -from_camera.global_basis.z
@@ -212,6 +213,8 @@ func exit_street(to: Transform3D, to_fov := 45.0) -> void:
 		return
 	busy = true
 	active = false
+	while switching:   # halfway into a car: finish getting in, then climb back out
+		await get_tree().physics_frame
 	if car:
 		_leave_car()
 	player.set_controls(false)
@@ -354,6 +357,8 @@ func _enter_car(c: DrivableCar) -> void:
 		player.face(lerp_angle(player.facing_yaw(), yaw, k))
 		player.visual.animate(1.0 / 60.0, 2.5, true, 0.0, 0.0)
 		await get_tree().physics_frame
+		if car != c:
+			return _enter_cut_short(c)
 	player.visual.set_sitting(true)
 	player.visual.play_enter_car()
 	var dur := player.visual.clip_length("EnterCar")
@@ -364,9 +369,18 @@ func _enter_car(c: DrivableCar) -> void:
 		player.global_position = door.lerp(c.seat_point(), k * k * (3.0 - 2.0 * k))
 		player.face(c.heading_yaw())
 		await get_tree().physics_frame
+		if car != c:
+			return _enter_cut_short(c)
 	camera.blend_to(c.rig, 0.8)
 	player.rig.spring.remove_excluded_object(c.get_rid())
 	player.set_in_vehicle(true)
+	c.set_physics_process(true)
+	switching = false
+
+
+func _enter_cut_short(c: DrivableCar) -> void:
+	## Killed or busted halfway into the car: _eject already put the player on foot.
+	player.rig.spring.remove_excluded_object(c.get_rid())
 	c.set_physics_process(true)
 	switching = false
 
@@ -979,6 +993,7 @@ func _eject(c: DrivableCar) -> void:
 	car = null
 	c.set_driver(null)
 	player.set_in_vehicle(false)
+	player.visual.set_sitting(false)   # or the player wakes up in the car seat pose
 	player.place(p, c.heading_yaw())
 	camera.blend_to(player.rig, 0.4)
 	vehicle_changed.emit(null)
@@ -1042,6 +1057,7 @@ func _respawn(at: Vector3, wake := Callable()) -> void:
 	heat.clear()
 	_last_stars = 0
 	player.revive()
+	player.visual.set_sitting(false)
 	player.place(at, player.rig.yaw)
 	if wake.is_valid():
 		await wake.call()
