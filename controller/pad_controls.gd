@@ -42,6 +42,9 @@ var _back_since := -1.0
 var _a_down := false
 var _x_down := false
 var _release := []           # keys to let go next frame
+var _slot := 0             # the d-pad's place on the tool bar (6 is Build)
+var _tool_seen := 0
+var _sprint_on := false       # street: L3 toggles sprinting
 var _r3_down := false        # right stick click held (tilt while held, level on a plain tap)
 var _r3_tilted := false
 var _scroll_acc := Vector2.ZERO
@@ -308,10 +311,18 @@ func _mayor_button(b: int, down: bool) -> bool:
 				tap(KEY_ESCAPE)  # drops the drag, the build menu, then the tool
 		JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT:
 			if down:
-				var t := int(main.get("tool"))
-				var n := 6  # Inspect, Road, Res, Com, Ind, Bulldoze (keys 1-6); Build comes from the menu
-				t = (t + (1 if b == JOY_BUTTON_DPAD_RIGHT else -1) + n) % n if t < n else (0 if b == JOY_BUTTON_DPAD_RIGHT else n - 1)
-				tap((KEY_1 + t) as Key)
+				# The tool bar's seven slots: Inspect, Road, Res, Com, Ind, Bulldoze, Build (key 7).
+				# Keeps its place on Build, which doesn't change the tool; a key press moves it.
+				var tool_now := int(main.get("tool"))
+				if tool_now != _tool_seen:
+					_slot = tool_now
+				var slot := (_slot + (1 if b == JOY_BUTTON_DPAD_RIGHT else -1) + 7) % 7
+				_slot = slot
+				if slot == 6:
+					tap(KEY_7)  # Build opens the build menu, as the key does
+				else:
+					tap((KEY_1 + slot) as Key)
+				_tool_seen = int(main.get("tool"))
 		JOY_BUTTON_DPAD_UP:
 			if down:
 				tap(KEY_PERIOD)  # faster
@@ -344,6 +355,15 @@ func _street_button(b: int, down: bool) -> bool:
 		JOY_BUTTON_DPAD_DOWN:
 			if down:
 				tap(KEY_V)  # city map
+			return true
+		JOY_BUTTON_LEFT_STICK:
+			# A click toggles sprinting on and off (street_sprint is held here, not by the stick).
+			if down:
+				_sprint_on = not _sprint_on
+				if _sprint_on:
+					Input.action_press(&"street_sprint")
+				else:
+					Input.action_release(&"street_sprint")
 			return true
 		JOY_BUTTON_DPAD_RIGHT:
 			if down:
@@ -518,6 +538,9 @@ func _process(delta: float) -> void:
 		_key(k, false)
 	_release.clear()
 	mode = current_mode()
+	if mode != &"street" and _sprint_on:
+		_sprint_on = false
+		Input.action_release(&"street_sprint")
 	if _back_since >= 0.0 and _now - _back_since >= HOLD:
 		_back_since = -1.0
 		hud.open_quick()

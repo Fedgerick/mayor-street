@@ -10,7 +10,7 @@ const CHECK := 0.2           # seconds between prompt refreshes
 
 var pad: PadControls
 var _root: Control
-var _bar: HBoxContainer      # bottom-right prompts for the current mode
+var _bar: GridContainer      # bottom-right prompts for the current mode, every button
 var _context: HBoxContainer  # bottom-centre: get in, take the job, bribe...
 var _ring: Control
 var _quick: PanelContainer
@@ -36,7 +36,12 @@ func _ready() -> void:
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
-	_bar = _row()
+	_bar = GridContainer.new()
+	_bar.columns = 3
+	_bar.add_theme_constant_override("h_separation", 8)
+	_bar.add_theme_constant_override("v_separation", 6)
+	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_bar)
 	_context = _row()
 	_ring = _Ring.new()
 	_ring.hud = self
@@ -110,7 +115,7 @@ func _place() -> void:
 	_context.position = Vector2((vs.x - _context.size.x) * 0.5, vs.y - 112.0 - _context.size.y)
 
 
-func _fill(box: HBoxContainer, rows: Array, px: float, fs := 15) -> void:
+func _fill(box: Container, rows: Array, px: float, fs := 15) -> void:
 	for c in box.get_children():
 		c.queue_free()
 	for r in rows:
@@ -141,24 +146,36 @@ func _fill(box: HBoxContainer, rows: Array, px: float, fs := 15) -> void:
 # ------------------------------------------------------------------ prompts ---
 
 func prompts(mode: StringName) -> Array:
-	## Bottom-right row: [[buttons], what it does].
+	## Every button, in the mode it is in: [[buttons], what it does]. Shown as a grid.
 	match mode:
 		&"mayor":
-			return [[[JOY_BUTTON_A], "Select / build"], [[JOY_BUTTON_X], "Build menu"], [[JOY_BUTTON_Y], "Overlay"],
-				[[PadGlyphs.RS], "Pan"], [[PadGlyphs.LT_RT], "Zoom"], [[PadGlyphs.LB_RB], "Rotate"],
-				[[JOY_BUTTON_BACK], "Street (hold: quick menu)"], [[JOY_BUTTON_START], "Menu"]]
+			return [[[JOY_BUTTON_A], "Select, place"], [[JOY_BUTTON_B], "Drop the tool"],
+				[[JOY_BUTTON_X], "Build menu"], [[JOY_BUTTON_Y], "Next overlay"],
+				[[PadGlyphs.LS], "Pointer"], [[PadGlyphs.RS], "Pan"],
+				[[JOY_BUTTON_LEFT_STICK], "Faster pan"], [[JOY_BUTTON_RIGHT_STICK], "Level (tap), tilt (hold)"],
+				[[PadGlyphs.LT_RT], "Zoom"], [[PadGlyphs.LB_RB], "Rotate"],
+				[[PadGlyphs.DPAD], "Tools, speed"], [[JOY_BUTTON_BACK], "Street (hold: quick menu)"],
+				[[JOY_BUTTON_START], "Menu"]]
 		&"street":
 			if pad.driving():
-				return [[[PadGlyphs.RT], "Gas"], [[PadGlyphs.LT], "Brake"], [[JOY_BUTTON_A], "Handbrake"],
-					[[JOY_BUTTON_LEFT_SHOULDER], "Horn"], [[JOY_BUTTON_DPAD_UP], "Radio"], [[JOY_BUTTON_X], "Flip car"],
-					[[JOY_BUTTON_BACK], "Mayor (hold: quick menu)"]]
-			return [[[PadGlyphs.RT], "Attack"], [[PadGlyphs.LT], "Aim"], [[JOY_BUTTON_A], "Jump"],
-				[[JOY_BUTTON_LEFT_STICK], "Run"], [[JOY_BUTTON_RIGHT_SHOULDER], "Weapon"], [[JOY_BUTTON_X], "Reload"],
-				[[JOY_BUTTON_DPAD_DOWN], "Map"], [[JOY_BUTTON_DPAD_RIGHT], "Quests"],
-				[[JOY_BUTTON_BACK], "Mayor (hold: quick menu)"]]
+				return [[[PadGlyphs.LS], "Steer"], [[PadGlyphs.RT], "Gas"], [[PadGlyphs.LT], "Brake, reverse"],
+					[[JOY_BUTTON_A], "Handbrake"], [[JOY_BUTTON_B], "Quest, bribe"],
+					[[JOY_BUTTON_X], "Flip the car"], [[JOY_BUTTON_Y], "Get out"],
+					[[JOY_BUTTON_LEFT_SHOULDER], "Horn"], [[JOY_BUTTON_RIGHT_SHOULDER], "Lights"],
+					[[PadGlyphs.RS], "Look"], [[PadGlyphs.DPAD], "Radio, map, quests"],
+					[[JOY_BUTTON_LEFT_STICK], "-"], [[JOY_BUTTON_RIGHT_STICK], "-"],
+					[[JOY_BUTTON_BACK], "Mayor (hold: quick menu)"], [[JOY_BUTTON_START], "Menu"]]
+			return [[[PadGlyphs.LS], "Walk"], [[PadGlyphs.RS], "Look"], [[JOY_BUTTON_LEFT_STICK], "Sprint: click on or off"],
+				[[JOY_BUTTON_A], "Jump"], [[JOY_BUTTON_B], "Take a job, bribe"],
+				[[JOY_BUTTON_X], "Reload"], [[JOY_BUTTON_Y], "Enter, carjack"],
+				[[PadGlyphs.RT], "Attack"], [[PadGlyphs.LT], "Aim"],
+				[[JOY_BUTTON_LEFT_SHOULDER], "Horn"], [[JOY_BUTTON_RIGHT_SHOULDER], "Next weapon"],
+				[[PadGlyphs.DPAD], "Radio, weapon, map, quests"], [[JOY_BUTTON_RIGHT_STICK], "-"],
+				[[JOY_BUTTON_BACK], "Mayor (hold: quick menu)"], [[JOY_BUTTON_START], "Menu"]]
 		&"menu":
 			return [[[PadGlyphs.LS], "Pointer"], [[PadGlyphs.DPAD], "Next button"], [[JOY_BUTTON_A], "Select"],
-				[[JOY_BUTTON_B], "Back"], [[PadGlyphs.RS], "Scroll"]]
+				[[JOY_BUTTON_B], "Back"], [[JOY_BUTTON_X], "Right-click"], [[PadGlyphs.RS], "Scroll, zoom"],
+				[[PadGlyphs.LB_RB], "Previous, next button"]]
 	return []
 
 
@@ -441,7 +458,7 @@ const LAYOUT := {
 		[[JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN], "City speed (down to pause)"],
 	],
 	"On foot": [
-		[[PadGlyphs.LS], "Walk"], [[PadGlyphs.RS], "Look"], [[JOY_BUTTON_LEFT_STICK], "Run"],
+		[[PadGlyphs.LS], "Walk"], [[PadGlyphs.RS], "Look"], [[JOY_BUTTON_LEFT_STICK], "Sprint: click on or off"],
 		[[JOY_BUTTON_A], "Jump"], [[JOY_BUTTON_Y], "Enter a car or building, carjack"],
 		[[PadGlyphs.RT], "Attack / shoot"], [[PadGlyphs.LT], "Aim"], [[JOY_BUTTON_X], "Reload"],
 		[[JOY_BUTTON_RIGHT_SHOULDER, JOY_BUTTON_DPAD_LEFT], "Next / last weapon"],

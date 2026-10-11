@@ -69,7 +69,12 @@ func _run() -> void:
 	_press(JOY_BUTTON_DPAD_LEFT)
 	_press(JOY_BUTTON_DPAD_LEFT)
 	await _frames(3)
-	check(main.tool == 5, "d-pad left wraps round to bulldoze (tool %d)" % main.tool)
+	check(hud.build_menu.visible and main.tool == 0, "d-pad left reaches Build on the tool bar (tool %d)" % main.tool)
+	_press(JOY_BUTTON_B)
+	await _frames(2)
+	_press(JOY_BUTTON_DPAD_LEFT)
+	await _frames(2)
+	check(main.tool == 5, "and on again, left wraps round to bulldoze (tool %d)" % main.tool)
 	_press(JOY_BUTTON_B)
 	await _frames(2)
 	check(main.tool == 0 and not main.menu.is_open, "B drops the tool")
@@ -93,6 +98,11 @@ func _run() -> void:
 	await _frames(3)
 
 	# Zone by holding A and dragging the pointer, as with the mouse.
+	_press(JOY_BUTTON_DPAD_RIGHT)  # Build
+	await _frames(2)
+	_press(JOY_BUTTON_B)
+	await _frames(2)
+	_press(JOY_BUTTON_DPAD_RIGHT)
 	_press(JOY_BUTTON_DPAD_RIGHT)
 	_press(JOY_BUTTON_DPAD_RIGHT)
 	await _frames(2)

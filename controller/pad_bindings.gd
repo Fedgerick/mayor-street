@@ -212,10 +212,16 @@ func _set_key_action(action: String, default_key: int, key: int) -> void:
 	_installed[action] = key
 
 
+## Actions PadControls drives itself (a press toggles them), so the stick is not an InputMap button.
+const TOGGLED := ["street_sprint"]
+
+
 func _set_pad_action(action: String) -> void:
 	for ev in InputMap.action_get_events(action):
 		if ev is InputEventJoypadButton:
 			InputMap.action_erase_event(action, ev)
+	if action in TOGGLED:
+		return
 	for b in StreetInput.BUTTONS[action]:
 		var e := InputEventJoypadButton.new()
 		e.button_index = physical(b) as JoyButton
