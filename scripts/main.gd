@@ -120,6 +120,7 @@ func _ready() -> void:
 	pad.name = "PadControls"
 	add_child(pad)
 	pad.setup(self)
+	ClickableUI.install(self)  # clickable key hints, HUD numbers and the City history charts (ui/)
 
 	quality = int(_args.get("quality", "1"))
 	if Benchmark.pending_quality >= 0:
