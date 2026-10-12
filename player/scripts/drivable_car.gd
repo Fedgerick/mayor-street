@@ -354,7 +354,7 @@ func seat_point() -> Vector3:
 func exit_point() -> Vector3:
 	## Beside the driver's door (left side), on the ground.
 	var left := global_basis.x
-	return global_position + left * (_aabb.size.x * 0.5 + 0.7) + forward() * (_seat.z + 0.15) + Vector3.UP * 0.2
+	return global_position + left * (_aabb.size.x * 0.5 + 0.7) + forward() * (_seat.z + 0.15) + _up() * 0.2
 
 
 func take_hit(amount: float, _from_pos := Vector3.ZERO, _dir := Vector3.ZERO) -> void:
@@ -398,7 +398,7 @@ func explode() -> void:
 	for w in _wheels:
 		w.engine_force = 0.0
 		w.brake = brake_force
-	apply_central_impulse(Vector3.UP * mass * 4.5)
+	apply_central_impulse(_up() * mass * 4.5)
 	apply_torque_impulse(Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * mass * 1.2)
 	exploded.emit(self)
 
@@ -425,9 +425,11 @@ func _steady_body(delta: float) -> void:
 	if wrecked:
 		return
 	var v := linear_velocity
-	var vy_cap := maxf(_last_vel.y, 0.0) + MAX_KICK_UP
-	if v.y > vy_cap:
-		v.y = vy_cap
+	var upv := _up()
+	var vy := v.dot(upv)
+	var vy_cap := maxf(_last_vel.dot(upv), 0.0) + MAX_KICK_UP
+	if vy > vy_cap:
+		v -= upv * (vy - vy_cap)
 		linear_velocity = v
 	var grounded := false
 	for wh in _wheels:
@@ -442,9 +444,9 @@ func _steady_body(delta: float) -> void:
 		apply_torque(-(global_basis * damp))
 		# Past ~25 degrees of lean, push back toward flat.
 		var up := global_basis.y
-		var lean := acos(clampf(up.dot(Vector3.UP), -1.0, 1.0))
+		var lean := acos(clampf(up.dot(upv), -1.0, 1.0))
 		if lean > 0.44 and lean < 1.9:
-			var axis := up.cross(Vector3.UP)
+			var axis := up.cross(upv)
 			if axis.length() > 0.001:
 				apply_torque(axis.normalized() * (lean - 0.44) * RIGHTING * (mass / 1000.0))
 	if angular_velocity.length() > MAX_SPIN:
@@ -516,8 +518,8 @@ func _physics_process(delta: float) -> void:
 		b.visible = _braking
 
 	# Downforce keeps it planted; anti-flip assist while on the ground.
-	apply_central_force(Vector3.DOWN * mass * 0.004 * v * v)
-	if global_basis.y.y < 0.3:
+	apply_central_force(-_up() * mass * 0.004 * v * v)
+	if global_basis.y.dot(_up()) < 0.3:
 		_upside_down += delta
 		if _upside_down > 2.5 and driver != null:
 			reset_upright()
@@ -567,6 +569,12 @@ func lamp_flags() -> int:
 ## The body's current lean (roll, pitch) in radians, for the camera and tests.
 func body_tilt() -> Vector2:
 	return Vector2(_roll.x, _pitch.x)
+
+
+## Which way is up where the car is. The flat city's is +Y; planet/ turns it toward the
+## ball's centre.
+func _up() -> Vector3:
+	return Vector3.UP
 
 
 func reset_upright() -> void:

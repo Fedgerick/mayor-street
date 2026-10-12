@@ -12,6 +12,8 @@ global uniform float tile_size;
 global uniform float grid_alpha;     // tile grid lines while a build tool is active
 global uniform int gfx_quality;      // 0 low, 1 medium, 2 high
 global uniform float weather_wet;    // street wetness from weather/: 0 dry .. 1 soaked
+global uniform float planet_radius;  // planet/: 0 = the flat world; else the ball's radius
+global uniform float planet_v0;      // planet/: flat z of the equator
 
 const vec3 LAMP_COLOR = vec3(1.0, 0.72, 0.42);
 
@@ -41,15 +43,47 @@ float fbm(vec2 p) {
 	return s;
 }
 
+// World position -> flat map metres (x east, y height, z south). On the flat world it is
+// the position itself; on a planet it unwraps the ball (planet/planet.gd).
+vec3 map_pos(vec3 wp) {
+	if (planet_radius <= 0.0) return wp;
+	float r = length(wp);
+	float lat = asin(clamp(wp.y / r, -1.0, 1.0));
+	float lon = atan(wp.x, wp.z);
+	if (lon < 0.0) lon += 6.28318530718;
+	return vec3(lon * planet_radius, r - planet_radius, planet_v0 - lat * planet_radius);
+}
+
+// Flat map metres -> world position.
+vec3 map_warp(vec3 mp) {
+	if (planet_radius <= 0.0) return mp;
+	float lat = (planet_v0 - mp.z) / planet_radius;
+	float lon = mp.x / planet_radius;
+	return vec3(cos(lat) * sin(lon), sin(lat), cos(lat) * cos(lon)) * (planet_radius + mp.y);
+}
+
+// Which way is up at a world position.
+vec3 up_at(vec3 wp) {
+	return planet_radius <= 0.0 ? vec3(0.0, 1.0, 0.0) : normalize(wp);
+}
+
 ivec2 cell_of(vec3 wp) {
-	return ivec2(floor(wp.xz / tile_size));
+	return ivec2(floor(map_pos(wp).xz / tile_size));
 }
 
 bool cell_ok(ivec2 c) {
-	return c.x >= 0 && c.y >= 0 && float(c.x) < map_cells && float(c.y) < map_cells;
+	ivec2 sz = textureSize(city_map, 0);
+	return c.x >= 0 && c.y >= 0 && c.x < sz.x && c.y < sz.y;
+}
+
+ivec2 wrap_cell(ivec2 c) {
+	// The planet's map wraps east to west.
+	if (planet_radius > 0.0) c.x = int(mod(float(c.x), float(textureSize(city_map, 0).x)));
+	return c;
 }
 
 vec4 city_at(ivec2 c) {
+	c = wrap_cell(c);
 	if (!cell_ok(c)) return vec4(0.0);
 	return texelFetch(city_map, c, 0);
 }
@@ -81,10 +115,11 @@ vec3 lamp_light(vec3 wp, vec3 n) {
 	for (int dy = -1; dy <= 1; dy++) {
 		for (int dx = -1; dx <= 1; dx++) {
 			ivec2 cc = c + ivec2(dx, dy);
-			if (!cell_ok(cc)) continue;
-			vec4 l = texelFetch(lamp_map, cc, 0);
+			ivec2 wc = wrap_cell(cc);
+			if (!cell_ok(wc)) continue;
+			vec4 l = texelFetch(lamp_map, wc, 0);
 			if (l.b < 0.5) continue;
-			vec3 lp = vec3((float(cc.x) + l.r) * tile_size, 6.0, (float(cc.y) + l.g) * tile_size);
+			vec3 lp = map_warp(vec3((float(cc.x) + l.r) * tile_size, 6.0, (float(cc.y) + l.g) * tile_size));
 			vec3 d = lp - wp;
 			float dist = length(d);
 			float ndl = max(dot(n, d / dist), 0.0) * 0.7 + 0.3;
@@ -96,11 +131,11 @@ vec3 lamp_light(vec3 wp, vec3 n) {
 }
 
 vec3 preview_tint(vec3 wp) {
-	ivec2 c = cell_of(wp);
+	ivec2 c = wrap_cell(cell_of(wp));
 	if (!cell_ok(c)) return vec3(0.0);
 	float p = texelFetch(preview_map, c, 0).r;
 	if (p < 0.01) return vec3(0.0);
-	vec2 f = fract(wp.xz / tile_size);
+	vec2 f = fract(map_pos(wp).xz / tile_size);
 	float edge = max(smoothstep(0.42, 0.48, abs(f.x - 0.5)), smoothstep(0.42, 0.48, abs(f.y - 0.5)));
 	return preview_color.rgb * (0.35 + edge * 0.65) * p;
 }
