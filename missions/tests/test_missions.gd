@@ -46,7 +46,7 @@ func _initialize() -> void:
 	var dist := router.reachable(a)
 	for i in dist.size():
 		if dist[i] > dist[city.idx(far.x, far.y)]:
-			far = Vector2i(i % City.SIZE, i / City.SIZE)
+			far = Vector2i(i % City.W, i / City.W)
 	var path := router.route(a, far)
 	check(path.size() == dist[city.idx(far.x, far.y)] + 1, "route length matches BFS (%d tiles)" % path.size())
 	var all_road := true

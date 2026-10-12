@@ -38,25 +38,27 @@ func setup(c: City) -> void:
 			if not _road_table.has(m):
 				_road_table[m] = [piece, k]
 			m = _rot_mask(m)
-	var ground := StaticBody3D.new()
-	ground.name = "Ground"
-	var gs := CollisionShape3D.new()
-	gs.shape = WorldBoundaryShape3D.new()
-	ground.add_child(gs)
-	add_child(ground)
+	if not Planet.on:  # on msp the sphere terrain (CityView.terrain_body) is the ground
+		var ground := StaticBody3D.new()
+		ground.name = "Ground"
+		var gs := CollisionShape3D.new()
+		gs.shape = WorldBoundaryShape3D.new()
+		ground.add_child(gs)
+		add_child(ground)
 	city.cells_changed.connect(_on_cells_changed)
 	city.building_added.connect(func(id: int, _a: bool): _mark_building(id))
 	city.building_removed.connect(func(_id: int): pass)  # cells_changed follows a removal
-	for cy in ceili(float(City.SIZE) / CHUNK):
-		for cx in ceili(float(City.SIZE) / CHUNK):
+	for cy in ceili(float(City.H) / CHUNK):
+		for cx in ceili(float(City.W) / CHUNK):
 			_dirty[Vector2i(cx, cy)] = true
 	rebuild_dirty()
 
 
 func _on_cells_changed(r: Rect2i) -> void:
+	var across := ceili(float(City.W) / CHUNK)
 	for cy in range(floori(float(r.position.y - 1) / CHUNK), floori(float(r.end.y) / CHUNK) + 1):
 		for cx in range(floori(float(r.position.x - 1) / CHUNK), floori(float(r.end.x) / CHUNK) + 1):
-			_dirty[Vector2i(cx, cy)] = true
+			_dirty[Vector2i(posmod(cx, across) if Planet.on else cx, cy)] = true
 
 
 func _mark_building(id: int) -> void:
@@ -82,15 +84,15 @@ func _rebuild(key: Vector2i) -> void:
 		_chunks.erase(key)
 	var x0: int = key.x * CHUNK
 	var y0: int = key.y * CHUNK
-	if x0 >= City.SIZE or y0 >= City.SIZE or x0 < 0 or y0 < 0:
+	if x0 >= City.W or y0 >= City.H or x0 < 0 or y0 < 0:
 		return
 	var body := StaticBody3D.new()
 	body.name = "Chunk_%d_%d" % [key.x, key.y]
 	var seen := {}
 	var T := City.TILE
 	var h := T * 0.5
-	for y in range(y0, mini(y0 + CHUNK, City.SIZE)):
-		for x in range(x0, mini(x0 + CHUNK, City.SIZE)):
+	for y in range(y0, mini(y0 + CHUNK, City.H)):
+		for x in range(x0, mini(x0 + CHUNK, City.W)):
 			var i := city.idx(x, y)
 			var c := city.cell_center(x, y)
 			if city.road[i] == 1:
@@ -139,8 +141,31 @@ func _rebuild(key: Vector2i) -> void:
 	if body.get_child_count() == 0:
 		body.free()
 		return
+	if Planet.on:
+		_onto_planet(body)
 	add_child(body)
 	_chunks[key] = body
+
+
+## msp: the shapes were laid out on the flat map; stand each one up on the ball. Shapes
+## stay rigid, so a box is narrowed east-west by cos(latitude) the way the kit meshes are.
+static func _onto_planet(body: StaticBody3D) -> void:
+	for c in body.get_children():
+		var cs := c as CollisionShape3D
+		if cs == null:
+			continue
+		var t := cs.transform
+		var bs := cs.shape as BoxShape3D
+		if bs:
+			var k := cos(Planet.lat_of(t.origin))
+			var east := t.basis.inverse() * Vector3.RIGHT
+			var sz := bs.size
+			if absf(east.x) >= absf(east.z):
+				sz.x *= lerpf(1.0, k, absf(east.x))
+			else:
+				sz.z *= lerpf(1.0, k, absf(east.z))
+			bs.size = sz
+		cs.transform = Planet.xf_rigid(t)
 
 
 func _add_building(body: StaticBody3D, b: Dictionary) -> void:

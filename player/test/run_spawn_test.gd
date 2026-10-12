@@ -38,8 +38,8 @@ func _run() -> void:
 	var bad := 0
 	var checked := 0
 	var worst := INF
-	for y in City.SIZE:
-		for x in City.SIZE:
+	for y in City.H:
+		for x in City.W:
 			if not city.is_road(x, y):
 				continue
 			var c := city.cell_center(x, y)

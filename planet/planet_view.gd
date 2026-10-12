@@ -46,7 +46,6 @@ func setup(g: PlanetGrid) -> void:
 			m = CityView.rot_mask(m)
 	_make_textures()
 	_build_terrain()
-	_build_sea()
 	for cy in ceili(float(grid.h) / CHUNK):
 		for cx in ceili(float(grid.w) / CHUNK):
 			dirty[Vector2i(cx, cy)] = true
@@ -91,144 +90,8 @@ func set_preview(cells: Array, color: Color) -> void:
 
 # ------------------------------------------------------------------ terrain ---
 
-## Rows of the terrain mesh, in flat z: coarse from the north pole to the belt, every half
-## tile across the belt and its shores, coarse again to the south pole.
-func _terrain_rows() -> PackedFloat32Array:
-	var north := Planet.V0 - Planet.R * PI * 0.5
-	var south := Planet.V0 + Planet.R * PI * 0.5
-	var fine0 := -60.0
-	var fine1 := grid.h * Planet.TILE + 60.0
-	var rows := PackedFloat32Array()
-	var z := north
-	while z < fine0:
-		rows.append(z)
-		z += 24.0
-	z = fine0
-	while z < fine1:
-		rows.append(z)
-		z += Planet.TILE * 0.5
-	z = fine1
-	while z < south:
-		rows.append(z)
-		z += 24.0
-	rows.append(south)
-	return rows
-
-
 func _build_terrain() -> void:
-	var rows := _terrain_rows()
-	var cols := grid.w * 2
-	var step := Planet.circumference() / cols
-	var verts := PackedVector3Array()
-	var norms := PackedVector3Array()
-	var colors := PackedColorArray()
-	var nr := rows.size()
-	var nc := cols + 1
-	verts.resize(nr * nc)
-	norms.resize(nr * nc)
-	colors.resize(nr * nc)
-	var hs := PackedFloat32Array()
-	hs.resize(nr * nc)
-	for j in nr:
-		for i in nc:
-			var x := i * step
-			hs[j * nc + i] = grid.ground_height(x, rows[j]) - 0.03
-	for j in nr:
-		for i in nc:
-			var k := j * nc + i
-			var x := i * step
-			var z := rows[j]
-			var p := Vector3(x, hs[k], z)
-			verts[k] = Planet.warp(p)
-			# Normal from the neighbouring heights, in the local frame, turned onto the ball.
-			var hl := hs[j * nc + maxi(i - 1, 0)]
-			var hr := hs[j * nc + mini(i + 1, nc - 1)]
-			var hu := hs[maxi(j - 1, 0) * nc + i]
-			var hd := hs[mini(j + 1, nr - 1) * nc + i]
-			var dz := maxf(rows[mini(j + 1, nr - 1)] - rows[maxi(j - 1, 0)], 0.1)
-			var ln := Vector3((hl - hr) / (2.0 * step), 1.0, (hu - hd) / dz).normalized()
-			norms[k] = Planet.frame(p) * ln
-			colors[k] = Color(clampf(grid.landness(x, z), 0.0, 1.0), grid.ice(x, z), 0)
-	var idx := PackedInt32Array()
-	for j in nr - 1:
-		for i in nc - 1:
-			var a := j * nc + i
-			var b := a + 1
-			var c := a + nc
-			var d := c + 1
-			idx.append_array([a, b, c, b, d, c])
-	var arr := []
-	arr.resize(Mesh.ARRAY_MAX)
-	arr[Mesh.ARRAY_VERTEX] = verts
-	arr[Mesh.ARRAY_NORMAL] = norms
-	arr[Mesh.ARRAY_COLOR] = colors
-	arr[Mesh.ARRAY_INDEX] = idx
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-	var mat := ShaderMaterial.new()
-	mat.shader = TERRAIN_SHADER
-	mesh.surface_set_material(0, mat)
-	var mi := MeshInstance3D.new()
-	mi.name = "Terrain"
-	mi.mesh = mesh
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
-	terrain_body = StaticBody3D.new()
-	terrain_body.name = "TerrainBody"
-	var cs := CollisionShape3D.new()
-	cs.shape = mesh.create_trimesh_shape()
-	terrain_body.add_child(cs)
-	add_child(terrain_body)
-	_build_sea_floor_tex(rows, nc, hs, step)
-
-
-var _height_tex: ImageTexture
-var _height_rect: Vector4
-
-
-func _build_sea_floor_tex(rows: PackedFloat32Array, nc: int, hs: PackedFloat32Array, step: float) -> void:
-	# The water shader reads the sea floor from a height image over flat x/z.
-	var z0 := grid.h * Planet.TILE - 120.0
-	var z1 := grid.h * Planet.TILE + 300.0
-	var iw := nc
-	var ih := 128
-	var img := Image.create_empty(iw, ih, false, Image.FORMAT_RF)
-	for j in ih:
-		var z := lerpf(z0, z1, float(j) / (ih - 1))
-		for i in iw:
-			img.set_pixel(i, j, Color(-grid.ground_height(i * step, z) / 16.0, 0, 0))
-	_height_tex = ImageTexture.create_from_image(img)
-	_height_rect = Vector4(0.0, z0, Planet.circumference(), z1 - z0)
-
-
-func _build_sea() -> void:
-	var sphere := SphereMesh.new()
-	sphere.radius = Planet.R - 0.7
-	sphere.height = (Planet.R - 0.7) * 2.0
-	sphere.radial_segments = 256
-	sphere.rings = 128
-	var mat := ShaderMaterial.new()
-	mat.shader = WATER_SHADER
-	mat.set_shader_parameter("height_tex", _height_tex)
-	mat.set_shader_parameter("height_rect", _height_rect)
-	for p in ["wave_a", "wave_b"]:
-		var nt := NoiseTexture2D.new()
-		nt.width = 256
-		nt.height = 256
-		nt.seamless = true
-		nt.as_normal_map = true
-		nt.bump_strength = 6.0 if p == "wave_a" else 4.0
-		var fn := FastNoiseLite.new()
-		fn.frequency = 0.03 if p == "wave_a" else 0.05
-		fn.seed = 3 if p == "wave_a" else 9
-		nt.noise = fn
-		mat.set_shader_parameter(p, nt)
-	sphere.material = mat
-	var mi := MeshInstance3D.new()
-	mi.name = "Sea"
-	mi.mesh = sphere
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
+	terrain_body = PlanetGround.build(self, grid.h, grid.ground_height, grid.landness, grid.ice)
 
 
 # ------------------------------------------------------------------- chunks ---

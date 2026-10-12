@@ -135,8 +135,8 @@ func rebuild() -> void:
 			var h := _hash01(i, d)
 			var kind := -1
 			# Bus stops: about one every few blocks along a busy street, both sides.
-			var line_key := d * 1000 + (i % City.SIZE if d % 2 == 1 else i / City.SIZE)
-			var along := i / City.SIZE if d % 2 == 1 else i % City.SIZE
+			var line_key := d * 1000 + (i % City.W if d % 2 == 1 else i / City.W)
+			var along := i / City.W if d % 2 == 1 else i % City.W
 			var gap_ok: bool = not last_stop.has(line_key) or absi(along - last_stop[line_key]) >= 7
 			if lure > 0.25 and gap_ok and h < 0.16:
 				kind = Kind.STOP

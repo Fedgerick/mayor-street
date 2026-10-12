@@ -95,7 +95,7 @@ func _strikes(dm: float) -> void:
 	_next_strike = _rng.randf_range(3.0, 18.0) / maxf(rain, 0.1)
 	var at := focus
 	if at == Vector3.ZERO and city:
-		at = city.cell_center(City.SIZE / 2, City.SIZE / 2)
+		at = Planet.place(city.cell_center(City.W / 2, City.H / 2))
 	var a := _rng.randf() * TAU
 	var r := _rng.randf_range(250.0, 1400.0)
 	lightning.emit(at + Vector3(cos(a) * r, 0.0, sin(a) * r))

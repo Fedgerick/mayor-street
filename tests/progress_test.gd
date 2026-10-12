@@ -77,7 +77,7 @@ func _catalog() -> void:
 ## A starter city with the avenue along row c.y; returns a free lot cell beside it.
 func _lot_beside_road(c: City, size: int, from_x: int) -> Vector2i:
 	var y := c.center_cell().y + 1
-	for x in range(from_x, City.SIZE - size):
+	for x in range(from_x, City.W - size):
 		if c.can_place_special("small_park", Vector2i(x, y), true) == "" \
 				and c.can_place_special("police_station", Vector2i(x, y), true) == "":
 			var ok := true

@@ -49,7 +49,7 @@ func _bfs(from: Vector2i) -> void:
 	if from == _field_from:
 		return
 	_field_from = from
-	var n := City.SIZE * City.SIZE
+	var n := City.W * City.H
 	_field.resize(n)
 	_field.fill(-1)
 	var start := city.idx(from.x, from.y)
@@ -59,8 +59,8 @@ func _bfs(from: Vector2i) -> void:
 	while head < queue.size():
 		var i := queue[head]
 		head += 1
-		var x := i % City.SIZE
-		var y := i / City.SIZE
+		var x := i % City.W
+		var y := i / City.W
 		for d: Vector2i in City.DIRS:
 			var nx := x + d.x
 			var ny := y + d.y
@@ -83,7 +83,7 @@ func route(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 		return out
 	var start := city.idx(a.x, a.y)
 	while true:
-		out.append(Vector2i(i % City.SIZE, i / City.SIZE))
+		out.append(Vector2i(i % City.W, i / City.W))
 		if i == start:
 			break
 		i = _field[i]
@@ -94,7 +94,7 @@ func route(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 func reachable(from: Vector2i) -> PackedInt32Array:
 	## Road distance in tiles from `from` to every cell, -1 where unreachable.
 	var dist := PackedInt32Array()
-	dist.resize(City.SIZE * City.SIZE)
+	dist.resize(City.W * City.H)
 	dist.fill(-1)
 	if not city.is_road(from.x, from.y):
 		return dist
@@ -105,8 +105,8 @@ func reachable(from: Vector2i) -> PackedInt32Array:
 	while head < queue.size():
 		var i := queue[head]
 		head += 1
-		var x := i % City.SIZE
-		var y := i / City.SIZE
+		var x := i % City.W
+		var y := i / City.W
 		for d: Vector2i in City.DIRS:
 			if city.is_road(x + d.x, y + d.y):
 				var j := city.idx(x + d.x, y + d.y)

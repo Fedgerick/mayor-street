@@ -307,7 +307,7 @@ var _road_ped := PackedFloat32Array()
 
 
 func compute_weights() -> void:
-	var n := City.SIZE * City.SIZE
+	var n := City.W * City.H
 	car_weight.resize(n)
 	ped_weight.resize(n)
 	ped_night.resize(n)
@@ -350,13 +350,13 @@ func _add_building(id: int) -> void:
 	# Spread over road cells within two tiles of the lot.
 	for dy in range(-2, size + 2):
 		var y := by + dy
-		if y < 0 or y >= City.SIZE:
+		if y < 0 or y >= City.H:
 			continue
 		for dx in range(-2, size + 2):
 			var x := bx + dx
-			if x < 0 or x >= City.SIZE:
+			if x < 0 or x >= City.W:
 				continue
-			var i := y * City.SIZE + x
+			var i := y * City.W + x
 			if city.road[i] != 1:
 				continue
 			var near := dx >= -1 and dy >= -1 and dx <= size and dy <= size
@@ -417,10 +417,10 @@ func hour_factor(table: Array) -> float:
 
 
 func _update_view() -> void:
-	var size := City.SIZE * City.TILE
+	var size := maxi(City.W, City.H) * City.TILE
 	if camera == null or not camera.is_inside_tree():
 		# No camera (tests, tools): populate the whole island, people included.
-		focus = Vector3(size * 0.5, 0, size * 0.5)
+		focus = Vector3(City.W * City.TILE * 0.5, 0, City.H * City.TILE * 0.5)
 		cam_height = 100.0
 		car_radius = size
 		ped_radius = size

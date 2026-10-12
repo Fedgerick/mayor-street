@@ -52,7 +52,7 @@ var time := 0.0
 
 func _init(c: City) -> void:
 	city = c
-	var n := City.SIZE * City.SIZE
+	var n := City.W * City.H
 	mask.resize(n)
 	junction.resize(n)
 	signal_offset.resize(n)
@@ -81,8 +81,8 @@ static func right_of(d: int) -> Vector3:
 
 ## Re-read the city's roads. Call after City.cells_changed.
 func rebuild() -> void:
-	for y in City.SIZE:
-		for x in City.SIZE:
+	for y in City.H:
+		for x in City.W:
 			var i := city.idx(x, y)
 			if city.road[i] == 1:
 				var m := city.road_mask(x, y)
@@ -107,15 +107,15 @@ func has_arm(i: int, d: int) -> bool:
 
 
 func neighbor(i: int, d: int) -> int:
-	var x: int = i % City.SIZE + DG[d].x
-	var y: int = i / City.SIZE + DG[d].y
-	if x < 0 or y < 0 or x >= City.SIZE or y >= City.SIZE:
+	var x: int = i % City.W + DG[d].x
+	var y: int = i / City.W + DG[d].y
+	if x < 0 or y < 0 or x >= City.W or y >= City.H:
 		return -1
-	return y * City.SIZE + x
+	return y * City.W + x
 
 
 func center(i: int) -> Vector3:
-	return Vector3((i % City.SIZE + 0.5) * City.TILE, 0.0, (i / City.SIZE + 0.5) * City.TILE)
+	return Vector3((i % City.W + 0.5) * City.TILE, 0.0, (i / City.W + 0.5) * City.TILE)
 
 
 ## Exits a car may take from cell i after entering it heading din. U-turns only at dead ends.

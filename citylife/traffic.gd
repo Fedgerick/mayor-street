@@ -266,8 +266,8 @@ func _kit() -> Node:
 
 
 func _zone_near(cell: int) -> int:
-	var x := cell % City.SIZE
-	var y := cell / City.SIZE
+	var x := cell % City.W
+	var y := cell / City.W
 	for d in RoadNet.DG:
 		var nx: int = x + d.x
 		var ny: int = y + d.y

@@ -12,6 +12,10 @@ extends RefCounted
 
 const TILE := 12.0
 
+## True once configure() has run: the game is on a planet (msp). False on the flat island
+## (ms), where every helper below that is not about the ball is the identity.
+static var on := false
+
 static var W := 288            # tiles around the equator (Large, Fedge's pick)
 static var H := 52             # tiles from the belt's north edge to its south edge
 static var R := 288 * TILE / TAU  # radius at sea level, metres
@@ -19,10 +23,13 @@ static var V0 := 52 * TILE * 0.5  # flat z of the equator
 
 
 static func configure(cols: int, rows: int) -> void:
+	on = true
 	W = cols
 	H = rows
 	R = W * TILE / TAU
 	V0 = H * TILE * 0.5
+	City.W = cols
+	City.H = rows
 	RenderingServer.global_shader_parameter_set("planet_radius", R)
 	RenderingServer.global_shader_parameter_set("planet_v0", V0)
 
@@ -30,6 +37,50 @@ static func configure(cols: int, rows: int) -> void:
 static func circumference() -> float:
 	return W * TILE
 
+
+# ------------------------------------------------- identity on the flat island ---
+
+## Flat map metres -> world position (the same point on the flat island).
+static func place(p: Vector3) -> Vector3:
+	return warp(p) if on else p
+
+
+## World position -> flat map metres.
+static func flat(w: Vector3) -> Vector3:
+	return unwarp(w) if on else w
+
+
+## A flat map transform -> world transform.
+static func xf(t: Transform3D) -> Transform3D:
+	return warp_xform(t) if on else t
+
+
+## A flat transform -> world, kept rigid (no east-west squeeze): for bodies and cameras.
+static func xf_rigid(t: Transform3D) -> Transform3D:
+	return Transform3D(frame(t.origin) * t.basis, warp(t.origin)) if on else t
+
+
+## Up at a world position.
+static func up(w: Vector3) -> Vector3:
+	return up_at(w) if on else Vector3.UP
+
+
+## Local frame (x east, y up, z south) at a world position.
+static func basis(w: Vector3) -> Basis:
+	return frame_world(w) if on else Basis.IDENTITY
+
+
+## A flat-map direction (x east, z south) at a world point -> world direction.
+static func dir(w: Vector3, d: Vector3) -> Vector3:
+	return frame_world(w) * d if on else d
+
+
+## A world direction at a world point -> flat-map direction.
+static func to_local(w: Vector3, d: Vector3) -> Vector3:
+	return frame_world(w).inverse() * d if on else d
+
+
+# ------------------------------------------------------------- the ball ---
 
 ## Latitude (radians, + north) and longitude (radians, 0..TAU) of a flat point.
 static func lat_of(p: Vector3) -> float:
@@ -127,3 +178,45 @@ static func above_horizon(eye: Vector3, w: Vector3, top: float) -> bool:
 	var he := maxf(eye.length() - R, 0.5)
 	var reach := acos(clampf(R / (R + he), -1.0, 1.0)) + acos(clampf(R / (R + maxf(top, 0.5)), -1.0, 1.0))
 	return eye.normalized().angle_to(w.normalized()) < reach
+
+
+## A sheet over the whole belt at height h, one quad per tile, with UVs 0..1 across the
+## map (u east, v south): the planet stand-in for a flat PlaneMesh laid over the grid.
+static func belt_mesh(h: float, per_tile := 1) -> ArrayMesh:
+	var cols := W * per_tile
+	var rows := H * per_tile
+	var step := TILE / per_tile
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	for j in rows + 1:
+		for i in cols + 1:
+			var p := Vector3(i * step, h, j * step)
+			var w := warp(p)
+			verts.append(w)
+			norms.append(w.normalized())
+			uvs.append(Vector2(float(i) / cols, float(j) / rows))
+	var idx := PackedInt32Array()
+	for j in rows:
+		for i in cols:
+			var a := j * (cols + 1) + i
+			var b := a + cols + 1
+			idx.append_array([a, a + 1, b, a + 1, b + 1, b])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_TEX_UV] = uvs
+	arr[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return m
+
+
+## Point gravity toward the centre for everything physical (cars, falling things): the
+## space's own default area pulls toward the origin instead of down -Y.
+static func point_gravity(space: RID) -> void:
+	PhysicsServer3D.area_set_param(space, PhysicsServer3D.AREA_PARAM_GRAVITY_IS_POINT, true)
+	PhysicsServer3D.area_set_param(space, PhysicsServer3D.AREA_PARAM_GRAVITY_VECTOR, Vector3.ZERO)
+	PhysicsServer3D.area_set_param(space, PhysicsServer3D.AREA_PARAM_GRAVITY_POINT_UNIT_DISTANCE, 0.0)
+	PhysicsServer3D.area_set_param(space, PhysicsServer3D.AREA_PARAM_GRAVITY, 9.8)

@@ -567,7 +567,7 @@ func _drive(dt: float) -> void:
 
 func _exit_for(cell: int, din: int) -> int:
 	var net: RoadNet = main.life.net
-	var c := Vector2i(cell % City.SIZE, cell / City.SIZE)
+	var c := Vector2i(cell % City.W, cell / City.W)
 	var d: int = DRIVE_TURNS.get(c, din)
 	if net.has_arm(cell, d):
 		return d

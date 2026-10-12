@@ -575,14 +575,14 @@ func _sample_area(focus: Vector3, listener: Vector3, street: bool) -> void:
 	var sea := 0
 	var land: PackedByteArray = _city.land
 	var bld: PackedInt32Array = _city.bld
-	var size: int = City.SIZE
+	var size: int = City.W
 	for y in range(c.y - r, c.y + r + 1):
 		for x in range(c.x - r, c.x + r + 1):
 			cells += 1
-			if x < 0 or y < 0 or x >= size or y >= size:
+			if not _city.inside(x, y):
 				sea += 1
 				continue
-			var i := y * size + x
+			var i: int = _city.idx(x, y)
 			if land[i] == 0:
 				sea += 1
 			elif bld[i] >= 0:
@@ -604,7 +604,7 @@ func _sample_area(focus: Vector3, listener: Vector3, street: bool) -> void:
 					peds_near += 1
 
 
-func _canyon(c: Vector2i, street: bool, land: PackedByteArray, bld: PackedInt32Array, size: int) -> float:
+func _canyon(c: Vector2i, street: bool, land: PackedByteArray, bld: PackedInt32Array, _size: int) -> float:
 	## How walled in the street listener is: tall buildings in the cells within about 36 m.
 	if not street:
 		return 0.0
@@ -613,9 +613,9 @@ func _canyon(c: Vector2i, street: bool, land: PackedByteArray, bld: PackedInt32A
 	for y in range(c.y - 3, c.y + 4):
 		for x in range(c.x - 3, c.x + 4):
 			cells += 1
-			if x < 0 or y < 0 or x >= size or y >= size:
+			if not _city.inside(x, y):
 				continue
-			var i := y * size + x
+			var i: int = _city.idx(x, y)
 			if land[i] != 0 and bld[i] >= 0:
 				var b: Dictionary = _city.buildings.get(bld[i], {})
 				var h := float(b.get("stage", 1)) * (2.0 if b.get("size", 1) == 2 else 1.0)

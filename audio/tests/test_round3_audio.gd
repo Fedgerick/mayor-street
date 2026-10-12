@@ -100,7 +100,7 @@ func _run() -> void:
 			break
 	if tower >= 0:
 		var b: Dictionary = city.buildings[tower]
-		var cv: float = audio._canyon(Vector2i(b.x, b.y), true, city.land, city.bld, City.SIZE)
+		var cv: float = audio._canyon(Vector2i(b.x, b.y), true, city.land, city.bld, City.W)
 		check(cv > 0.0, "a tall building counts toward the canyon (%.2f)" % cv)
 
 	# A bus pulling in at a stop.
