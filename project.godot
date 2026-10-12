@@ -5,17 +5,17 @@ config_version=5
 
 [application]
 
-config/name="Mayor Street: City Sandbox"
-config/description="SimCity meets GTA. Thread 2: the city sandbox."
-run/main_scene="res://scenes/main.tscn"
+config/name="Mayor Street: Planet"
+config/description="SimCity meets GTA, on a planet. The planet fork of the city sandbox (planet/PLAN.md)."
+run/main_scene="res://planet/planet_main.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
-config/version="0.4.17"
+config/version="0.1.0"
 config/icon="res://assets/icon/icon.png"
 config/windows_native_icon="res://assets/icon/icon.ico"
 boot_splash/bg_color=Color(0.07, 0.08, 0.1, 1)
 boot_splash/show_image=false
 config/use_custom_user_dir=true
-config/custom_user_dir_name="MayorStreet"
+config/custom_user_dir_name="MayorStreetPlanet"
 
 [autoload]
 
@@ -54,6 +54,14 @@ textures/default_filters/anisotropic_filtering_level=2
 
 [shader_globals]
 
+planet_radius={
+"type": "float",
+"value": 0.0
+}
+planet_v0={
+"type": "float",
+"value": 0.0
+}
 weather_cloud={
 "type": "float",
 "value": 0.0

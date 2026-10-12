@@ -21,8 +21,12 @@ SetCompressorDictSize 64
   !define OUTFILE "MayorStreet-Setup.exe"
 !endif
 
-!define APP "Mayor Street"
-!define APPKEY "MayorStreet"
+!ifndef APP
+  !define APP "Mayor Street"
+!endif
+!ifndef APPKEY
+  !define APPKEY "MayorStreet"
+!endif
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPKEY}"
 
 Name "${APP}"
