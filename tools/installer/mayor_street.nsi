@@ -21,6 +21,9 @@ SetCompressorDictSize 64
   !define OUTFILE "MayorStreet-Setup.exe"
 !endif
 
+!ifndef EXENAME
+  !define EXENAME "MayorStreet.exe"
+!endif
 !ifndef APP
   !define APP "Mayor Street"
 !endif
@@ -65,11 +68,11 @@ VIAddVersionKey "LegalCopyright" ""
 
 AutoCloseWindow true
 
-; A running copy locks MayorStreet.exe on Windows, so offer to close it before copying the new one.
+; A running copy locks ${EXENAME} on Windows, so offer to close it before copying the new one.
 Function CloseRunningGame
-  IfFileExists "$INSTDIR\MayorStreet.exe" 0 done
+  IfFileExists "$INSTDIR\${EXENAME}" 0 done
   ClearErrors
-  FileOpen $0 "$INSTDIR\MayorStreet.exe" a
+  FileOpen $0 "$INSTDIR\${EXENAME}" a
   IfErrors locked
   FileClose $0
   Goto done
@@ -77,32 +80,32 @@ Function CloseRunningGame
   MessageBox MB_OKCANCEL|MB_ICONQUESTION "${APP} is open. Close it and update now?$\r$\n$\r$\nAnything since the last autosave is lost." /SD IDOK IDOK kill
   Abort
   kill:
-  nsExec::Exec 'taskkill /IM MayorStreet.exe /F'
+  nsExec::Exec 'taskkill /IM ${EXENAME} /F'
   Sleep 1500
   done:
 FunctionEnd
 
 Function .onInstSuccess
-  Exec '"$INSTDIR\MayorStreet.exe"'
+  Exec '"$INSTDIR\${EXENAME}"'
 FunctionEnd
 
 Section "Install"
   SetShellVarContext current
   Call CloseRunningGame
   SetOutPath "$INSTDIR"
-  File "/oname=MayorStreet.exe" "${EXE}"
+  File "/oname=${EXENAME}" "${EXE}"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-  CreateShortcut "$DESKTOP\${APP}.lnk" "$INSTDIR\MayorStreet.exe" "" "$INSTDIR\MayorStreet.exe" 0
+  CreateShortcut "$DESKTOP\${APP}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
   CreateDirectory "$SMPROGRAMS\${APP}"
-  CreateShortcut "$SMPROGRAMS\${APP}\${APP}.lnk" "$INSTDIR\MayorStreet.exe" "" "$INSTDIR\MayorStreet.exe" 0
+  CreateShortcut "$SMPROGRAMS\${APP}\${APP}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
   CreateShortcut "$SMPROGRAMS\${APP}\Uninstall ${APP}.lnk" "$INSTDIR\Uninstall.exe"
 
   WriteRegStr HKCU "Software\${APPKEY}" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "${APP}"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINST_KEY}" "Publisher" "${APP}"
-  WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\MayorStreet.exe,0"
+  WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\${EXENAME},0"
   WriteRegStr HKCU "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegStr HKCU "${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
@@ -117,7 +120,7 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\${APP}\${APP}.lnk"
   Delete "$SMPROGRAMS\${APP}\Uninstall ${APP}.lnk"
   RMDir "$SMPROGRAMS\${APP}"
-  Delete "$INSTDIR\MayorStreet.exe"
+  Delete "$INSTDIR\${EXENAME}"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKCU "${UNINST_KEY}"

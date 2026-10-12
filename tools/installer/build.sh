@@ -16,7 +16,7 @@ app="${APP:-Mayor Street Planet}"
 key="${APPKEY:-MayorStreetPlanet}"
 setup="${key}-Setup"
 makensis -V2 -DEXE="$exe" -DVERSION="${version:-0.0.0}" -DSIZE_KB="$size_kb" \
-	-DAPP="$app" -DAPPKEY="$key" -DOUTFILE="$out/$setup.exe" "$here/mayor_street.nsi"
+	-DAPP="$app" -DAPPKEY="$key" -DEXENAME="$key.exe" -DOUTFILE="$out/$setup.exe" "$here/mayor_street.nsi"
 echo "wrote $out/$setup.exe"
 # The project app won't download a bare .exe, so ship the installer zipped too.
 if command -v zip > /dev/null; then
