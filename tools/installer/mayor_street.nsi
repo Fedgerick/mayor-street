@@ -61,12 +61,15 @@ VIAddVersionKey "LegalCopyright" ""
 
 AutoCloseWindow true
 
-; A running copy locks MayorStreet.exe, so offer to close it before copying the new one.
+; A running copy locks MayorStreet.exe on Windows, so offer to close it before copying the new one.
 Function CloseRunningGame
-  nsExec::ExecToStack 'cmd /c tasklist /FI "IMAGENAME eq MayorStreet.exe" /NH | find /I "MayorStreet.exe"'
-  Pop $0
-  Pop $1
-  StrCmp $0 "0" 0 done
+  IfFileExists "$INSTDIR\MayorStreet.exe" 0 done
+  ClearErrors
+  FileOpen $0 "$INSTDIR\MayorStreet.exe" a
+  IfErrors locked
+  FileClose $0
+  Goto done
+  locked:
   MessageBox MB_OKCANCEL|MB_ICONQUESTION "${APP} is open. Close it and update now?$\r$\n$\r$\nAnything since the last autosave is lost." /SD IDOK IDOK kill
   Abort
   kill:
