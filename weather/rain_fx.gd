@@ -59,13 +59,8 @@ func _make_drops() -> GPUParticles3D:
 	p.process_material = pm
 	var q := QuadMesh.new()
 	q.size = Vector2(0.018, 0.6)
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
-	m.billboard_keep_scale = true
-	m.albedo_color = Color(0.8, 0.84, 0.92, 0.42)
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var m := ShaderMaterial.new()  # faces the camera around the drop's fall, on msp too
+	m.shader = preload("res://weather/rain_drop.gdshader")
 	q.material = m
 	p.draw_pass_1 = q
 	return p
