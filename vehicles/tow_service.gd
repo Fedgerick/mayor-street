@@ -42,6 +42,7 @@ enum { DRIVE_IN, LOAD, DRIVE_OUT }
 class Truck:
 	extends RefCounted
 	var node: Node3D
+	var pos := Vector3.ZERO       # flat map metres (the same as the world on ms)
 	var mm: MultiMesh
 	var body: AnimatableBody3D
 	var car: DrivableCar
@@ -126,7 +127,7 @@ func _wait_for(c: DrivableCar) -> float:
 		return -1.0
 	if c.wrecked or c.damage_stage >= 3:
 		return BURNT_WAIT
-	if c.global_basis.y.y < 0.35:
+	if c.global_basis.y.dot(Planet.up(c.global_position)) < 0.35:
 		return FLIPPED_WAIT
 	if c.damage_stage >= 2:
 		return SMASHED_WAIT
@@ -165,8 +166,8 @@ func _look() -> void:
 # ------------------------------------------------------------------ routing ---
 
 func _road_cell_near(pos: Vector3) -> Vector2i:
-	## The road cell whose centre is closest to a point, searching a few cells out.
-	var o := city.world_to_cell(pos)
+	## The road cell whose centre is closest to a flat map point, searching a few cells out.
+	var o := city.flat_to_cell(pos)
 	var best := Vector2i(-1, -1)
 	var best_d := INF
 	for r in 4:
@@ -174,7 +175,7 @@ func _road_cell_near(pos: Vector3) -> Vector2i:
 			for x in range(o.x - r, o.x + r + 1):
 				if maxi(absi(x - o.x), absi(y - o.y)) != r or not city.is_road(x, y):
 					continue
-				var d := city.cell_center(x, y).distance_to(Vector3(pos.x, 0, pos.z))
+				var d := Planet.fdist(city.cell_center(x, y), pos)
 				if d < best_d:
 					best_d = d
 					best = Vector2i(x, y)
@@ -219,19 +220,20 @@ func _dispatch(car: DrivableCar) -> bool:
 	if city == null or not trucks.is_empty() or car == null or not is_instance_valid(car):
 		return false
 	var id := car.get_instance_id()
-	var tcell := _road_cell_near(car.global_position)
-	if tcell.x < 0 or city.cell_center(tcell.x, tcell.y).distance_to(Vector3(car.global_position.x, 0, car.global_position.z)) > MAX_REACH:
+	var at := Planet.flat(car.global_position)
+	var tcell := _road_cell_near(at)
+	if tcell.x < 0 or Planet.fdist(city.cell_center(tcell.x, tcell.y), at) > MAX_REACH:
 		_given_up[id] = true
 		return false
 	var seen := _bfs(tcell, SPAWN_CELLS.y + 2)
-	var p := _player()
+	var p := Planet.flat(_player())
 	var spawn := Vector2i(-1, -1)
 	var far := -1.0
 	for c in seen:
 		var depth: int = seen[c][0]
 		if depth < SPAWN_CELLS.x or depth > SPAWN_CELLS.y:
 			continue
-		var d := city.cell_center(c.x, c.y).distance_to(p)
+		var d := Planet.fdist(city.cell_center(c.x, c.y), p)
 		if d > far:
 			far = d
 			spawn = c
@@ -248,7 +250,7 @@ func _dispatch(car: DrivableCar) -> bool:
 		var last := path[path.size() - 1]
 		var dir := (last - path[path.size() - 2]).normalized()
 		var perp := Vector3(-dir.z, 0, dir.x)
-		var off := clampf((car.global_position - last).dot(perp), -3.0, 3.0)
+		var off := clampf((at - last).dot(perp), -3.0, 3.0)
 		path[path.size() - 1] = last + perp * off
 	var tr := Truck.new()
 	tr.path = path
@@ -295,14 +297,20 @@ func _build(tr: Truck, pos: Vector3) -> void:
 	node.add_child(b)
 	tr.body = b
 	tr.node = node
-	node.global_transform = Transform3D(Basis(Vector3.UP, tr.yaw), pos)
+	tr.pos = pos
+	node.global_transform = _xf(tr)
 	_show(tr, 0.0)
 
 
+func _xf(tr: Truck) -> Transform3D:
+	## The truck's world transform (stood on the ball on msp; yaw is in the local frame).
+	return Planet.xf_rigid(Transform3D(Basis(Vector3.UP, tr.yaw), tr.pos))
+
+
 func _show(tr: Truck, dt: float) -> void:
-	var pos := tr.node.global_position
 	tr.wheel += tr.speed * dt / 0.5
-	tr.node.global_transform = Transform3D(Basis(Vector3.UP, tr.yaw), pos)
+	tr.node.global_transform = _xf(tr)
+	var pos := tr.node.global_position
 	tr.mm.set_instance_custom_data(0, VehicleKit.custom(true, tr.speed < 0.3 or tr.state == LOAD, false, false, tr.wheel, tr.steer, tr.seed))
 	if _lod_timer <= 0.0:
 		var lod := VehicleKit.lod_for(pos.distance_to(_player()))
@@ -315,15 +323,16 @@ func _show(tr: Truck, dt: float) -> void:
 
 func _deck(tr: Truck) -> Transform3D:
 	## Where the carried car sits: on the deck, facing the way the truck does.
-	var basis := Basis(Vector3.UP, tr.yaw + PI)
-	var truck_xf := Transform3D(Basis(Vector3.UP, tr.yaw), tr.node.global_position)
+	var truck_xf := _xf(tr)
+	var basis := truck_xf.basis * Basis(Vector3.UP, PI)
 	return Transform3D(basis, truck_xf * (BED + Vector3(0, DrivableCar.SAG, 0)))
 
 
 func _steer_to(tr: Truck, dt: float, target: Vector3, speed_cap: float, stop_at_end: bool) -> bool:
 	## Pure pursuit toward `target`. True once there (when stopping) or within a car length.
-	var pos := tr.node.global_position
+	var pos := tr.pos
 	var to := target - pos
+	to.x = Planet.fdx(pos.x, target.x)
 	to.y = 0.0
 	var d := to.length()
 	if stop_at_end and d < 0.6:
@@ -341,9 +350,10 @@ func _steer_to(tr: Truck, dt: float, target: Vector3, speed_cap: float, stop_at_
 	var f := Vector3(-sin(tr.yaw), 0, -cos(tr.yaw))
 	var step := minf(tr.speed * dt, d)
 	pos += f * step
-	tr.node.global_position = pos
+	tr.pos = pos
+	tr.node.global_transform = _xf(tr)
 	if tr.body != null:
-		tr.body.global_transform = Transform3D(Basis(Vector3.UP, tr.yaw), pos)
+		tr.body.global_transform = tr.node.global_transform
 	return d < (0.6 if stop_at_end else 6.0)
 
 
@@ -353,7 +363,7 @@ func _car_ok(tr: Truck) -> bool:
 
 
 func _wait_for_ok(c: DrivableCar) -> bool:
-	return c.wrecked or c.damage_stage >= 2 or c.global_basis.y.y < 0.5 or c.get_meta("on_deck", false)
+	return c.wrecked or c.damage_stage >= 2 or c.global_basis.y.dot(Planet.up(c.global_position)) < 0.5 or c.get_meta("on_deck", false)
 
 
 func _drive_in(tr: Truck, dt: float) -> void:
@@ -400,7 +410,7 @@ func _load(tr: Truck, dt: float) -> void:
 	var e := k * k * (3.0 - 2.0 * k)
 	var to := _deck(tr)
 	var q := tr.from.basis.get_rotation_quaternion().slerp(to.basis.get_rotation_quaternion(), e)
-	var pos := tr.from.origin.lerp(to.origin, e) + Vector3.UP * sin(e * PI) * 0.9
+	var pos := tr.from.origin.lerp(to.origin, e) + Planet.up(to.origin) * sin(e * PI) * 0.9
 	c.global_transform = Transform3D(Basis(q), pos)
 	if k >= 1.0:
 		c.set_meta("on_deck", true)
@@ -424,8 +434,8 @@ func _leave(tr: Truck) -> void:
 	## Pick a road away from here, preferring the way the truck already faces.
 	tr.state = DRIVE_OUT
 	tr.t = 0.0
-	var here := city.world_to_cell(tr.node.global_position)
-	var root := _road_cell_near(tr.node.global_position) if not city.is_road(here.x, here.y) else here
+	var here := city.flat_to_cell(tr.pos)
+	var root := _road_cell_near(tr.pos) if not city.is_road(here.x, here.y) else here
 	if root.x < 0:
 		_finish(tr)
 		return

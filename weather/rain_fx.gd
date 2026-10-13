@@ -127,7 +127,7 @@ func _process(_delta: float) -> void:
 	if weather == null or camera == null or not camera.is_inside_tree():
 		visible = false
 		return
-	var eye := camera.global_position
+	var eye := Planet.flat(camera.global_position)  # flat map metres (y = height above sea)
 	var r := weather.rain
 	var on := r > 0.02 and eye.y < MAX_HEIGHT and eye.y > -5.0
 	visible = on
@@ -138,11 +138,15 @@ func _process(_delta: float) -> void:
 	_drops.amount_ratio = r
 	_splash.amount_ratio = r
 	# Centre the volume a little ahead of the camera, where you look.
-	var ahead := -camera.global_basis.z
+	var ahead := Planet.to_local(camera.global_position, -camera.global_basis.z)
 	ahead.y = 0.0
 	var c := eye + ahead.normalized() * 10.0
-	_drops.global_position = Vector3(c.x, eye.y + BOX.y * 0.55, c.z)
-	_splash.global_position = Vector3(c.x, 0.18, c.z)
+	_drops.global_transform = Planet.xf_rigid(Transform3D(Basis.IDENTITY, Vector3(c.x, eye.y + BOX.y * 0.55, c.z)))
+	_splash.global_transform = Planet.xf_rigid(Transform3D(Basis.IDENTITY, Vector3(c.x, 0.18, c.z)))
 	var pm := _drops.process_material as ParticleProcessMaterial
+	if Planet.on:  # gravity is in world space: point it at the ground under the camera
+		var down := -_drops.global_basis.y
+		pm.gravity = down * 6.0
+		(_splash.process_material as ParticleProcessMaterial).gravity = down * 9.8
 	var slant := Vector3(weather.wind * 0.35, -1.0, weather.wind * 0.12).normalized()
 	pm.direction = slant

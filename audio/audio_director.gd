@@ -387,7 +387,7 @@ func _on_building_added(id: int, animate: bool) -> void:
 	if b.is_empty():
 		return
 	_done_cool = 0.3
-	play_at("building_done", _city.building_center(b), -4.0, _rng.randf_range(0.9, 1.15), 60.0)
+	play_at("building_done", Planet.place(_city.building_center(b)), -4.0, _rng.randf_range(0.9, 1.15), 60.0)
 
 
 func _on_city_message(text: String) -> void:
@@ -474,10 +474,10 @@ func _process(delta: float) -> void:
 	_prev_active = active
 	var street_bound := active or (busy and _diving)
 
-	height = maxf(listener.y, 1.5)
+	height = maxf(Planet.flat(listener).y, 1.5)  # above the ground, on msp too
 	var focus := listener
 	if not street_bound and main and main.get("cam"):
-		focus = main.get("cam").focus
+		focus = Planet.place(main.get("cam").focus)
 	if _city:
 		night = _night(_city.time_of_day())
 
@@ -798,12 +798,12 @@ func _assign_traffic(listener: Vector3) -> void:
 		if traffic:
 			var r2 := TRAFFIC_RADIUS * TRAFFIC_RADIUS
 			for c in traffic.cars:
-				var d2: float = c.pos.distance_squared_to(listener)
+				var d2: float = Planet.place(c.pos).distance_squared_to(listener)
 				if d2 < r2:
 					cars.append([d2, c])
 					if c.stuck > 3.0 and _honk_cool <= 0.0 and d2 < 3600.0 and _rng.randf() < 0.03:
 						_honk_cool = 5.0
-						play_at("horn_distant", c.pos + Vector3.UP, -6.0, _rng.randf_range(0.85, 1.15), 10.0)
+						play_at("horn_distant", Planet.place(c.pos + Vector3.UP), -6.0, _rng.randf_range(0.85, 1.15), 10.0)
 	cars.sort_custom(func(a, b): return a[0] < b[0])
 	for i in _traffic.size():
 		var p := _traffic[i]
@@ -823,7 +823,7 @@ func _follow_traffic() -> void:
 		if c == null:
 			continue
 		var p := _traffic[i]
-		p.global_position = c.pos + Vector3.UP * 0.6
+		p.global_position = Planet.place(c.pos + Vector3.UP * 0.6)
 		var sp := clampf(c.v / 12.5, 0.0, 1.3)
 		p.pitch_scale = 0.65 + 0.6 * sp
 		p.volume_db = linear_to_db(0.3 + 0.7 * minf(sp, 1.0)) - 3.0
@@ -838,5 +838,6 @@ func _ambient_horns(delta: float, focus: Vector3) -> void:
 		return
 	var a := _rng.randf() * TAU
 	var dist := _rng.randf_range(60.0, 180.0)
-	var pos := Vector3(focus.x + cos(a) * dist, 1.0, focus.z + sin(a) * dist)
+	var f := Planet.flat(focus)
+	var pos := Planet.place(Vector3(f.x + cos(a) * dist, 1.0, f.z + sin(a) * dist))
 	play_at("horn_distant", pos, -8.0 + 6.0 * density, _rng.randf_range(0.85, 1.15), 30.0)

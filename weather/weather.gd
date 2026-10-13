@@ -93,12 +93,12 @@ func _strikes(dm: float) -> void:
 	if _next_strike > 0.0:
 		return
 	_next_strike = _rng.randf_range(3.0, 18.0) / maxf(rain, 0.1)
-	var at := focus
-	if at == Vector3.ZERO and city:
-		at = Planet.place(city.cell_center(City.W / 2, City.H / 2))
+	var at := Planet.flat(focus)
+	if focus == Vector3.ZERO and city:
+		at = city.cell_center(City.W / 2, City.H / 2)
 	var a := _rng.randf() * TAU
 	var r := _rng.randf_range(250.0, 1400.0)
-	lightning.emit(at + Vector3(cos(a) * r, 0.0, sin(a) * r))
+	lightning.emit(Planet.place(at + Vector3(cos(a) * r, 0.0, sin(a) * r)))
 
 
 ## Move the eased values on by `dm` game minutes.
