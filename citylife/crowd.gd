@@ -632,7 +632,7 @@ func fleeing_count() -> int:
 
 ## A person who just appeared at `pos` (a driver pulled from a car) and runs from `from`.
 func spawn_fleeing(pos: Vector3, from: Vector3) -> Ped:
-	var cell := net.city.world_to_cell(pos)
+	var cell := net.city.flat_to_cell(pos)
 	if not net.city.inside(cell.x, cell.y):
 		return null
 	var i := net.city.idx(cell.x, cell.y)
@@ -857,9 +857,10 @@ func render() -> void:
 				var grip: Vector3 = p.hero.umbrella_grip()
 				if grip.distance_to(hand) < 0.8:
 					up += grip - hand
-			_brolly_buf[ou] = right.x; _brolly_buf[ou + 1] = 0.0; _brolly_buf[ou + 2] = back.x; _brolly_buf[ou + 3] = up.x
-			_brolly_buf[ou + 4] = 0.0; _brolly_buf[ou + 5] = p.size; _brolly_buf[ou + 6] = 0.0; _brolly_buf[ou + 7] = up.y
-			_brolly_buf[ou + 8] = right.z; _brolly_buf[ou + 9] = 0.0; _brolly_buf[ou + 10] = back.z; _brolly_buf[ou + 11] = up.z
+			var t := _onto(right, Vector3(0, p.size, 0), back, up)
+			_brolly_buf[ou] = t.basis.x.x; _brolly_buf[ou + 1] = t.basis.y.x; _brolly_buf[ou + 2] = t.basis.z.x; _brolly_buf[ou + 3] = t.origin.x
+			_brolly_buf[ou + 4] = t.basis.x.y; _brolly_buf[ou + 5] = t.basis.y.y; _brolly_buf[ou + 6] = t.basis.z.y; _brolly_buf[ou + 7] = t.origin.y
+			_brolly_buf[ou + 8] = t.basis.x.z; _brolly_buf[ou + 9] = t.basis.y.z; _brolly_buf[ou + 10] = t.basis.z.z; _brolly_buf[ou + 11] = t.origin.z
 			_brolly_buf[ou + 12] = float(p.outfit % 6)
 			_brolly_buf[ou + 13] = p.phase
 			_brolly_buf[ou + 14] = st.x
@@ -868,9 +869,15 @@ func render() -> void:
 		if p.hero != null:
 			continue
 		var o := n * 16
-		_buf[o] = right.x; _buf[o + 1] = 0.0; _buf[o + 2] = back.x; _buf[o + 3] = p.pos.x
-		_buf[o + 4] = 0.0; _buf[o + 5] = p.size; _buf[o + 6] = 0.0; _buf[o + 7] = p.pos.y
-		_buf[o + 8] = right.z; _buf[o + 9] = 0.0; _buf[o + 10] = back.z; _buf[o + 11] = p.pos.z
+		if Planet.on:
+			var t := _onto(right, Vector3(0, p.size, 0), back, p.pos)
+			_buf[o] = t.basis.x.x; _buf[o + 1] = t.basis.y.x; _buf[o + 2] = t.basis.z.x; _buf[o + 3] = t.origin.x
+			_buf[o + 4] = t.basis.x.y; _buf[o + 5] = t.basis.y.y; _buf[o + 6] = t.basis.z.y; _buf[o + 7] = t.origin.y
+			_buf[o + 8] = t.basis.x.z; _buf[o + 9] = t.basis.y.z; _buf[o + 10] = t.basis.z.z; _buf[o + 11] = t.origin.z
+		else:
+			_buf[o] = right.x; _buf[o + 1] = 0.0; _buf[o + 2] = back.x; _buf[o + 3] = p.pos.x
+			_buf[o + 4] = 0.0; _buf[o + 5] = p.size; _buf[o + 6] = 0.0; _buf[o + 7] = p.pos.y
+			_buf[o + 8] = right.z; _buf[o + 9] = 0.0; _buf[o + 10] = back.z; _buf[o + 11] = p.pos.z
 		_buf[o + 12] = p.phase
 		_buf[o + 13] = st.x + 4.0 * st.y
 		_buf[o + 14] = float(p.look)
@@ -885,6 +892,12 @@ func render() -> void:
 	_brolly_mmi.multimesh.buffer = _brolly_buf
 	_brolly_mmi.multimesh.visible_instance_count = nu
 	_brolly_mmi.cast_shadow = _mmi.cast_shadow
+
+
+## A flat-map instance frame (columns right, up, back at pos) as it stands on the ball on
+## msp; unchanged on the flat island.
+static func _onto(right: Vector3, up: Vector3, back: Vector3, pos: Vector3) -> Transform3D:
+	return Planet.xf_rigid(Transform3D(Basis(right, up, back), pos))
 
 
 func umbrella_count() -> int:
@@ -932,9 +945,10 @@ func _put_dog(p: Ped, k: int, moving: bool) -> void:
 	var back := -p.fwd
 	var r := Vector3(back.z, 0, -back.x)
 	var o := k * 16
-	_dog_buf[o] = r.x; _dog_buf[o + 1] = 0.0; _dog_buf[o + 2] = back.x; _dog_buf[o + 3] = pos.x
-	_dog_buf[o + 4] = 0.0; _dog_buf[o + 5] = 1.0; _dog_buf[o + 6] = 0.0; _dog_buf[o + 7] = pos.y
-	_dog_buf[o + 8] = r.z; _dog_buf[o + 9] = 0.0; _dog_buf[o + 10] = back.z; _dog_buf[o + 11] = pos.z
+	var t := _onto(r, Vector3.UP, back, pos)
+	_dog_buf[o] = t.basis.x.x; _dog_buf[o + 1] = t.basis.y.x; _dog_buf[o + 2] = t.basis.z.x; _dog_buf[o + 3] = t.origin.x
+	_dog_buf[o + 4] = t.basis.x.y; _dog_buf[o + 5] = t.basis.y.y; _dog_buf[o + 6] = t.basis.z.y; _dog_buf[o + 7] = t.origin.y
+	_dog_buf[o + 8] = t.basis.x.z; _dog_buf[o + 9] = t.basis.y.z; _dog_buf[o + 10] = t.basis.z.z; _dog_buf[o + 11] = t.origin.z
 	_dog_buf[o + 12] = p.phase * 1.6
 	_dog_buf[o + 13] = (1.6 if p.flee > 0.0 else 1.0) if moving else 0.0
 	_dog_buf[o + 14] = float(p.coat)
@@ -961,7 +975,7 @@ func update_heroes(dt: float) -> void:
 		for p in peds:
 			_release_hero(p)
 		return
-	var eye := camera.global_position
+	var eye := Planet.flat(camera.global_position)  # people live on the flat map
 	var close := eye.y < 40.0
 	# Let go of anyone who walked away (or when the camera went up).
 	for p in peds:
@@ -989,8 +1003,7 @@ func update_heroes(dt: float) -> void:
 		if p.hero == null:
 			continue
 		var m: CharacterModel = p.hero
-		m.global_position = p.pos
-		m.global_basis = Basis.looking_at(p.fwd, Vector3.UP).scaled(Vector3.ONE * p.size)
+		m.global_transform = Planet.xf_rigid(Transform3D(Basis.looking_at(p.fwd, Vector3.UP).scaled(Vector3.ONE * p.size), p.pos))
 		if p.flee > 0.0:
 			m.set_sitting(false)
 			m.set_activity("")

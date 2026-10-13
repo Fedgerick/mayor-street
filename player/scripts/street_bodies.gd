@@ -100,7 +100,9 @@ func _physics_process(dt: float) -> void:
 	if street == null or traffic == null or not street.active:
 		_idle()
 		return
-	var focus: Vector3 = street.player_position()
+	# Worked out on the flat map, where traffic and people live (citylife/); the proxy
+	# bodies are stood up on the ball on msp.
+	var focus: Vector3 = Planet.flat(street.player_position())
 	_pick_timer -= dt
 	if _pick_timer <= 0.0:
 		_pick_timer = PICK_INTERVAL
@@ -161,15 +163,15 @@ func rebuild_fixtures() -> void:
 		for sp in spots.spots:
 			var xf: Transform3D = sp.xform
 			if sp.kind == StreetSpots.Kind.BENCH:
-				_fix(xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.42, -0.1)), bench)
+				_fix(Planet.xf_rigid(xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.42, -0.1))), bench)
 			else:
-				_fix(xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.25, -1.25)), panel)
+				_fix(Planet.xf_rigid(xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.25, -1.25))), panel)
 				for sx in [-1.7, 1.7]:
-					_fix(xf * Transform3D(Basis.IDENTITY, Vector3(sx, 1.25, 0.1)), post)
+					_fix(Planet.xf_rigid(xf * Transform3D(Basis.IDENTITY, Vector3(sx, 1.25, 0.1))), post)
 	if signals:
 		for h in signals.heads:
 			var xf: Transform3D = h[2]
-			_fix(Transform3D(Basis.IDENTITY, xf.origin + Vector3(0, 1.8, 0)), pole)
+			_fix(Planet.xf_rigid(Transform3D(Basis.IDENTITY, xf.origin + Vector3(0, 1.8, 0))), pole)
 	add_child(_fixtures)
 
 
@@ -281,7 +283,7 @@ func _place_cars() -> void:
 		if not box.size.is_equal_approx(half * 2.0):
 			box.size = half * 2.0
 			cs.position = Vector3(0, 0.3 + half.y, 0)
-		body.global_transform = _car_xform(c)
+		body.global_transform = Planet.xf_rigid(_car_xform(c))
 		cs.disabled = false
 
 
@@ -291,7 +293,7 @@ func _place_people() -> void:
 		if p == null:
 			continue
 		var body := _people_bodies[i]
-		body.global_position = p.pos
+		body.global_transform = Planet.xf_rigid(Transform3D(Basis.IDENTITY, p.pos))
 		(body.get_child(0) as CollisionShape3D).disabled = false
 
 
@@ -304,14 +306,17 @@ func _feed_obstacles(focus: Vector3) -> void:
 		var car := v as DrivableCar
 		if car == null or not car.is_inside_tree():
 			continue
-		var p := car.global_position
+		var w := car.global_position
+		var p := Planet.flat(w)
 		if p.distance_squared_to(focus) > r2:
 			continue
 		var half := _vehicle_half(car)
-		obs.append([p, car.global_basis.x.normalized() * half.x, car.global_basis.z.normalized() * half.z, car.linear_velocity])
+		obs.append([p, Planet.to_local(w, car.global_basis.x).normalized() * half.x,
+			Planet.to_local(w, car.global_basis.z).normalized() * half.z, Planet.to_local(w, car.linear_velocity)])
 	if street.car == null and not street.player.in_vehicle:
-		var pp: Vector3 = street.player.global_position
-		obs.append([pp, Vector3(0.45, 0, 0), Vector3(0, 0, 0.45), street.player.velocity])
+		var pw: Vector3 = street.player.global_position
+		var pp := Planet.flat(pw)
+		obs.append([pp, Vector3(0.45, 0, 0), Vector3(0, 0, 0.45), Planet.to_local(pw, street.player.velocity)])
 		crowd_block(pp)
 	elif crowd:
 		crowd.blockers.clear()
@@ -347,12 +352,16 @@ static func _boxes_touch(pa: Vector3, xa: Vector3, za: Vector3, ha: Vector2, pb:
 
 
 func _car_hits(car: DrivableCar) -> void:
-	var cp := car.global_position
-	var cx := Vector3(car.global_basis.x.x, 0, car.global_basis.x.z).normalized()
-	var cz := Vector3(car.global_basis.z.x, 0, car.global_basis.z.z).normalized()
+	# On the flat map, like the AI cars and people it is tested against.
+	var cw := car.global_position
+	var cp := Planet.flat(cw)
+	var bx := Planet.to_local(cw, car.global_basis.x)
+	var bz := Planet.to_local(cw, car.global_basis.z)
+	var cx := Vector3(bx.x, 0, bx.z).normalized()
+	var cz := Vector3(bz.x, 0, bz.z).normalized()
 	var ch3 := _vehicle_half(car)
 	var ch := Vector2(ch3.x, ch3.z)
-	var vel := car.linear_velocity
+	var vel := Planet.to_local(cw, car.linear_velocity)
 	# AI cars: a real knock turns the stand-in into a physics car.
 	for n in _near_cars.duplicate():
 		var c = n[0]
@@ -384,7 +393,7 @@ func _car_hits(car: DrivableCar) -> void:
 		_cooldown[p] = 1.5
 		run_over += 1
 		var dmg := speed * speed * 1.2   # ~11 km/h bruises, ~30 km/h kills
-		var dir := Vector3(vel.x, 0, vel.z).normalized() + Vector3.UP * 0.3
+		var dir := Planet.dir(cw, Vector3(vel.x, 0, vel.z).normalized() + Vector3.UP * 0.3)  # world, for the hit
 		if n[1]:
 			street.hurt_officer(p, dmg, dir, &"car")
 		else:
@@ -400,11 +409,14 @@ func _knock_out(c: Object) -> void:
 			_near_cars.remove_at(k)
 			break
 	var info: Dictionary = traffic.knock_out(c)
-	var xf: Transform3D = info.xform
+	var xf: Transform3D = info.xform  # flat map
 	var fwd := -xf.basis.z
 	var pos := xf.origin
 	pos.y = maxf(pos.y, 0.0) + 0.1
-	var wreck: DrivableCar = street.spawn_car(info.model, pos, atan2(fwd.x, fwd.z), info.tint)
+	pos = Planet.place(pos)
+	fwd = Planet.dir(pos, fwd)
+	var lf := Planet.to_local(pos, fwd)
+	var wreck: DrivableCar = street.spawn_car(info.model, pos, atan2(lf.x, lf.z), info.tint)
 	wreck.set_meta("parked", true)        # someone's car: taking it is still theft
 	wreck.set_meta("from_traffic", true)
 	wreck.linear_velocity = fwd * float(info.get("v", 0.0))
@@ -417,7 +429,8 @@ func _player_hits() -> void:
 	## AI and cop cars that run into the player on foot.
 	if _player_hit_cd > 0.0:
 		return
-	var pp: Vector3 = street.player.global_position
+	var pw: Vector3 = street.player.global_position
+	var pp := Planet.flat(pw)
 	for n in _near_cars:
 		var c = n[0]
 		if c.v < HIT_PLAYER_SPEED:
@@ -429,8 +442,8 @@ func _player_hits() -> void:
 			continue
 		_player_hit_cd = 1.2
 		var fwd: Vector3 = c.fwd
-		street.player.hurt(c.v * c.v * 0.5, xf.origin)
-		street.player.velocity += fwd * c.v * 0.9 + Vector3.UP * minf(2.0 + c.v * 0.3, 6.0)
+		street.player.hurt(c.v * c.v * 0.5, Planet.place(xf.origin))
+		street.player.velocity += Planet.dir(pw, fwd * c.v * 0.9 + Vector3.UP * minf(2.0 + c.v * 0.3, 6.0))
 		return
 
 
@@ -439,13 +452,13 @@ func _tidy_wrecks(focus: Vector3) -> void:
 		if not is_instance_valid(w) or w == street.car:
 			_wrecks.erase(w)
 			continue
-		if w.global_position.distance_to(focus) > WRECK_KEEP:
+		if Planet.flat(w.global_position).distance_to(focus) > WRECK_KEEP:
 			_wrecks.erase(w)
 			w.queue_free()
 	while _wrecks.size() > MAX_WRECKS:
 		var far: Node3D = _wrecks[0]
 		for w in _wrecks:
-			if w.global_position.distance_squared_to(focus) > far.global_position.distance_squared_to(focus):
+			if Planet.flat(w.global_position).distance_squared_to(focus) > Planet.flat(far.global_position).distance_squared_to(focus):
 				far = w
 		_wrecks.erase(far)
 		far.queue_free()

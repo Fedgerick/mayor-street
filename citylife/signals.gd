@@ -70,7 +70,7 @@ func rebuild() -> void:
 	var mm := _poles.multimesh
 	mm.instance_count = heads.size()
 	for k in heads.size():
-		mm.set_instance_transform(k, heads[k][2])
+		mm.set_instance_transform(k, Planet.xf(heads[k][2]))
 	_bulbs.multimesh.instance_count = heads.size() * 3
 	_accum = 1.0
 	update(0.0)
@@ -91,7 +91,7 @@ func update(dt: float) -> void:
 			var c: Color = ON[b]
 			if b != on_idx:
 				c = Color(c.r * 0.12, c.g * 0.12, c.b * 0.12, 0.0)
-			bm.set_instance_transform(k * 3 + b, Transform3D(xf.basis, xf * Vector3(0, LAMP_Y[b], -0.2)))
+			bm.set_instance_transform(k * 3 + b, Planet.xf(Transform3D(xf.basis, xf * Vector3(0, LAMP_Y[b], -0.2))))
 			bm.set_instance_color(k * 3 + b, c)
 
 

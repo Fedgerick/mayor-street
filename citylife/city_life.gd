@@ -279,7 +279,7 @@ func _service_cells(kind: String) -> Array:
 		for st in sv.garbage_depots():
 			var p = st.get("road", st.get("center"))
 			if p is Vector3:
-				out.append(city.world_to_cell(p))
+				out.append(city.flat_to_cell(p))
 		if not out.is_empty():
 			return out
 	if kind == "garbage" and city.has_method("find_tagged"):
@@ -425,8 +425,9 @@ func _update_view() -> void:
 		car_radius = size
 		ped_radius = size
 		return
-	var o := camera.global_position
-	var d := -camera.global_transform.basis.z
+	# On msp the view is worked out on the flat map, where cars and people live.
+	var o := Planet.flat(camera.global_position)
+	var d := Planet.to_local(camera.global_position, -camera.global_transform.basis.z)
 	cam_height = o.y
 	if d.y < -0.05:
 		focus = o + d * (o.y / -d.y)
@@ -455,7 +456,10 @@ func _update_area() -> void:
 	for i in city.road.size():
 		if city.road[i] != 1:
 			continue
-		var d2 := net.center(i).distance_squared_to(focus)
+		var cc := net.center(i)
+		if Planet.on:
+			cc.x = focus.x + Planet.dx(focus.x, cc.x)  # the short way round
+		var d2 := cc.distance_squared_to(focus)
 		if d2 < r2 and net.junction[i] == 0:
 			ct += car_weight[i]
 			_car_cells.append(i)
@@ -487,6 +491,7 @@ func _pick(cells: PackedInt32Array, cum: PackedFloat32Array) -> int:
 func _in_view(p: Vector3) -> bool:
 	if camera == null or not camera.is_inside_tree():
 		return false
+	p = Planet.place(p)  # p is flat map metres
 	return camera.is_position_in_frustum(p) and camera.global_position.distance_to(p) < STREET_FILL + cam_height
 
 
@@ -527,7 +532,7 @@ func _cull() -> void:
 	var cr := car_radius * 1.15
 	var removed := 0
 	for c in traffic.cars.duplicate():
-		var far: bool = Vector2(c.pos.x - focus.x, c.pos.z - focus.z).length() > cr
+		var far: bool = Planet.fdist(c.pos, focus) > cr
 		var extra: bool = traffic.cars.size() > want_cars * 1.2 + 4 and removed < 2 and not _in_view(c.pos) and not c.garbage and not c.bus
 		if far or extra:
 			traffic.remove(c)
@@ -539,7 +544,7 @@ func _cull() -> void:
 	var pr := ped_radius * 1.2
 	removed = 0
 	for p in crowd.peds.duplicate():
-		var far: bool = Vector2(p.pos.x - focus.x, p.pos.z - focus.z).length() > pr
+		var far: bool = Planet.fdist(p.pos, focus) > pr
 		var extra: bool = crowd.peds.size() > want_peds * 1.2 + 4 and removed < 3 and not _in_view(p.pos) and not p.crossing
 		if far or extra:
 			crowd.remove(p)

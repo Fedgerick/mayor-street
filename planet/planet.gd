@@ -225,3 +225,13 @@ static func point_gravity(space: RID) -> void:
 ## A world transform -> flat map transform (the inverse of xf_rigid).
 static func flat_xform(t: Transform3D) -> Transform3D:
 	return Transform3D(frame_world(t.origin).inverse() * t.basis, unwarp(t.origin)) if on else t
+
+
+## b.x - a.x on the flat map, the short way round on msp (plain difference on the island).
+static func fdx(a: float, b: float) -> float:
+	return dx(a, b) if on else b - a
+
+
+## Flat-map distance between two flat points, the short way round on msp, ignoring height.
+static func fdist(a: Vector3, b: Vector3) -> float:
+	return Vector2(fdx(a.x, b.x), b.z - a.z).length()

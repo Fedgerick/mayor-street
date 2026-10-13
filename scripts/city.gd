@@ -1076,7 +1076,9 @@ func simulate_hours(hours: int) -> void:
 
 func center_cell() -> Vector2i:
 	## A land cell near the middle of the island.
-	var c := Vector2i(0, H / 2 - 3) if Planet.on else Vector2i(W / 2, H / 2)
+	# On the planet the town starts half way round from the x seam, so the seam (where
+	# flat x wraps) is on the far side of the ball.
+	var c := Vector2i(W / 2, H / 2 - 3) if Planet.on else Vector2i(W / 2, H / 2)
 	for r in 20:
 		for y in range(c.y - r, c.y + r + 1):
 			for x in range(c.x - r, c.x + r + 1):

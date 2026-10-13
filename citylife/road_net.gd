@@ -109,6 +109,8 @@ func has_arm(i: int, d: int) -> bool:
 func neighbor(i: int, d: int) -> int:
 	var x: int = i % City.W + DG[d].x
 	var y: int = i / City.W + DG[d].y
+	if Planet.on:  # east-west wraps round the ball (positions jump by a lap at the seam)
+		x = posmod(x, City.W)
 	if x < 0 or y < 0 or x >= City.W or y >= City.H:
 		return -1
 	return y * City.W + x

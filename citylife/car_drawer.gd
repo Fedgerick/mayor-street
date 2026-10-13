@@ -58,11 +58,18 @@ func add(pos: Vector3, fwd: Vector3, tint: Color, custom: Color, lod: int) -> vo
 	_n[lod] = n + 1
 	var back := -fwd
 	var right := Vector3.UP.cross(back).normalized()
+	var up := Vector3.UP
+	if Planet.on:  # pos and fwd are flat map; stand the car up on the ball
+		var t := Planet.xf_rigid(Transform3D(Basis(right, up, back), pos))
+		right = t.basis.x
+		up = t.basis.y
+		back = t.basis.z
+		pos = t.origin
 	var b := _buf[lod]
 	var o := n * 20
-	b[o] = right.x; b[o + 1] = 0.0; b[o + 2] = back.x; b[o + 3] = pos.x
-	b[o + 4] = right.y; b[o + 5] = 1.0; b[o + 6] = back.y; b[o + 7] = pos.y
-	b[o + 8] = right.z; b[o + 9] = 0.0; b[o + 10] = back.z; b[o + 11] = pos.z
+	b[o] = right.x; b[o + 1] = up.x; b[o + 2] = back.x; b[o + 3] = pos.x
+	b[o + 4] = right.y; b[o + 5] = up.y; b[o + 6] = back.y; b[o + 7] = pos.y
+	b[o + 8] = right.z; b[o + 9] = up.z; b[o + 10] = back.z; b[o + 11] = pos.z
 	b[o + 12] = tint.r; b[o + 13] = tint.g; b[o + 14] = tint.b; b[o + 15] = 1.0
 	b[o + 16] = custom.r; b[o + 17] = custom.g; b[o + 18] = custom.b; b[o + 19] = custom.a
 

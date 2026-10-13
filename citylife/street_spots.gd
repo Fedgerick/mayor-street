@@ -234,7 +234,7 @@ func _set_xforms(mmi: MultiMeshInstance3D, xs: Array[Transform3D]) -> void:
 	var mm := mmi.multimesh
 	mm.instance_count = xs.size()
 	for k in xs.size():
-		mm.set_instance_transform(k, xs[k])
+		mm.set_instance_transform(k, Planet.xf(xs[k]))  # flat map -> the ball on msp
 
 
 func update_view(cam_height: float) -> void:

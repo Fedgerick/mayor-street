@@ -264,7 +264,7 @@ func _traffic_car_near() -> Object:
 	## A slow or stopped AI car close enough to pull the driver out of.
 	if life == null or life.get("traffic") == null:
 		return null
-	var tc = life.traffic.nearest_car(player.global_position, carjack_radius)
+	var tc = life.traffic.nearest_car(Planet.flat(player.global_position), carjack_radius)
 	if tc and absf(tc.v) < 6.0:
 		return tc
 	return null
@@ -276,7 +276,7 @@ func _carjack(tc: Object) -> void:
 	switching = true
 	player.set_puppet(true)
 	var info: Dictionary = life.traffic.take_car(tc)
-	var xf: Transform3D = info.xform
+	var xf: Transform3D = Planet.xf_rigid(info.xform)  # citylife hands back flat map
 	var pos := xf.origin
 	var fwd := Planet.to_local(pos, -xf.basis.z)
 	if Planet.on:
@@ -655,7 +655,7 @@ func _on_car_crashed(strength: float, c: DrivableCar) -> void:
 	# A real smash draws a crowd (citylife/): people jump clear, then stop and stare.
 	if strength >= 0.3 and _crash_report <= 0.0 and life and life.has_method("report_crash"):
 		_crash_report = 1.5
-		life.report_crash(c.global_position, 1 if strength < 0.5 else (2 if strength < 0.8 else 3))
+		life.report_crash(Planet.flat(c.global_position), 1 if strength < 0.5 else (2 if strength < 0.8 else 3))
 
 
 func _free_ride(c: DrivableCar) -> bool:
@@ -703,6 +703,7 @@ func _witnessed(pos: Vector3) -> bool:
 	## Somebody saw it: a pedestrian within 30 m or a cop within 60 m.
 	if life == null:
 		return true
+	pos = Planet.flat(pos)  # people and cops live on the flat map
 	var crowd = life.get("crowd")
 	if crowd:
 		for p in crowd.peds:
@@ -741,20 +742,20 @@ func trace_shot(from: Vector3, dir: Vector3, reach: float, melee := false) -> Di
 		var crowd = life.get("crowd")
 		if crowd:
 			for p in crowd.peds:
-				var t := _ray_person(from, dir, p.pos, radius)
+				var t := _ray_person(from, dir, Planet.place(p.pos), radius)
 				if t >= 0.0 and t < out.t:
 					out = {"kind": &"ped", "pos": from + dir * t, "target": p, "t": t}
 		var police = life.get("police")
 		if police:
 			for o in police.officers:
-				var t := _ray_person(from, dir, o.pos, radius)
+				var t := _ray_person(from, dir, Planet.place(o.pos), radius)
 				if t >= 0.0 and t < out.t:
 					out = {"kind": &"officer", "pos": from + dir * t, "target": o, "t": t}
 	# Anyone else who can be shot (missions/' armed crews): nodes in "street_targets" list
 	# them with targets() (things with a pos) and take the hit in hurt().
 	for g in get_tree().get_nodes_in_group("street_targets"):
 		for e in g.targets():
-			var t := _ray_person(from, dir, e.pos, radius)
+			var t := _ray_person(from, dir, Planet.place(e.pos), radius)
 			if t >= 0.0 and t < out.t:
 				out = {"kind": &"target", "pos": from + dir * t, "target": e, "owner": g, "t": t}
 	return out
@@ -819,46 +820,48 @@ func on_shot_fired(_weapon: StringName, pos: Vector3) -> void:
 func _scare(pos: Vector3, severity: int) -> void:
 	if life and life.has_method("report_crime") and _panic_report <= 0.0:
 		_panic_report = 0.5
-		life.report_crime(pos, severity)
+		life.report_crime(Planet.flat(pos), severity)
 
 
+## dir is a world direction; p.pos is on the flat map (citylife).
 func hurt_person(p: Object, damage: float, dir: Vector3, weapon := &"fists") -> void:
 	var hp: float = _hp.get(p, PED_HEALTH) - damage
-	var at: Vector3 = p.pos + Planet.up(p.pos) * 1.2
-	StreetFx.puff(_fx_root, at, Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
+	var w := Planet.place(p.pos)
+	StreetFx.puff(_fx_root, w + Planet.up(w) * 1.2, Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
 	if hp <= 0.0:
 		_hp.erase(p)
-		_spawn_corpse(p.pos, dir, p.outfit, false)
+		_spawn_corpse(w, dir, p.outfit, false)
 		life.crowd.remove(p)
-		_commit(&"murder", p.pos)
+		_commit(&"murder", w)
 		goodness_action.emit(&"kill_person")
 	else:
 		_hp[p] = hp
 		if p.get("hero"):
 			p.hero.play_hit()
-		_commit(&"assault", p.pos, weapon)
+		_commit(&"assault", w, weapon)
 		goodness_action.emit(&"hit_person")
-	_scare(p.pos, 1 if weapon == &"fists" else 3)
+	_scare(w, 1 if weapon == &"fists" else 3)
 
 
 func hurt_officer(o: Object, damage: float, dir: Vector3, _weapon := &"fists") -> void:
 	var hp: float = _hp.get(o, OFFICER_HEALTH) - damage
-	StreetFx.puff(_fx_root, o.pos + Planet.up(o.pos) * 1.2, Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
+	var w := Planet.place(o.pos)
+	StreetFx.puff(_fx_root, w + Planet.up(w) * 1.2, Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
 	goodness_action.emit(&"hit_cop")
 	if hp <= 0.0:
 		_hp.erase(o)
-		_spawn_corpse(o.pos, dir, 777, true)
+		_spawn_corpse(w, dir, 777, true)
 		var police = life.police
 		if police.has_method("kill_officer"):
 			police.kill_officer(o)
 		else:
 			police._remove_officer(o)
-		_commit(&"cop_killed", o.pos)
+		_commit(&"cop_killed", w)
 	else:
 		_hp[o] = hp
 		if o.model:
 			o.model.play_hit()
-		_commit(&"cop_assault", o.pos)
+		_commit(&"cop_assault", w)
 
 
 func _spawn_corpse(pos: Vector3, dir: Vector3, outfit: int, cop: bool) -> void:
@@ -908,17 +911,19 @@ func _on_car_exploded(c: DrivableCar) -> void:
 		var crowd = life.get("crowd")
 		if crowd:
 			for p in crowd.peds.duplicate():
-				if p.pos.distance_to(at) < BLAST_RADIUS * 0.7:
+				var pw := Planet.place(p.pos)
+				if pw.distance_to(at) < BLAST_RADIUS * 0.7:
 					if by_player:
-						hurt_person(p, 999.0, p.pos - at)
+						hurt_person(p, 999.0, pw - at)
 					else:
-						_spawn_corpse(p.pos, p.pos - at, p.outfit, false)
+						_spawn_corpse(pw, pw - at, p.outfit, false)
 						crowd.remove(p)
 		var police = life.get("police")
 		if police:
 			for o in police.officers.duplicate():
-				if o.pos.distance_to(at) < BLAST_RADIUS * 0.7:
-					hurt_officer(o, 999.0, o.pos - at)
+				var ow := Planet.place(o.pos)
+				if ow.distance_to(at) < BLAST_RADIUS * 0.7:
+					hurt_officer(o, 999.0, ow - at)
 		_scare(at, 3)
 	for v in get_tree().get_nodes_in_group("vehicles"):
 		if v != c and not v.wrecked:

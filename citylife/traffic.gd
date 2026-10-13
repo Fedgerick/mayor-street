@@ -351,8 +351,8 @@ func _unstick() -> void:
 	for c in cars.duplicate():
 		if c.stuck < 25.0:
 			continue
-		var seen := camera != null and camera.is_position_in_frustum(c.pos) \
-			and camera.global_position.distance_to(c.pos) < 160.0
+		var seen := camera != null and camera.is_position_in_frustum(Planet.place(c.pos)) \
+			and camera.global_position.distance_to(Planet.place(c.pos)) < 160.0
 		if not seen:
 			despawned_stuck += 1
 			remove(c)
@@ -625,7 +625,7 @@ func render() -> void:
 	var eye := Vector3.ZERO
 	var has_eye := camera != null and camera.is_inside_tree()
 	if has_eye:
-		eye = camera.global_position
+		eye = Planet.flat(camera.global_position)
 	for d in _draw:
 		d.begin()
 	for c in cars:
