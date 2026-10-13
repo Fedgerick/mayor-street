@@ -34,6 +34,7 @@ var _speed := 0.0
 var _cooldown := 0.0
 var _rng := RandomNumberGenerator.new()
 var _smoke: CPUParticles3D
+var flat_xf := Transform3D()  # where it is on the flat map; stood up on the ball on msp
 
 
 func setup(c: City, start: Vector2i, seed_value := 1) -> void:
@@ -41,7 +42,12 @@ func setup(c: City, start: Vector2i, seed_value := 1) -> void:
 	_rng.seed = seed_value
 	_from = start
 	_to = _pick_next(start, Vector2i(-99, -99))
-	position = _lane_point(_from, _to, 0.0)
+	flat_xf = Transform3D(Basis.IDENTITY, _lane_point(_from, _to, 0.0))
+	transform = Planet.xf_rigid(flat_xf)
+
+
+func flat_position() -> Vector3:
+	return flat_xf.origin
 
 
 func _ready() -> void:
@@ -133,7 +139,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_cooldown = maxf(0.0, _cooldown - delta)
 	var danger: Vector3 = threat.call()
-	var close := danger != Vector3.INF and danger.distance_to(global_position) < 60.0
+	var close := danger != Vector3.INF and danger.distance_to(flat_xf.origin) < 60.0
 	var target_speed := flee if close else cruise
 	_speed = move_toward(_speed, target_speed, 6.0 * delta)
 	var moving := _to != _from
@@ -149,15 +155,16 @@ func _physics_process(delta: float) -> void:
 	if not moving:
 		return
 	var p := _lane_point(_from, _to, _t)
-	var fwd := p - global_position
+	var fwd := p - flat_xf.origin
 	fwd.y = 0.0
-	var xf := global_transform
+	var xf := flat_xf
 	xf.origin = p
 	if fwd.length() > 0.01:
 		var yaw := atan2(fwd.x, fwd.z)
 		var cur := xf.basis.get_euler().y
 		xf.basis = Basis(Vector3.UP, lerp_angle(cur, yaw, minf(1.0, 10.0 * delta)))
-	global_transform = xf
+	flat_xf = xf
+	global_transform = Planet.xf_rigid(xf)
 	_check_ram()
 
 

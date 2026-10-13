@@ -97,7 +97,8 @@ func setup(c: City, street_mode: Node = null, parts := {}) -> void:
 
 # ------------------------------------------------------------------------ API ---
 
-## Puts a target on the minimap and the city map. `where` is a Vector3 or a Node3D to follow.
+## Puts a target on the minimap and the city map. `where` is a Vector3 (flat map metres;
+## the same as the world on ms) or a Node3D to follow.
 ## opts (all optional):
 ##   color     Color (default yellow)
 ##   kind      blip symbol: "job" (default), "car", "pickup", "enemy", "phone", "place", "home"
@@ -221,7 +222,7 @@ func toggle_map() -> void:
 
 ## The name of the special building (or your home) at a world point, for the city map.
 func place_name(w: Vector3) -> String:
-	var cell := city.world_to_cell(w)
+	var cell := city.flat_to_cell(w)  # map points are flat map metres
 	if not city.inside(cell.x, cell.y):
 		return ""
 	var id := city.bld[city.idx(cell.x, cell.y)]
@@ -285,17 +286,18 @@ func _process(delta: float) -> void:
 
 
 func _follow(dt: float) -> void:
+	# The maps are the flat map, so on msp the camera and player are read back onto it.
 	var cam := get_viewport().get_camera_3d()
 	if cam:
-		var f := -cam.global_basis.z
+		var f := Planet.to_local(cam.global_position, -cam.global_basis.z)
 		if Vector2(f.x, f.z).length() > 0.05:
 			view_angle = atan2(f.x, -f.z)
 	if street_active():
-		me = street.player_position()
+		me = Planet.flat(street.player_position())
 	elif cam:
 		# The mayor view: the point the camera looks at on the ground.
-		var o := cam.global_position
-		var f := -cam.global_basis.z
+		var o := Planet.flat(cam.global_position)
+		var f := Planet.to_local(cam.global_position, -cam.global_basis.z)
 		me = o - f * (o.y / f.y) if f.y < -0.05 else Vector3(o.x, 0.0, o.z)
 	if dt > 0.0 and _last_pos.is_finite():
 		var d := me - _last_pos
@@ -403,11 +405,12 @@ func _collect_cops() -> void:
 				blips.append({"pos": p, "kind": "cop", "color": col, "label": "Police", "edge": false})
 
 
+## A mark's place on the flat map: a Vector3 already is; a node is read back from the world.
 static func _where(w: Variant) -> Vector3:
 	if w is Vector3:
 		return w
 	if typeof(w) == TYPE_OBJECT and is_instance_valid(w) and w is Node3D and (w as Node3D).is_inside_tree():
-		return (w as Node3D).global_position
+		return Planet.flat((w as Node3D).global_position)
 	return Vector3.INF
 
 
@@ -422,7 +425,7 @@ func _beacon() -> Node3D:
 
 func _beacon_pos() -> Vector3:
 	var b := _beacon()
-	return Vector3(b.global_position.x, 0.0, b.global_position.z) if b else Vector3.INF
+	return Planet.flat(b.global_position) * Vector3(1, 0, 1) if b else Vector3.INF
 
 
 func _beacon_color() -> Color:

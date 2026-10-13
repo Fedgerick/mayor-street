@@ -136,7 +136,7 @@ func _generate(t: Dictionary, from: Vector3) -> Mission:
 		var model: String = t.car[rng.randi() % t.car.size()]
 		m.vars.car_model = model
 		m.vars.car = CAR_NAMES.get(model, model)
-	var from_cell := router.nearest_road(city.world_to_cell(from)) if from != Vector3.INF else Vector2i(-1, -1)
+	var from_cell := router.nearest_road(city.flat_to_cell(from)) if from != Vector3.INF else Vector2i(-1, -1)
 	var fields := {}  # slot -> road distance field from it
 	var used: Array = []
 	for slot in t.slots:
@@ -423,7 +423,7 @@ func tick(delta: float) -> void:
 				fail("The suspect got away")
 			elif m.target.is_wrecked:
 				_advance()
-			elif flat_dist(me, m.target.global_position) > s.get("escape_m", 450.0):
+			elif flat_dist(me, m.target.flat_position()) > s.get("escape_m", 450.0):
 				m._escape_t += delta
 				if m._escape_t > 8.0:
 					fail("The suspect got away")

@@ -597,7 +597,7 @@ func _play_at(sound: String, pos: Vector3, fallback: String) -> void:
 	var a := get_node_or_null("/root/Audio")
 	if a == null:
 		return
-	a.play_at(sound if a.stream(sound) else fallback, pos, 4.0)
+	a.play_at(sound if a.stream(sound) else fallback, Planet.place(pos), 4.0)  # pos is flat map
 
 
 # ------------------------------------------------------------------- world ---
@@ -667,9 +667,9 @@ func _update_markers() -> void:
 		match s.get("do", ""):
 			"chase":
 				if m.target and is_instance_valid(m.target):
-					goal = m.target.global_position
+					goal = m.target.flat_position()
 					_target_mark.visible = true
-					_target_mark.global_position = goal + Vector3.UP * (3.2 + sin(Time.get_ticks_msec() * 0.006) * 0.3)
+					_put(_target_mark, goal + Vector3.UP * (3.2 + sin(Time.get_ticks_msec() * 0.006) * 0.3))
 			"collect":
 				var me := link.position()
 				var best := INF
@@ -680,10 +680,10 @@ func _update_markers() -> void:
 						goal = p
 			"vehicle", "destroy":
 				if m.mission_car is Node3D and is_instance_valid(m.mission_car):
-					goal = (m.mission_car as Node3D).global_position
+					goal = Planet.flat((m.mission_car as Node3D).global_position)
 					if s.do == "destroy":
 						_target_mark.visible = true
-						_target_mark.global_position = goal + Vector3.UP * (3.4 + sin(Time.get_ticks_msec() * 0.006) * 0.3)
+						_put(_target_mark, goal + Vector3.UP * (3.4 + sin(Time.get_ticks_msec() * 0.006) * 0.3))
 			"fight":
 				# Point at the hit target (or the nearest gunman) once you're close; until then the spot.
 				var e = director.crew.nearest(link.position())
@@ -691,7 +691,7 @@ func _update_markers() -> void:
 				if e and MissionDirector.flat_dist(link.position(), e.pos) < MissionCrew.AGGRO_M + 20.0:
 					goal = e.pos
 					_target_mark.visible = true
-					_target_mark.global_position = e.pos + Vector3.UP * (2.6 + sin(Time.get_ticks_msec() * 0.006) * 0.2)
+					_put(_target_mark, e.pos + Vector3.UP * (2.6 + sin(Time.get_ticks_msec() * 0.006) * 0.2))
 			"race":
 				if not m.points.is_empty():
 					goal = m.points[0]
@@ -715,16 +715,22 @@ func _update_markers() -> void:
 	(_beacon.material_override as StandardMaterial3D).albedo_color = Color(col.r, col.g, col.b, pulse)
 	var radius: float = m.step().get("radius", MissionDirector.GOTO_RADIUS) if m else PHONE_RADIUS
 	var sc := clampf(radius / 6.0, 0.5, 2.5)
-	_beacon.scale = Vector3(sc, 1.0, sc)
-	_beacon.global_position = Vector3(goal.x, 18.0, goal.z)
+	_put(_beacon, Vector3(goal.x, 18.0, goal.z), Vector3(sc, 1.0, sc))
 	# Arrow on the HUD: angle between where the camera looks and the goal.
 	var cam := get_viewport().get_camera_3d()
 	var me := link.position()
 	hud.arrow_dist = MissionDirector.flat_dist(me, goal)
 	if cam:
-		var f := -cam.global_basis.z
+		var f := Planet.to_local(cam.global_position, -cam.global_basis.z)
 		var to := goal - me
+		to.x = Planet.fdx(me.x, goal.x)
 		hud.arrow_angle = atan2(f.x * to.z - f.z * to.x, f.x * to.x + f.z * to.z)
+
+
+## Stand a marker at a flat map point (upright on the ball on msp).
+static func _put(n: Node3D, flat: Vector3, scale := Vector3.ONE) -> void:
+	var w := Planet.place(flat)
+	n.global_transform = Transform3D(Planet.basis(w) * Basis.from_scale(scale), w)
 
 
 # ---------------------------------------------------------- minimap and GPS ---
@@ -786,7 +792,7 @@ func _sync_piles(m: Mission) -> void:
 	for i in _piles.size():
 		_piles[i].visible = i < pts.size()
 		if i < pts.size():
-			_piles[i].global_position = pts[i]
+			_put(_piles[i], pts[i])
 
 
 func _make_pile() -> Node3D:
@@ -867,12 +873,10 @@ func _make_phone(pos: Vector3, yaw: float) -> Node3D:
 	## The art kit's payphone, or a post with a hooded box when the kit isn't there (tests).
 	if ResourceLoader.exists(PHONE_MODEL):
 		var model: Node3D = (load(PHONE_MODEL) as PackedScene).instantiate()
-		model.position = pos
-		model.rotation.y = yaw
+		model.transform = Planet.xf_rigid(Transform3D(Basis(Vector3.UP, yaw), pos))
 		return model
 	var n := Node3D.new()
-	n.position = pos
-	n.rotation.y = yaw
+	n.transform = Planet.xf_rigid(Transform3D(Basis(Vector3.UP, yaw), pos))
 	var metal := StandardMaterial3D.new()
 	metal.albedo_color = Color(0.55, 0.58, 0.62)
 	metal.metallic = 0.7

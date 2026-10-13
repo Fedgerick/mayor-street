@@ -205,7 +205,7 @@ func _dress(s: Dictionary) -> void:
 		return
 	var b: Dictionary = s.b
 	var root := Node3D.new()
-	root.position = city.building_center(b) if not b.get("kerb", false) else city.cell_center(b.x, b.y)
+	root.transform = Planet.xf_rigid(Transform3D(Basis.IDENTITY, city.building_center(b) if not b.get("kerb", false) else city.cell_center(b.x, b.y)))
 	add_child(root)
 	_props[b.id] = root
 	var h := 6.0 + float(b.get("stage", 1)) * 8.0

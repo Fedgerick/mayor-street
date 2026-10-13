@@ -38,8 +38,8 @@ func clear() -> void:
 ## Recomputes the route from `me` to `goal` (world positions) when it has to, and refreshes
 ## its two loose ends every call. Returns true when the road part changed.
 func update(me: Vector3, goal: Vector3) -> bool:
-	var a := nearest_road(city.world_to_cell(me))
-	var b := nearest_road(city.world_to_cell(goal))
+	var a := nearest_road(city.flat_to_cell(me))
+	var b := nearest_road(city.flat_to_cell(goal))
 	var changed := false
 	if _dirty or a != _from or b != _to:
 		_dirty = false
