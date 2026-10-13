@@ -3,6 +3,8 @@ extends Node3D
 ## A third-person camera boom that follows a target. It doesn't own a camera: the
 ## StreetCamera reads `eye.global_transform` so one camera can glide between rigs
 ## (mayor view -> character -> car) without cuts.
+## yaw and pitch are in the local frame under the boom: on msp (Planet.on) that frame
+## stands on the ball, so yaw 0 always looks north and pitch is against the local horizon.
 
 @export var height := 1.6
 @export var distance := 3.8
@@ -57,13 +59,13 @@ func exclude(body: CollisionObject3D) -> void:
 
 func snap() -> void:
 	if target:
-		global_position = target.global_position + Vector3.UP * height
+		global_position = target.global_position + Planet.up(target.global_position) * height
 	_apply()
 
 
 func look_from(t: Transform3D) -> void:
 	## Point the boom the way a given camera faces, for a seamless hand-off.
-	var f := -t.basis.z
+	var f := Planet.to_local(t.origin, -t.basis.z)
 	yaw = atan2(-f.x, -f.z)
 
 
@@ -89,7 +91,7 @@ func _process(delta: float) -> void:
 		yaw = lerp_angle(yaw, heading, 1.0 - exp(-recenter_speed * delta))
 		pitch = lerpf(pitch, deg_to_rad(-12.0), 1.0 - exp(-recenter_speed * 0.5 * delta))
 	if target:
-		var goal := target.global_position + Vector3.UP * height
+		var goal := target.global_position + Planet.up(target.global_position) * height
 		global_position = global_position.lerp(goal, 1.0 - exp(-follow_sharpness * delta))
 	_boom_length = lerpf(_boom_length, distance, 1.0 - exp(-4.0 * delta))
 	spring.spring_length = _boom_length
@@ -97,13 +99,14 @@ func _process(delta: float) -> void:
 
 
 func _apply() -> void:
-	basis = Basis.from_euler(Vector3(pitch, yaw, 0.0))
+	basis = Planet.basis(global_position) * Basis.from_euler(Vector3(pitch, yaw, 0.0))
 	spring.position = Vector3(side_offset, 0.0, 0.0)
 
 
+## Along the ground, in world space (tangent to the ball on msp).
 func forward_flat() -> Vector3:
-	return Vector3(-sin(yaw), 0.0, -cos(yaw))
+	return Planet.dir(global_position, Vector3(-sin(yaw), 0.0, -cos(yaw)))
 
 
 func right_flat() -> Vector3:
-	return Vector3(cos(yaw), 0.0, -sin(yaw))
+	return Planet.dir(global_position, Vector3(cos(yaw), 0.0, -sin(yaw)))

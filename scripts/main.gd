@@ -93,6 +93,8 @@ const PLANET_SHOTS := [
 	["globe", 12.0, 0.0, 312.0, 2400.0, 0.0, 0.0],
 	["ice", 12.0, 200.0, -60.0, 420.0, 180.0, -20.0],
 	["night", 21.5, 30.0, 300.0, 230.0, -35.0, 0.0],
+	["street", 11.0, 30.0, 300.0, 80.0, 0.0, 0.0],
+	["street_dusk", 19.2, 30.0, 300.0, 80.0, 0.0, 0.0],
 ]
 
 
@@ -420,7 +422,7 @@ func go_street() -> void:
 	_set_speed(1)
 	cam.set_process(false)
 	cam.set_process_unhandled_input(false)
-	street.enter_street(cam, at)
+	street.enter_street(cam, Planet.place(at))  # the mayor focus is flat map metres
 	life.set_camera(street.camera)
 	rain_fx.set_camera(street.camera)
 	_update_hint()
@@ -440,7 +442,7 @@ func go_mayor() -> void:
 		if not street.active or street.busy or not street.can_exit():
 			return
 	# Frame the mayor view on where the player ended up, looking the same way.
-	cam.set_view(street.focus_point(), 140.0, street.view_yaw())
+	cam.set_view(Planet.flat(street.focus_point()) * Vector3(1, 0, 1), 140.0, street.view_yaw())
 	street.exit_street(cam.global_transform, cam.fov)
 	_update_hint()
 

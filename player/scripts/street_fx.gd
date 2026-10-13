@@ -46,7 +46,8 @@ static func tracer(parent: Node, from: Vector3, to: Vector3) -> void:
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mi)
-	mi.global_transform = Transform3D(Basis.looking_at(to - from, Vector3.UP if absf((to - from).normalized().y) < 0.99 else Vector3.RIGHT), (from + to) * 0.5)
+	var up := Planet.up(from)
+	mi.global_transform = Transform3D(Basis.looking_at(to - from, up if absf((to - from).normalized().dot(up)) < 0.99 else up.cross(Vector3.RIGHT).normalized()), (from + to) * 0.5)
 	_fade_and_free(mi, mat, 0.07)
 
 
@@ -65,7 +66,8 @@ static func muzzle(parent: Node, pos: Vector3, dir: Vector3, big := false) -> vo
 	mi.global_position = pos + dir * 0.05
 	mi.scale = Vector3(1, 1, 2.2)
 	if dir.length() > 0.1:
-		mi.look_at(pos + dir, Vector3.UP if absf(dir.normalized().y) < 0.99 else Vector3.RIGHT)
+		var up := Planet.up(pos)
+		mi.look_at(pos + dir, up if absf(dir.normalized().dot(up)) < 0.99 else Planet.basis(pos).x)
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.7, 0.35)
 	l.light_energy = 3.0
@@ -105,7 +107,7 @@ static func puff(parent: Node, pos: Vector3, col: Color, size := 0.25, seconds :
 	p.color_ramp = ramp
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(p)
-	p.global_position = pos
+	p.global_transform = Transform3D(Planet.basis(pos), pos)  # local up on msp
 	p.emitting = true
 	p.finished.connect(p.queue_free)
 
@@ -175,14 +177,14 @@ static func explosion(parent: Node, pos: Vector3) -> void:
 		ball.material_override = mat
 		ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(ball)
-		var off := Vector3(randf_range(-1.3, 1.3), randf_range(0.4, 2.0), randf_range(-1.3, 1.3)) * (0.3 if i < 3 else 1.0)
+		var off := Planet.basis(pos) * Vector3(randf_range(-1.3, 1.3), randf_range(0.4, 2.0), randf_range(-1.3, 1.3)) * (0.3 if i < 3 else 1.0)
 		ball.global_position = pos + off
 		ball.scale = Vector3.ONE * randf_range(0.3, 0.6)
 		var t := ball.create_tween()
 		t.tween_interval(i * 0.035)
 		t.set_parallel(true)
 		t.tween_property(ball, "scale", Vector3.ONE * randf_range(1.6, 2.6), 0.45).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-		t.tween_property(ball, "global_position", pos + off * 1.6 + Vector3.UP * 1.2, 0.6)
+		t.tween_property(ball, "global_position", pos + off * 1.6 + Planet.up(pos) * 1.2, 0.6)
 		t.tween_property(mat, "albedo_color", Color(0.5, 0.12, 0.04, 0.0), 0.6).set_ease(Tween.EASE_IN)
 		t.chain().tween_callback(ball.queue_free)
 	var l := OmniLight3D.new()
@@ -190,7 +192,7 @@ static func explosion(parent: Node, pos: Vector3) -> void:
 	l.light_energy = 12.0
 	l.omni_range = 22.0
 	parent.add_child(l)
-	l.global_position = pos + Vector3.UP * 2.0
+	l.global_position = pos + Planet.up(pos) * 2.0
 	var lt := l.create_tween()
 	lt.tween_property(l, "light_energy", 0.0, 0.9)
 	lt.tween_callback(l.queue_free)
@@ -215,7 +217,7 @@ static func explosion(parent: Node, pos: Vector3) -> void:
 	bm.material = dm
 	d.mesh = bm
 	parent.add_child(d)
-	d.global_position = pos + Vector3.UP
+	d.global_transform = Transform3D(Planet.basis(pos), pos + Planet.up(pos))
 	d.emitting = true
 	d.finished.connect(d.queue_free)
-	puff(parent, pos + Vector3.UP * 1.5, Color(0.16, 0.15, 0.15, 0.85), 2.2, 2.2)
+	puff(parent, pos + Planet.up(pos) * 1.5, Color(0.16, 0.15, 0.15, 0.85), 2.2, 2.2)

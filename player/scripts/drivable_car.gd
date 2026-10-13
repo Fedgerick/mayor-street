@@ -326,7 +326,8 @@ func speed() -> float:
 
 
 func heading_yaw() -> float:
-	var f := forward()
+	## In the local frame (on msp, the frame standing on the ball under the car).
+	var f := Planet.to_local(global_position, forward())
 	return atan2(-f.x, -f.z)
 
 
@@ -571,13 +572,28 @@ func body_tilt() -> Vector2:
 	return Vector2(_roll.x, _pitch.x)
 
 
-## Which way is up where the car is. The flat city's is +Y; planet/ turns it toward the
-## ball's centre.
+## Which way is up where the car is: +Y on the flat island, away from the ball's centre
+## on msp (where a point-gravity area pulls toward the centre).
 func _up() -> Vector3:
-	return Vector3.UP
+	return Planet.up(global_position)
 
 
 func reset_upright() -> void:
+	if Planet.on:
+		var up := _up()
+		var fw := forward()
+		fw = (fw - up * fw.dot(up)).normalized()
+		if fw.length() < 0.1:
+			fw = Planet.basis(global_position).x
+		var pf := Planet.unwarp(global_position)
+		pf.y = maxf(pf.y, 0.0) + 1.0
+		global_transform = Transform3D(Basis(up.cross(fw), up, fw), Planet.warp(pf))
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		_last_vel = Vector3.ZERO
+		_accel = Vector3.ZERO
+		_upside_down = 0.0
+		return
 	var f := forward()
 	var yaw := atan2(f.x, f.z)
 	var p := global_position

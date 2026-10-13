@@ -220,3 +220,8 @@ static func point_gravity(space: RID) -> void:
 	PhysicsServer3D.area_set_param(space, PhysicsServer3D.AREA_PARAM_GRAVITY_VECTOR, Vector3.ZERO)
 	PhysicsServer3D.area_set_param(space, PhysicsServer3D.AREA_PARAM_GRAVITY_POINT_UNIT_DISTANCE, 0.0)
 	PhysicsServer3D.area_set_param(space, PhysicsServer3D.AREA_PARAM_GRAVITY, 9.8)
+
+
+## A world transform -> flat map transform (the inverse of xf_rigid).
+static func flat_xform(t: Transform3D) -> Transform3D:
+	return Transform3D(frame_world(t.origin).inverse() * t.basis, unwarp(t.origin)) if on else t

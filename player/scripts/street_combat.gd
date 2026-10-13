@@ -231,8 +231,8 @@ func _punch_land(w: Dictionary) -> void:
 		return
 	var p: StreetPlayer = street.player
 	var yaw := p.facing_yaw()
-	var fwd := Vector3(-sin(yaw), 0.0, -cos(yaw))
-	var from := p.global_position + Vector3.UP * 1.3
+	var fwd := Planet.dir(p.global_position, Vector3(-sin(yaw), 0.0, -cos(yaw)))
+	var from := p.global_position + Planet.up(p.global_position) * 1.3
 	var hit: Dictionary = street.trace_shot(from, fwd, w.range, true)
 	if hit.kind != &"none":
 		street.apply_hit(hit, w.damage, fwd, &"fists")
@@ -250,7 +250,7 @@ func muzzle_point() -> Vector3:
 	if _gun and _gun.visible and _gun.has_node("Tip"):
 		return (_gun.get_node("Tip") as Node3D).global_position
 	var p: StreetPlayer = street.player
-	return p.global_position + Vector3.UP * 1.35 + p.rig.forward_flat() * 0.6
+	return p.global_position + Planet.up(p.global_position) * 1.35 + p.rig.forward_flat() * 0.6
 
 
 # ---------------------------------------------------------------- gun meshes ---

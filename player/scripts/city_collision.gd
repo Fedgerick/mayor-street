@@ -292,14 +292,17 @@ func _add_lamp(body: StaticBody3D, x: int, y: int, c: Vector3, mask: int) -> voi
 
 ## Where CityView puts tree k of a cell and which model; mirrors CityView._add_tree.
 ## True when a street lamp stands within radius of p (metres, across the ground).
+## Is a lamp post within radius of world point p?
 func pole_near(p: Vector3, radius: float) -> bool:
-	var o := city.world_to_cell(p)
+	p = Planet.flat(p)
+	var o := city.flat_to_cell(p)
 	for y in range(o.y - 1, o.y + 2):
 		for x in range(o.x - 1, o.x + 2):
 			if not city.inside(x, y) or not city.is_road(x, y):
 				continue
 			var base = lamp_base(x, y, city.road_mask(x, y))
-			if base != null and Vector2(base.x - p.x, base.z - p.z).length() < radius:
+			var bx: float = p.x + Planet.dx(p.x, base.x) if (base != null and Planet.on) else (base.x if base != null else 0.0)
+			if base != null and Vector2(bx - p.x, base.z - p.z).length() < radius:
 				return true
 	return false
 
