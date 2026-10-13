@@ -93,6 +93,10 @@ func _run() -> void:
 		if police:
 			max_cops = maxi(max_cops, police.cars.size())
 		if int(t * 2) % 20 == 0:
+			print("    %4.0f s  frames %d  buffer MB %.1f  video MB %.1f  tex MB %.1f" % [t, Engine.get_frames_drawn(),
+				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_BUFFER_MEM_USED) / 1048576.0,
+				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_VIDEO_MEM_USED) / 1048576.0,
+				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TEXTURE_MEM_USED) / 1048576.0])
 			print("    %4.0f s  nodes %d  resources %d  objects %d  cops %d  stars %d" % [t,
 				Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
 				Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT),
