@@ -4,6 +4,12 @@ extends Node3D
 ## and trees. Also owns the data textures the shaders read (zones, traffic, lamps).
 
 const CHUNK := 4  # draw cells (PERFORMANCE.md): small so shadow and view culling skip most of the city
+# msp: the planet has over twice the island's cells, and every (chunk, model) pair is its
+# own MultiMesh buffer. At 4 cells that was ~3,600 buffers, past what some Windows drivers
+# allow (Fedge's AMD laptop failed buffer creation, then lost the device). Bigger chunks
+# there; horizon culling (cull()) still skips the far side of the ball.
+const PLANET_CHUNK := 8
+var _chunk := CHUNK  # set in setup: PLANET_CHUNK on msp
 const TERRAIN_MARGIN := 640.0
 const TERRAIN_STEP := 6.0
 const GROW_TIME := 1.4
@@ -50,6 +56,7 @@ var _cull_t := 0.0
 
 func setup(c: City) -> void:
 	city = c
+	_chunk = PLANET_CHUNK if Planet.on else CHUNK
 	city.cells_changed.connect(_on_cells_changed)
 	city.building_added.connect(_on_building_added)
 	city.building_removed.connect(_on_building_removed)
@@ -61,8 +68,8 @@ func setup(c: City) -> void:
 	else:
 		_build_terrain()
 		_build_water()
-	for cy in ceili(float(City.H) / CHUNK):
-		for cx in ceili(float(City.W) / CHUNK):
+	for cy in ceili(float(City.H) / _chunk):
+		for cx in ceili(float(City.W) / _chunk):
 			dirty[Vector2i(cx, cy)] = true
 	refresh_map()
 
@@ -250,15 +257,15 @@ func _on_cells_changed(r: Rect2i) -> void:
 func _mark_rect(r: Rect2i) -> void:
 	if Planet.on:
 		# x may run past either end of the map; wrap each chunk column round.
-		var across := ceili(float(City.W) / CHUNK)
-		var y0 := maxi(r.position.y, 0) / CHUNK
-		var y1 := mini(r.end.y, City.H - 1) / CHUNK
+		var across := ceili(float(City.W) / _chunk)
+		var y0 := maxi(r.position.y, 0) / _chunk
+		var y1 := mini(r.end.y, City.H - 1) / _chunk
 		for cy in range(y0, y1 + 1):
-			for cx in range(floori(float(r.position.x) / CHUNK), floori(float(r.end.x) / CHUNK) + 1):
+			for cx in range(floori(float(r.position.x) / _chunk), floori(float(r.end.x) / _chunk) + 1):
 				dirty[Vector2i(posmod(cx, across), cy)] = true
 		return
-	var a := Vector2i(maxi(r.position.x, 0) / CHUNK, maxi(r.position.y, 0) / CHUNK)
-	var b := Vector2i(mini(r.end.x, City.W - 1) / CHUNK, mini(r.end.y, City.H - 1) / CHUNK)
+	var a := Vector2i(maxi(r.position.x, 0) / _chunk, maxi(r.position.y, 0) / _chunk)
+	var b := Vector2i(mini(r.end.x, City.W - 1) / _chunk, mini(r.end.y, City.H - 1) / _chunk)
 	for cy in range(a.y, b.y + 1):
 		for cx in range(a.x, b.x + 1):
 			dirty[Vector2i(cx, cy)] = true
@@ -341,8 +348,8 @@ func cull() -> void:
 	var eye := cam.global_position
 	for key in chunks:
 		var node: Node3D = chunks[key]
-		var c := Vector3((key.x * CHUNK + CHUNK * 0.5) * City.TILE, 0.0, (key.y * CHUNK + CHUNK * 0.5) * City.TILE)
-		node.visible = Planet.above_horizon(eye, Planet.warp(c), TALLEST + CHUNK * City.TILE * 0.7)
+		var c := Vector3((key.x * _chunk + _chunk * 0.5) * City.TILE, 0.0, (key.y * _chunk + _chunk * 0.5) * City.TILE)
+		node.visible = Planet.above_horizon(eye, Planet.warp(c), TALLEST + _chunk * City.TILE * 0.7)
 
 
 func rebuild_all() -> void:
@@ -398,10 +405,10 @@ func _rebuild_chunk(key: Vector2i) -> void:
 	var lamps: Array[Vector3] = []
 	var beacons: Array[Vector3] = []
 	var boxes := []  # [world AABB, wall colour, seed] of each building, for the stand-in
-	var x0 := key.x * CHUNK
-	var y0 := key.y * CHUNK
-	for y in range(y0, mini(y0 + CHUNK, City.H)):
-		for x in range(x0, mini(x0 + CHUNK, City.W)):
+	var x0 := key.x * _chunk
+	var y0 := key.y * _chunk
+	for y in range(y0, mini(y0 + _chunk, City.H)):
+		for x in range(x0, mini(x0 + _chunk, City.W)):
 			var i := city.idx(x, y)
 			lamp_img.set_pixel(x, y, Color(0, 0, 0, 0))
 			var center := city.cell_center(x, y)
