@@ -1,15 +1,14 @@
 class_name Updater
 extends CanvasLayer
-## Checks the public builds repo for a newer release when the title screen opens and offers
+## Checks the public builds repo (latest.json there) for a newer build when the title screen opens and offers
 ## "Update now": it downloads the installer, starts it silently (it closes this game, installs
 ## over it and starts the new version) and quits.
-##   --update-url=URL   ask another releases address (tests use a local server)
+##   --update-url=URL   read another latest.json (tests use a local server)
 ##   --update-test      run the check off Windows and stop after the download
 
-# msp: the whole release list, not releases/latest, so ms and msp can share one builds repo:
-# the newest release carrying ASSET wins.
-const RELEASES := "https://api.github.com/repos/Fedgerick/mayor-street-builds/releases?per_page=30"
-const ASSET := "MayorStreetPlanet-Setup.exe"
+## {"version": "0.3.5", "file": "MayorStreetPlanet-Setup.exe"}; the file sits next to it in the repo.
+const RELEASES := "https://raw.githubusercontent.com/Fedgerick/mayor-street-builds/main/latest.json"
+const ASSET := "MayorStreetPlanet-Update.exe"  # saved under user://
 
 signal finished(state: String)  # "none", "offered", "downloaded", "failed"; for tests
 
@@ -44,7 +43,7 @@ func _ready() -> void:
 	add_child(_http)
 	_build_panel()
 	_http.request_completed.connect(_on_release)
-	if _http.request(url, ["User-Agent: MayorStreet", "Accept: application/vnd.github+json"]) != OK:
+	if _http.request(url, ["User-Agent: MayorStreetPlanet", "Cache-Control: no-cache"]) != OK:
 		_done("failed")
 
 
@@ -55,8 +54,8 @@ func _process(_delta: float) -> void:
 
 ## "0.4.18" < "0.4.19" < "0.5.0"; a leading v is ignored.
 static func is_newer(tag: String, current: String) -> bool:
-	var a := _numbers(tag).split(".")
-	var b := _numbers(current).split(".")
+	var a := tag.trim_prefix("v").split(".")
+	var b := current.trim_prefix("v").split(".")
 	for i in maxi(a.size(), b.size()):
 		var x := int(a[i]) if i < a.size() else 0
 		var y := int(b[i]) if i < b.size() else 0
@@ -65,39 +64,24 @@ static func is_newer(tag: String, current: String) -> bool:
 	return false
 
 
-## "msp-v0.4.0" -> "0.4.0": ms and msp share one builds repo, so msp tags carry a prefix.
-static func _numbers(tag: String) -> String:
-	for i in tag.length():
-		if tag[i] >= "0" and tag[i] <= "9":
-			return tag.substr(i)
-	return "0"
-
-
 func _on_release(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	_http.request_completed.disconnect(_on_release)
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
 		_done("failed")
 		return
 	var data = JSON.parse_string(body.get_string_from_utf8())
-	if data is Dictionary:
-		data = [data]   # a single release (releases/latest)
-	if not data is Array:
+	if not data is Dictionary:
 		_done("failed")
 		return
-	for rel in data:   # newest first
-		if not rel is Dictionary or rel.get("draft", false) or rel.get("prerelease", false):
-			continue
-		for a in rel.get("assets", []):
-			if a is Dictionary and str(a.get("name", "")) == ASSET:
-				_asset_url = str(a.get("browser_download_url", ""))
-		if _asset_url != "":
-			latest = str(rel.get("tag_name", ""))
-			break
+	latest = str(data.get("version", ""))
+	var file := str(data.get("file", ""))
+	if file != "":
+		_asset_url = file if file.begins_with("http") else url.get_base_dir().path_join(file)
 	var current := str(ProjectSettings.get_setting("application/config/version", "0"))
 	if _asset_url == "" or not is_newer(latest, current):
 		_done("none")
 		return
-	_label.text = "Mayor Street Planet %s is out (you have %s)." % [_numbers(latest), current]
+	_label.text = "Mayor Street Planet %s is out (you have %s)." % [latest.trim_prefix("v"), current]
 	_panel.show()
 	_update_btn.grab_focus()  # so the pad's A button picks it
 	finished.emit("offered")
@@ -106,11 +90,11 @@ func _on_release(result: int, code: int, _headers: PackedStringArray, body: Pack
 func update_now() -> void:
 	_buttons.hide()
 	_bar.show()
-	_label.text = "Downloading %s..." % _numbers(latest)
+	_label.text = "Downloading %s..." % latest.trim_prefix("v")
 	_http.download_file = OS.get_user_data_dir().path_join(ASSET)
 	_http.timeout = 0.0
 	_http.request_completed.connect(_on_downloaded)
-	if _http.request(_asset_url, ["User-Agent: MayorStreet"]) != OK:
+	if _http.request(_asset_url, ["User-Agent: MayorStreetPlanet"]) != OK:
 		_fail()
 
 

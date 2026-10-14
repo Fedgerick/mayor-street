@@ -1,7 +1,7 @@
 extends SceneTree
 ## Updater against a local stand-in for GitHub: version compare, the offer, and the download.
 ##   python3 -m http.server serves tests/updater_fixture (see run line in the test output);
-##   godot --headless --script res://tests/updater_test.gd -- --update-url=http://127.0.0.1:PORT/releases.json
+##   godot --headless --script res://tests/updater_test.gd -- --update-url=http://127.0.0.1:PORT/latest.json
 
 var fails := 0
 
@@ -18,8 +18,6 @@ func _initialize() -> void:
 	check(Updater.is_newer("0.4.18.1", "0.4.18"), "0.4.18.1 is newer than 0.4.18")
 	check(not Updater.is_newer("v0.4.18", "0.4.18"), "same version is not newer")
 	check(not Updater.is_newer("v0.4.9", "0.4.18"), "0.4.9 is older than 0.4.18")
-	check(Updater.is_newer("msp-v0.4.0", "0.3.5"), "msp-v0.4.0 is newer than 0.3.5")
-	check(not Updater.is_newer("msp-v0.4.0", "0.4.0"), "msp-v0.4.0 is not newer than 0.4.0")
 	var url := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--update-url="):
@@ -38,7 +36,7 @@ func _download(url: String) -> void:
 	root.add_child(up)
 	var state: String = await up.finished
 	check(state == "offered", "a newer release is offered (got %s)" % state)
-	check(up.latest == "v99.0.0", "latest tag read")
+	check(up.latest == "99.0.0", "latest tag read")
 	up.update_now()
 	state = await up.finished
 	check(state == "downloaded", "installer downloaded (got %s)" % state)
