@@ -85,6 +85,8 @@ const MAYOR_DETAIL := [600.0, 1000.0, 0.0]
 # detail distance keep their full-detail GPU buffers (CityView._want_full), so it is shorter.
 const PLANET_STREET_DETAIL := [150.0, 220.0, 400.0]
 const PLANET_MAYOR_DETAIL := [400.0, 600.0, 1000.0]
+# msp street level: full-detail chunks past this stop casting sun shadows (CityView.shadow_reach).
+const PLANET_STREET_SHADOWS := [100.0, 150.0, 250.0]
 
 # msp (planet/): the belt is PLANET_COLS tiles round the equator and PLANET_ROWS from north
 # shore to south shore (Medium: Fedge's pick on 2026-10-14, after Large proved too
@@ -465,14 +467,19 @@ func _detail(street_view: bool) -> float:
 	return (STREET_DETAIL if street_view else MAYOR_DETAIL)[quality]
 
 
+func _set_view_detail(street_view: bool) -> void:
+	view.set_detail_distance(_detail(street_view))
+	view.shadow_reach = PLANET_STREET_SHADOWS[quality] if Planet.on and street_view else 0.0
+
+
 func _update_detail() -> void:
 	if view:
-		view.set_detail_distance(_detail(in_street()))
+		_set_view_detail(in_street())
 
 
 func _on_street_entered() -> void:
 	day_night.set_view_distance(30.0)
-	view.set_detail_distance(_detail(true))
+	_set_view_detail(true)
 	_hero_detail()
 	day_night.exposure_scale = 1.25
 	day_night.ambient_scale = 1.4
@@ -484,7 +491,7 @@ func _on_street_exited() -> void:
 	cam.set_process(true)
 	cam.set_process_unhandled_input(true)
 	day_night.set_view_distance(cam.dist)
-	view.set_detail_distance(_detail(false))
+	_set_view_detail(false)
 	day_night.exposure_scale = 1.0
 	day_night.ambient_scale = 1.0
 	life.set_camera(cam)

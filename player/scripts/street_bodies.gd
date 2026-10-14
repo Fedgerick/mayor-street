@@ -51,6 +51,11 @@ var _wrecks: Array[Node3D] = []
 var _fixtures: StaticBody3D   # benches, shelters and signal poles (rebuilt when they move)
 var _fixture_key := ""
 var _fixture_timer := 0.0
+var _fixture_at := Vector3.INF  # flat point the fixtures were gathered round (INF: whole city)
+# Only fixtures this near the player get bodies: the whole city's (hundreds of shapes) took
+# ~60 ms to rebuild each time the city grew a bus stop, a hitch on Fedge's laptop.
+const FIXTURE_RADIUS := 140.0
+const FIXTURE_MOVE := 50.0  # rebuild after the player has gone this far
 
 
 func setup(street_mode: Node) -> void:
@@ -137,13 +142,21 @@ func _idle() -> void:
 
 func _check_fixtures() -> void:
 	var key := "%d/%d" % [spots.spots.size() if spots else -1, signals.heads.size() if signals else -1]
-	if key != _fixture_key:
+	var at := Vector3.INF
+	if street != null and street.active:
+		at = Planet.flat(street.player_position())
+	var moved := at.is_finite() != _fixture_at.is_finite() or (at.is_finite()
+		and Vector2(Planet.fdx(_fixture_at.x, at.x), at.z - _fixture_at.z).length() > FIXTURE_MOVE)
+	if key != _fixture_key or moved:
 		_fixture_key = key
-		rebuild_fixtures()
+		rebuild_fixtures(at)
 
 
-## Benches, bus shelters and signal poles: one static body for the whole city.
-func rebuild_fixtures() -> void:
+## Benches, bus shelters and signal poles: one static body for those within FIXTURE_RADIUS
+## of `at` (a flat point), or for the whole city when `at` is INF.
+func rebuild_fixtures(at := Vector3.INF) -> void:
+	_fixture_at = at
+	var r2 := FIXTURE_RADIUS * FIXTURE_RADIUS if at.is_finite() else INF
 	if _fixtures:
 		_fixtures.queue_free()
 	_fixtures = StaticBody3D.new()
@@ -162,6 +175,8 @@ func rebuild_fixtures() -> void:
 	if spots:
 		for sp in spots.spots:
 			var xf: Transform3D = sp.xform
+			if r2 < INF and Vector2(Planet.fdx(at.x, xf.origin.x), xf.origin.z - at.z).length_squared() > r2:
+				continue
 			if sp.kind == StreetSpots.Kind.BENCH:
 				_fix(Planet.xf_rigid(xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.42, -0.1))), bench)
 			else:
@@ -171,6 +186,8 @@ func rebuild_fixtures() -> void:
 	if signals:
 		for h in signals.heads:
 			var xf: Transform3D = h[2]
+			if r2 < INF and Vector2(Planet.fdx(at.x, xf.origin.x), xf.origin.z - at.z).length_squared() > r2:
+				continue
 			_fix(Planet.xf_rigid(Transform3D(Basis.IDENTITY, xf.origin + Vector3(0, 1.8, 0))), pole)
 	add_child(_fixtures)
 

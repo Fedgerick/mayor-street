@@ -59,6 +59,11 @@ var _full := {}       # Vector2i -> true while the chunk is built in full detail
 var _want_full := {}  # Vector2i -> what cull() last decided
 const FULL_IN := 60.0    # metres past detail_distance where a chunk gets full detail
 const FULL_OUT := 160.0  # ... and where it drops back to the stand-in (hysteresis)
+## msp: full-detail chunks further than this from the camera stop casting sun shadows. The
+## street's shadow maps reach 140 m, and the ball tips far buildings away from the sun's
+## view anyway; on Fedge's laptop shadows cost 5.8 ms of GPU, most of it far casters.
+var shadow_reach := 0.0  # 0: every chunk casts
+var _shadowed := {}      # Vector2i -> whether its MultiMeshes cast shadows now
 
 
 func setup(c: City) -> void:
@@ -371,6 +376,16 @@ func cull() -> void:
 		_want_full[key] = want
 		if want != _full.get(key, false):
 			dirty[key] = true
+		var cast := shadow_reach <= 0.0 or d < shadow_reach + half
+		if _shadowed.get(key, true) != cast:
+			_set_shadows(node, cast)
+			_shadowed[key] = cast
+
+
+func _set_shadows(node: Node3D, cast: bool) -> void:
+	for c in node.get_children():
+		if c is MultiMeshInstance3D and c.has_meta(&"shadow"):
+			c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func rebuild_all() -> void:
@@ -493,7 +508,9 @@ func _rebuild_chunk(key: Vector2i) -> void:
 			mm.set_instance_custom_data(k, g[2][k])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g[3] else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g[3] and _shadowed.get(key, true) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if g[3]:
+			mmi.set_meta(&"shadow", true)
 		if not (nm as String).begins_with("road_"):
 			mmi.set_meta(&"detail", true)  # roads stay; the rest ends at detail_distance
 		node.add_child(mmi)
