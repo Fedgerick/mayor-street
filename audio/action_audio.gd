@@ -218,13 +218,17 @@ func _on_car_damaged(_amount: float, car: Node3D) -> void:
 		return
 	var p := director.attach_loop("car_alarm_loop", car, -4.0, 12.0)
 	_alarms[id] = p
-	get_tree().create_timer(ALARM_SECONDS).timeout.connect(_stop_alarm.bind(car))
+	# Bind the id, not the car: towed or blown-up cars are freed before the timer ends.
+	get_tree().create_timer(ALARM_SECONDS).timeout.connect(_stop_alarm_id.bind(id))
 
 
 func _stop_alarm(car: Object) -> void:
 	if car == null:
 		return
-	var id := car.get_instance_id()
+	_stop_alarm_id(car.get_instance_id())
+
+
+func _stop_alarm_id(id: int) -> void:
 	var p = _alarms.get(id)
 	_alarms.erase(id)
 	if p != null and is_instance_valid(p):

@@ -964,6 +964,14 @@ var hero_max := HERO_MAX  # main lowers it on Low and Med graphics: each costs s
 const HERO_RADIUS := 28.0
 const HERO_KEEP := 34.0        # hysteresis so people don't flicker at the edge
 const HERO_SPAWNS_PER_FRAME := 2
+# No close-up people while the camera rushes past (driving): each one re-dresses a rigged
+# model and builds its close-up mesh, which stalled the benchmark's drive and chase for
+# 40-150 ms a frame and churned GPU buffers. Hysteresis in m/s.
+const HERO_FAST := 9.0
+const HERO_SLOW := 5.0
+var _eye_last := Vector3.INF
+var _eye_speed := 0.0
+var _rushing := false
 
 var _heroes_on := false
 var _pool: Array[CharacterModel] = []   # idle models
@@ -976,7 +984,15 @@ func update_heroes(dt: float) -> void:
 			_release_hero(p)
 		return
 	var eye := Planet.flat(camera.global_position)  # people live on the flat map
-	var close := eye.y < 40.0
+	if _eye_last.is_finite() and dt > 0.0:
+		var v := Vector2(Planet.fdx(_eye_last.x, eye.x), eye.z - _eye_last.z).length() / dt
+		_eye_speed = lerpf(_eye_speed, minf(v, 60.0), 1.0 - exp(-4.0 * dt))
+	_eye_last = eye
+	if _rushing:
+		_rushing = _eye_speed > HERO_SLOW
+	else:
+		_rushing = _eye_speed > HERO_FAST
+	var close := eye.y < 40.0 and not _rushing
 	# Let go of anyone who walked away (or when the camera went up).
 	for p in peds:
 		if p.hero != null and (not close or p.pos.distance_to(eye) > HERO_KEEP):
