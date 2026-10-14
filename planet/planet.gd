@@ -16,10 +16,10 @@ const TILE := 12.0
 ## (ms), where every helper below that is not about the ball is the identity.
 static var on := false
 
-static var W := 288            # tiles around the equator (Large, Fedge's pick)
-static var H := 52             # tiles from the belt's north edge to its south edge
-static var R := 288 * TILE / TAU  # radius at sea level, metres
-static var V0 := 52 * TILE * 0.5  # flat z of the equator
+static var W := 192            # tiles around the equator (Medium, Fedge's pick)
+static var H := 36             # tiles from the belt's north edge to its south edge
+static var R := 192 * TILE / TAU  # radius at sea level, metres
+static var V0 := 36 * TILE * 0.5  # flat z of the equator
 
 
 static func configure(cols: int, rows: int) -> void:

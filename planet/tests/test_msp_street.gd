@@ -26,7 +26,11 @@ func _run() -> void:
 	root.add_child(main)
 	await _wait(1.0)
 	check(Planet.on, "the game is on the planet")
-	check(City.W == 288 and City.H == 52, "city is 288 x 52 tiles")
+	check(City.W == 192 and City.H == 36, "city is 192 x 36 tiles (Medium)")
+	var full := 0
+	for k in main.view._full:
+		full += 1 if main.view._full[k] else 0
+	check(full < main.view.chunks.size(), "only nearby chunks hold full detail (%d of %d)" % [full, main.view.chunks.size()])
 	main.go_street()
 	var street: StreetMode = main.street
 	while not street.active:

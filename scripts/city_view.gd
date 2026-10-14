@@ -52,6 +52,13 @@ var _standin_mat: ShaderMaterial
 var terrain_body: StaticBody3D
 const TALLEST := 90.0  # metres: a chunk stays drawn while anything this tall could peek over the horizon
 var _cull_t := 0.0
+## msp: only chunks near the camera hold their full-detail MultiMeshes; the rest keep roads,
+## beacons and the box stand-in. Every MultiMesh is GPU buffers whether it is drawn or not,
+## and a whole planet of them is past what Fedge's AMD driver hands out.
+var _full := {}       # Vector2i -> true while the chunk is built in full detail
+var _want_full := {}  # Vector2i -> what cull() last decided
+const FULL_IN := 60.0    # metres past detail_distance where a chunk gets full detail
+const FULL_OUT := 160.0  # ... and where it drops back to the stand-in (hysteresis)
 
 
 func setup(c: City) -> void:
@@ -321,7 +328,11 @@ func _process(delta: float) -> void:
 		else:
 			_set_grow(id, g.t)
 	var budget := 4
-	for key in dirty.keys():
+	var order := dirty.keys()
+	if Planet.on and order.size() > budget:
+		# Chunks coming into full detail first: they are the ones next to the camera.
+		order.sort_custom(func(a, b): return _want_full.get(a, false) and not _want_full.get(b, false))
+	for key in order:
 		if budget <= 0:
 			break
 		_rebuild_chunk(key)
@@ -346,10 +357,20 @@ func cull() -> void:
 	if cam == null:
 		return
 	var eye := cam.global_position
+	var fe := Planet.flat(eye)
+	var reach := detail_distance if detail_distance > 0.0 else INF
+	var half := _chunk * City.TILE * 0.7
 	for key in chunks:
 		var node: Node3D = chunks[key]
 		var c := Vector3((key.x * _chunk + _chunk * 0.5) * City.TILE, 0.0, (key.y * _chunk + _chunk * 0.5) * City.TILE)
-		node.visible = Planet.above_horizon(eye, Planet.warp(c), TALLEST + _chunk * City.TILE * 0.7)
+		node.visible = Planet.above_horizon(eye, Planet.warp(c), TALLEST + half)
+		var d := Vector3(Planet.fdx(fe.x, c.x), fe.y, c.z - fe.z).length()
+		var was: bool = _want_full.get(key, false)
+		# Behind the horizon nothing of it shows, so it needs no detail either.
+		var want := node.visible and d < reach + half + (FULL_OUT if was else FULL_IN)
+		_want_full[key] = want
+		if want != _full.get(key, false):
+			dirty[key] = true
 
 
 func rebuild_all() -> void:
@@ -405,6 +426,8 @@ func _rebuild_chunk(key: Vector2i) -> void:
 	var lamps: Array[Vector3] = []
 	var beacons: Array[Vector3] = []
 	var boxes := []  # [world AABB, wall colour, seed] of each building, for the stand-in
+	var full: bool = not Planet.on or _want_full.get(key, false)
+	_full[key] = full
 	var x0 := key.x * _chunk
 	var y0 := key.y * _chunk
 	for y in range(y0, mini(y0 + _chunk, City.H)):
@@ -453,6 +476,8 @@ func _rebuild_chunk(key: Vector2i) -> void:
 						Kit.LEAF_TINTS[int(_cell_hash(x, y, 45) * 5.99)], Color(0, 0, 0, 0), true)
 	for nm in groups:
 		var g: Array = groups[nm]
+		if not full and not (nm as String).begins_with("road_"):
+			continue  # far away: the stand-in boxes draw it
 		var mesh := Kit.mesh(nm)
 		if mesh == null:
 			continue

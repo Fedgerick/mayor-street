@@ -80,21 +80,27 @@ const HERO_MAX := [6, 12, 24]  # close-up people on the full rigged model, per g
 # graphics level; 0 never. The street sees less of the city past the first blocks.
 const STREET_DETAIL := [250.0, 400.0, 700.0]
 const MAYOR_DETAIL := [600.0, 1000.0, 0.0]
+# msp: the ball hides a 40 m building past ~200 m from the street, and only chunks inside the
+# detail distance keep their full-detail GPU buffers (CityView._want_full), so it is shorter.
+const PLANET_STREET_DETAIL := [150.0, 220.0, 400.0]
+const PLANET_MAYOR_DETAIL := [400.0, 600.0, 1000.0]
+
 # msp (planet/): the belt is PLANET_COLS tiles round the equator and PLANET_ROWS from north
-# shore to south shore (Fedge's Large pick). The project setting mayor_street/planet turns it on.
-const PLANET_COLS := 288
-const PLANET_ROWS := 52
+# shore to south shore (Medium: Fedge's pick on 2026-10-14, after Large proved too
+# much for his laptop). The project setting mayor_street/planet turns it on.
+const PLANET_COLS := 192
+const PLANET_ROWS := 36
 # msp's look-dev views, same layout as LOOK_SHOTS, round the starter town on the equator.
 const PLANET_SHOTS := [
-	["day", 10.5, 1758.0, 300.0, 230.0, -35.0, 0.0],
-	["close", 11.0, 1768.0, 310.0, 75.0, -35.0, -8.0],
-	["golden", 18.4, 1788.0, 290.0, 300.0, -35.0, -32.0],
-	["belt", 13.5, 1728.0, 312.0, 900.0, -30.0, 0.0],
-	["globe", 12.0, 1728.0, 312.0, 2400.0, 0.0, 0.0],
-	["ice", 12.0, 1928.0, -60.0, 420.0, 180.0, -20.0],
-	["night", 21.5, 1758.0, 300.0, 230.0, -35.0, 0.0],
-	["street", 11.0, 1758.0, 300.0, 80.0, 0.0, 0.0],
-	["street_dusk", 19.2, 1758.0, 300.0, 80.0, 0.0, 0.0],
+	["day", 10.5, 1182.0, 204.0, 230.0, -35.0, 0.0],
+	["close", 11.0, 1192.0, 214.0, 75.0, -35.0, -8.0],
+	["golden", 18.4, 1212.0, 194.0, 300.0, -35.0, -32.0],
+	["belt", 13.5, 1152.0, 216.0, 600.0, -30.0, 0.0],
+	["globe", 12.0, 1152.0, 216.0, 1600.0, 0.0, 0.0],
+	["ice", 12.0, 1352.0, -60.0, 420.0, 180.0, -20.0],
+	["night", 21.5, 1182.0, 204.0, 230.0, -35.0, 0.0],
+	["street", 11.0, 1182.0, 204.0, 80.0, 0.0, 0.0],
+	["street_dusk", 19.2, 1182.0, 204.0, 80.0, 0.0, 0.0],
 ]
 
 
@@ -447,14 +453,20 @@ func go_mayor() -> void:
 	_update_hint()
 
 
+func _detail(street_view: bool) -> float:
+	if Planet.on:
+		return (PLANET_STREET_DETAIL if street_view else PLANET_MAYOR_DETAIL)[quality]
+	return (STREET_DETAIL if street_view else MAYOR_DETAIL)[quality]
+
+
 func _update_detail() -> void:
 	if view:
-		view.set_detail_distance((STREET_DETAIL if in_street() else MAYOR_DETAIL)[quality])
+		view.set_detail_distance(_detail(in_street()))
 
 
 func _on_street_entered() -> void:
 	day_night.set_view_distance(30.0)
-	view.set_detail_distance(STREET_DETAIL[quality])
+	view.set_detail_distance(_detail(true))
 	_hero_detail()
 	day_night.exposure_scale = 1.25
 	day_night.ambient_scale = 1.4
@@ -466,7 +478,7 @@ func _on_street_exited() -> void:
 	cam.set_process(true)
 	cam.set_process_unhandled_input(true)
 	day_night.set_view_distance(cam.dist)
-	view.set_detail_distance(MAYOR_DETAIL[quality])
+	view.set_detail_distance(_detail(false))
 	day_night.exposure_scale = 1.0
 	day_night.ambient_scale = 1.0
 	life.set_camera(cam)
