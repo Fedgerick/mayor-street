@@ -100,6 +100,8 @@ const PLANET_SHOTS := [
 	["golden", 18.4, 1212.0, 194.0, 300.0, -35.0, -32.0],
 	["belt", 13.5, 1152.0, 216.0, 600.0, -30.0, 0.0],
 	["globe", 12.0, 1152.0, 216.0, 1600.0, 0.0, 0.0],
+	["globe_dusk", 17.0, 1152.0, 216.0, 1600.0, 0.0, 0.0],
+	["globe_night", 23.0, 1152.0, 216.0, 1600.0, 0.0, 0.0],
 	["ice", 12.0, 1352.0, -60.0, 420.0, 180.0, -20.0],
 	["night", 21.5, 1182.0, 204.0, 230.0, -35.0, 0.0],
 	["street", 11.0, 1182.0, 204.0, 80.0, 0.0, 0.0],
@@ -858,9 +860,10 @@ func _process(delta: float) -> void:
 		# (screenshots pause the clock but still let traffic settle).
 		if speed_index > 0 or _args.has("screenshot") or _args.has("shots") or (bench and bench.running):
 			life.step(minf(delta, 0.1))
-	day_night.update_time(city.time_of_day(), city.game_day())
 	if planet_sky:
 		_follow_planet_sky()
+	else:
+		day_night.update_time(city.time_of_day(), city.game_day())
 	if _perf != null and _perf.visible:
 		_perf_t -= delta
 		if _perf_t <= 0.0:
@@ -874,13 +877,14 @@ func _process(delta: float) -> void:
 
 
 func _follow_planet_sky() -> void:
-	var eye := get_viewport().get_camera_3d()
-	if eye == null:
-		return
 	var where := Planet.warp(cam.focus)
 	if in_street() and street.get("player") and street.player.is_inside_tree():
 		where = street.player.global_position
-	planet_sky.follow(where, eye.global_position)
+	var clock := city.time_of_day()
+	day_night.update_time(PlanetSky.local_hour(clock, where), city.game_day())
+	var eye := get_viewport().get_camera_3d()
+	if eye:
+		planet_sky.follow(where, eye.global_position, clock)
 
 
 func _toggle_perf() -> void:

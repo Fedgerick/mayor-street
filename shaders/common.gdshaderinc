@@ -14,6 +14,20 @@ global uniform int gfx_quality;      // 0 low, 1 medium, 2 high
 global uniform float weather_wet;    // street wetness from weather/: 0 dry .. 1 soaked
 global uniform float planet_radius;  // planet/: 0 = the flat world; else the ball's radius
 global uniform float planet_v0;      // planet/: flat z of the equator
+global uniform float orbit_view;     // planet/: 1 seen from orbit, where night falls place by place
+
+// Night where a world point stands: the view's own night, or from orbit the real sun's.
+float night_at(vec3 wp) {
+	if (orbit_view <= 0.0) return night;
+	float sun_up = dot(normalize(wp), sun_dir);
+	return mix(night, 1.0 - smoothstep(-0.12, 0.1, sun_up), orbit_view);
+}
+
+// The fraction of windows lit there (DayNight lights about half of them at night).
+float window_lit_at(vec3 wp) {
+	if (orbit_view <= 0.0) return window_lit;
+	return mix(window_lit, 0.3 * night_at(wp), orbit_view);
+}
 
 const vec3 LAMP_COLOR = vec3(1.0, 0.72, 0.42);
 

@@ -49,7 +49,8 @@ void fragment() {
 	}
 
 	float depth = max(mpos.y - floor_height(mpos.xz), 0.0);
-	float day = 1.0 - night;
+	float nt = night_at(wpos);
+	float day = 1.0 - nt;
 
 	// The bottom, seen through the water and bent a little by the waves.
 	vec2 bp = mpos.xz + (nm.xy - 0.5) * min(depth, 4.0) * 0.5;
@@ -74,7 +75,7 @@ void fragment() {
 	float bubbles = mix(0.55, vnoise(fp) * 0.6 + vnoise(fp * 2.7) * 0.4, clamp(1.0 - px * 2.0, 0.0, 1.0));
 	float foam = clamp(shore + wave * 0.85, 0.0, 1.0) * smoothstep(0.3, 0.62, bubbles + shore * 0.35 + n * 0.2);
 	col = mix(col, vec3(0.92, 0.96, 1.0), foam);
-	col *= mix(1.0, 0.35, night);
+	col *= mix(1.0, 0.35, nt);
 
 	// At grazing angles the surface mostly reflects the sky.
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);

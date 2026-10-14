@@ -587,7 +587,7 @@ static func _standin_mesh(boxes: Array) -> ArrayMesh:
 				uv.append(Vector2(q[1], q[2]))
 				uv2.append(Vector2(sd, 0))
 				col.append(c)
-			idx.append_array([b, b + 2, b + 1, b, b + 3, b + 2])
+			idx.append_array([b, b + 1, b + 2, b, b + 2, b + 3])  # clockwise: Godot's front faces
 		var r := v.size()
 		for p in corners:
 			v.append(Vector3(p.x, hi.y, p.z))
@@ -595,7 +595,7 @@ static func _standin_mesh(boxes: Array) -> ArrayMesh:
 			uv.append(Vector2(0, -1))
 			uv2.append(Vector2(sd, 0))
 			col.append(c)
-		idx.append_array([r, r + 2, r + 1, r, r + 3, r + 2])
+		idx.append_array([r, r + 1, r + 2, r, r + 2, r + 3])
 	if Planet.on:
 		# Built on the flat map like everything else, then each corner put on the ball.
 		for k in v.size():
