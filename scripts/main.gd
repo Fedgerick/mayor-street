@@ -3,6 +3,7 @@ extends Node3D
 ##
 ## Command-line options (after `--`):
 ##   --demo                 start straight into the demo city (no character creator)
+##   --update-url=URL, --update-test   see scripts/updater.gd
 ##   --hour=21.5            set the clock
 ##   --view=x,z,dist,yawdeg camera framing
 ##   --overlay=1            0 none, 1 zones, 2 traffic, 3 land value
@@ -179,6 +180,11 @@ func _ready() -> void:
 		cam.set_view(c, 620.0, deg_to_rad(-30.0))
 		cam.auto_orbit = 0.05
 		hud.show_start()
+		if Updater.should_check(_args):  # offers "Update now" when a newer build is out
+			var up := Updater.new()
+			up.url = _args.get("update-url", Updater.RELEASES)
+			up.test_mode = _args.has("update-test")
+			add_child(up)
 	day_night.update_time(city.time_of_day(), city.game_day())
 
 
