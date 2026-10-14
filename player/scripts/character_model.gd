@@ -102,7 +102,10 @@ var _phone: Node3D
 
 static var _lib := {}             # part name -> Mesh
 static var _skin: Skin
-static var _merged := {}          # "parts@lod" -> ArrayMesh
+static var _merged := {}          # "parts@lod" -> ArrayMesh, least recently used first
+# Merged outfits kept. Each holds GPU buffers, and crowd outfits come and go all session:
+# unbounded, they piled up to the driver's buffer limit (VK_ERROR_TOO_MANY_OBJECTS).
+const MERGED_MAX := 64
 static var _src_mats := {}        # material name -> the glb's material (carries the name)
 static var _lod_mat: ShaderMaterial
 static var _arrays := {}          # "part#surface" -> the surface arrays, read once
@@ -311,7 +314,7 @@ func _set_slot_colors(gi: GeometryInstance3D) -> void:
 static func _single_mesh(parts: PackedStringArray) -> ArrayMesh:
 	var key := ",".join(parts) + "@single"
 	if _merged.has(key):
-		return _merged[key]
+		return _cached(key)
 	var list := []
 	for p in parts:
 		var pn := p + "_lod1" if _lib.has(p + "_lod1") else p
@@ -335,14 +338,14 @@ static func _single_mesh(parts: PackedStringArray) -> ArrayMesh:
 		_lod_mat = ShaderMaterial.new()
 		_lod_mat.shader = LOD_SHADER
 	out.surface_set_material(0, _lod_mat)
-	_merged[key] = out
+	_keep(key, out)
 	return out
 
 
 static func _merged_mesh(parts: PackedStringArray, level: int) -> ArrayMesh:
 	var key := ",".join(parts) + "@" + str(level)
 	if _merged.has(key):
-		return _merged[key]
+		return _cached(key)
 	var by_mat := {}
 	for p in parts:
 		var nm := p + ("_lod1" if level == 1 else "")
@@ -364,8 +367,23 @@ static func _merged_mesh(parts: PackedStringArray, level: int) -> ArrayMesh:
 			continue
 		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _concat(by_mat[mn]))
 		out.surface_set_material(out.get_surface_count() - 1, _src_mats.get(mn))
-	_merged[key] = out
+	_keep(key, out)
 	return out
+
+
+## A cache hit, moved to the back so the least recently used outfit goes first.
+static func _cached(key: String) -> ArrayMesh:
+	var m: ArrayMesh = _merged[key]
+	_merged.erase(key)
+	_merged[key] = m
+	return m
+
+
+## Models wearing an evicted mesh keep their own reference until they re-dress.
+static func _keep(key: String, mesh: ArrayMesh) -> void:
+	while _merged.size() >= MERGED_MAX:
+		_merged.erase(_merged.keys()[0])
+	_merged[key] = mesh
 
 
 static func _surface_arrays(part: String, mesh: Mesh, s: int) -> Array:
