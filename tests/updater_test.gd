@@ -18,6 +18,8 @@ func _initialize() -> void:
 	check(Updater.is_newer("0.4.18.1", "0.4.18"), "0.4.18.1 is newer than 0.4.18")
 	check(not Updater.is_newer("v0.4.18", "0.4.18"), "same version is not newer")
 	check(not Updater.is_newer("v0.4.9", "0.4.18"), "0.4.9 is older than 0.4.18")
+	check(Updater.is_newer("msp-v0.4.0", "0.3.5"), "msp-v0.4.0 is newer than 0.3.5")
+	check(not Updater.is_newer("msp-v0.4.0", "0.4.0"), "msp-v0.4.0 is not newer than 0.4.0")
 	var url := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--update-url="):

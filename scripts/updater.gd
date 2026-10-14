@@ -55,14 +55,22 @@ func _process(_delta: float) -> void:
 
 ## "0.4.18" < "0.4.19" < "0.5.0"; a leading v is ignored.
 static func is_newer(tag: String, current: String) -> bool:
-	var a := tag.trim_prefix("v").split(".")
-	var b := current.trim_prefix("v").split(".")
+	var a := _numbers(tag).split(".")
+	var b := _numbers(current).split(".")
 	for i in maxi(a.size(), b.size()):
 		var x := int(a[i]) if i < a.size() else 0
 		var y := int(b[i]) if i < b.size() else 0
 		if x != y:
 			return x > y
 	return false
+
+
+## "msp-v0.4.0" -> "0.4.0": ms and msp share one builds repo, so msp tags carry a prefix.
+static func _numbers(tag: String) -> String:
+	for i in tag.length():
+		if tag[i] >= "0" and tag[i] <= "9":
+			return tag.substr(i)
+	return "0"
 
 
 func _on_release(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
@@ -89,7 +97,7 @@ func _on_release(result: int, code: int, _headers: PackedStringArray, body: Pack
 	if _asset_url == "" or not is_newer(latest, current):
 		_done("none")
 		return
-	_label.text = "Mayor Street Planet %s is out (you have %s)." % [latest.trim_prefix("v"), current]
+	_label.text = "Mayor Street Planet %s is out (you have %s)." % [_numbers(latest), current]
 	_panel.show()
 	_update_btn.grab_focus()  # so the pad's A button picks it
 	finished.emit("offered")
@@ -98,7 +106,7 @@ func _on_release(result: int, code: int, _headers: PackedStringArray, body: Pack
 func update_now() -> void:
 	_buttons.hide()
 	_bar.show()
-	_label.text = "Downloading %s..." % latest.trim_prefix("v")
+	_label.text = "Downloading %s..." % _numbers(latest)
 	_http.download_file = OS.get_user_data_dir().path_join(ASSET)
 	_http.timeout = 0.0
 	_http.request_completed.connect(_on_downloaded)
