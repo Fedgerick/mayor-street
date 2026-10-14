@@ -708,6 +708,11 @@ func make_report() -> String:
 		(", %.1f GB RAM" % gb) if gb > 0.0 else ""])
 	lines.append("System    %s %s, video memory in use %d MB" % [OS.get_name(), OS.get_version(),
 		rs.get_rendering_info(rs.RENDERING_INFO_VIDEO_MEM_USED) / 1048576])
+	# Kept-around people meshes and materials: each one holds a few GPU buffers.
+	lines.append("Caches    %d people meshes, %d close-up outfits, %d people materials, %d resources" % [
+		CharacterModel._merged.size(), HeroLook._built.size(),
+		CharacterModel._mat_cache.size() + HeroLook._mats.size(),
+		Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)])
 	lines.append("")
 	lines.append("%-24s %6s %7s %8s %13s %10s %7s %7s %7s %5s %6s" % ["Part", "fps", "1% low", "worst ms",
 		"draw calls", "triangles", "GPU ms", "CPU ms", "game ms", "cars", "people"])
