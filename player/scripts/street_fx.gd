@@ -5,6 +5,20 @@ extends RefCounted
 ## costs next to nothing on integrated graphics.
 
 static var _mats := {}
+# Shared shapes: a new mesh and material per shot churned GPU buffers (a shotgun blast made
+# 17), so effects share these and fade with GeometryInstance3D.transparency instead.
+static var _shapes := {}
+
+
+static func _sphere(key: String, radius: float, segs: int, rings: int) -> SphereMesh:
+	if not _shapes.has(key):
+		var sm := SphereMesh.new()
+		sm.radius = radius
+		sm.height = radius * 2.0
+		sm.radial_segments = segs
+		sm.rings = rings
+		_shapes[key] = sm
+	return _shapes[key]
 
 
 static func _mat(key: String, col: Color, additive := false) -> StandardMaterial3D:
@@ -23,12 +37,10 @@ static func _mat(key: String, col: Color, additive := false) -> StandardMaterial
 	return m
 
 
-static func _fade_and_free(n: Node3D, mat: StandardMaterial3D, seconds: float, grow := 1.0) -> void:
+static func _fade_and_free(n: GeometryInstance3D, seconds: float, grow := 1.0) -> void:
 	var t := n.create_tween()
 	t.set_parallel(true)
-	if mat:
-		var c := mat.albedo_color
-		t.tween_property(mat, "albedo_color", Color(c.r, c.g, c.b, 0.0), seconds)
+	t.tween_property(n, "transparency", 1.0, seconds)
 	if grow != 1.0:
 		t.tween_property(n, "scale", n.scale * grow, seconds).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 	t.chain().tween_callback(n.queue_free)
@@ -39,32 +51,28 @@ static func tracer(parent: Node, from: Vector3, to: Vector3) -> void:
 	if len < 0.2:
 		return
 	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.025, 0.025, len)
-	mi.mesh = bm
-	var mat: StandardMaterial3D = _mat("tracer", Color(1.0, 0.85, 0.5, 0.9), true).duplicate()
-	mi.material_override = mat
+	if not _shapes.has("tracer"):
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.025, 0.025, 1.0)   # stretched to the shot's length
+		_shapes["tracer"] = bm
+	mi.mesh = _shapes["tracer"]
+	mi.material_override = _mat("tracer", Color(1.0, 0.85, 0.5, 0.9), true)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mi)
 	var up := Planet.up(from)
-	mi.global_transform = Transform3D(Basis.looking_at(to - from, up if absf((to - from).normalized().dot(up)) < 0.99 else up.cross(Vector3.RIGHT).normalized()), (from + to) * 0.5)
-	_fade_and_free(mi, mat, 0.07)
+	mi.global_transform = Transform3D(Basis.looking_at(to - from, up if absf((to - from).normalized().dot(up)) < 0.99 else up.cross(Vector3.RIGHT).normalized())
+		* Basis.from_scale(Vector3(1, 1, len)), (from + to) * 0.5)
+	_fade_and_free(mi, 0.07)
 
 
 static func muzzle(parent: Node, pos: Vector3, dir: Vector3, big := false) -> void:
 	var mi := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.09 if not big else 0.16
-	sm.height = sm.radius * 2.0
-	sm.radial_segments = 8
-	sm.rings = 4
-	mi.mesh = sm
-	var mat: StandardMaterial3D = _mat("muzzle", Color(1.0, 0.75, 0.3, 1.0), true).duplicate()
-	mi.material_override = mat
+	mi.mesh = _sphere("muzzle", 0.09, 8, 4)
+	mi.material_override = _mat("muzzle", Color(1.0, 0.75, 0.3, 1.0), true)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mi)
 	mi.global_position = pos + dir * 0.05
-	mi.scale = Vector3(1, 1, 2.2)
+	mi.scale = Vector3(1, 1, 2.2) * (0.16 / 0.09 if big else 1.0)
 	if dir.length() > 0.1:
 		var up := Planet.up(pos)
 		mi.look_at(pos + dir, up if absf(dir.normalized().dot(up)) < 0.99 else Planet.basis(pos).x)
@@ -74,7 +82,7 @@ static func muzzle(parent: Node, pos: Vector3, dir: Vector3, big := false) -> vo
 	l.omni_range = 4.0
 	l.shadow_enabled = false
 	mi.add_child(l)
-	_fade_and_free(mi, mat, 0.06)
+	_fade_and_free(mi, 0.06)
 
 
 static func puff(parent: Node, pos: Vector3, col: Color, size := 0.25, seconds := 0.35) -> void:
@@ -90,17 +98,12 @@ static func puff(parent: Node, pos: Vector3, col: Color, size := 0.25, seconds :
 	p.initial_velocity_min = 0.8
 	p.initial_velocity_max = 2.6
 	p.gravity = Vector3(0, -3.0, 0)
-	p.scale_amount_min = 0.5
-	p.scale_amount_max = 1.0
-	var sm := SphereMesh.new()
-	sm.radius = size * 0.5
-	sm.height = size
-	sm.radial_segments = 6
-	sm.rings = 3
-	var mat: StandardMaterial3D = _mat("puff", Color(1, 1, 1, 1)).duplicate()
-	mat.albedo_color = col
-	sm.material = mat
+	p.scale_amount_min = 0.5 * size
+	p.scale_amount_max = 1.0 * size
+	var sm := _sphere("puff", 0.5, 6, 3)   # unit size; scale_amount sizes it
+	sm.material = _mat("puff", Color(1, 1, 1, 1))
 	p.mesh = sm
+	p.color = col   # the shared material takes its colour from the particle's vertex colour
 	var ramp := Gradient.new()
 	ramp.set_color(0, Color(1, 1, 1, 1))
 	ramp.set_color(1, Color(1, 1, 1, 0))
@@ -163,18 +166,12 @@ static func fire() -> CPUParticles3D:
 static func explosion(parent: Node, pos: Vector3) -> void:
 	# A cluster of fireballs that bloom and fade at slightly different times, a flash,
 	# flying debris, and a smoke cloud left behind.
-	var sm := SphereMesh.new()
-	sm.radius = 1.0
-	sm.height = 2.0
-	sm.radial_segments = 12
-	sm.rings = 6
+	var sm := _sphere("boom", 1.0, 12, 6)
 	for i in 7:
 		var ball := MeshInstance3D.new()
 		ball.mesh = sm
 		var hot := Color(1.0, 0.85, 0.35, 0.95) if i < 3 else Color(1.0, 0.42, 0.1, 0.85)
-		var mat: StandardMaterial3D = _mat("boom", Color.WHITE, true).duplicate()
-		mat.albedo_color = hot
-		ball.material_override = mat
+		ball.material_override = _mat("boom_hot" if i < 3 else "boom", hot, true)
 		ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(ball)
 		var off := Planet.basis(pos) * Vector3(randf_range(-1.3, 1.3), randf_range(0.4, 2.0), randf_range(-1.3, 1.3)) * (0.3 if i < 3 else 1.0)
@@ -185,7 +182,7 @@ static func explosion(parent: Node, pos: Vector3) -> void:
 		t.set_parallel(true)
 		t.tween_property(ball, "scale", Vector3.ONE * randf_range(1.6, 2.6), 0.45).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 		t.tween_property(ball, "global_position", pos + off * 1.6 + Planet.up(pos) * 1.2, 0.6)
-		t.tween_property(mat, "albedo_color", Color(0.5, 0.12, 0.04, 0.0), 0.6).set_ease(Tween.EASE_IN)
+		t.tween_property(ball, "transparency", 1.0, 0.6).set_ease(Tween.EASE_IN)
 		t.chain().tween_callback(ball.queue_free)
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.6, 0.25)
@@ -210,12 +207,14 @@ static func explosion(parent: Node, pos: Vector3) -> void:
 	d.gravity = Vector3(0, -14.0, 0)
 	d.angular_velocity_min = -400.0
 	d.angular_velocity_max = 400.0
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.18, 0.08, 0.14)
-	var dm := StandardMaterial3D.new()
-	dm.albedo_color = Color(0.08, 0.07, 0.07)
-	bm.material = dm
-	d.mesh = bm
+	if not _shapes.has("debris"):
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.18, 0.08, 0.14)
+		var dm := StandardMaterial3D.new()
+		dm.albedo_color = Color(0.08, 0.07, 0.07)
+		bm.material = dm
+		_shapes["debris"] = bm
+	d.mesh = _shapes["debris"]
 	parent.add_child(d)
 	d.global_transform = Transform3D(Planet.basis(pos), pos + Planet.up(pos))
 	d.emitting = true

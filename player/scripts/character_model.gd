@@ -292,6 +292,16 @@ func _apply_mesh() -> void:
 		body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		shadow_body.visible = false
 	else:
+		var hero = get_node_or_null("HeroLook")
+		if hero and hero.cm == self and HeroLook._ok:
+			# HeroLook draws the close-up; building the street mesh too would only churn
+			# GPU buffers and push other outfits out of the cache.
+			shadow_body.mesh = low
+			shadow_body.visible = true
+			if body.has_meta("creator_src_mesh"):
+				body.remove_meta("creator_src_mesh")
+			hero._apply()
+			return
 		body.mesh = _merged_mesh(parts, 0)
 		for s in body.mesh.get_surface_count():
 			var sm := body.mesh.surface_get_material(s)
