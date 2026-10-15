@@ -69,6 +69,7 @@ var heat: Wanted                    # wanted level; `wanted` / `wanted_stars` re
 var combat: StreetCombat
 var sanctioned := false             # missions: a good job's fight, so gunfire isn't reported
 var hud: StreetHud
+var seating: StreetSeating           # benches, bus stops and chairs indoors; passenger rides
 var life: Node = null               # CityLife, for traffic, people and police
 var hospitals: Array[Vector3] = []  # respawn overrides; otherwise read from the city
 var stations: Array[Vector3] = []
@@ -109,6 +110,10 @@ func _ready() -> void:
 	player.process_mode = Node.PROCESS_MODE_DISABLED
 	player.visible = false
 	player.died.connect(_on_player_died)
+	seating = StreetSeating.new()
+	seating.name = "Seating"
+	add_child(seating)
+	seating.setup(self)
 	camera = StreetCamera.new()
 	camera.name = "StreetCamera"
 	add_child(camera)
@@ -215,6 +220,7 @@ func exit_street(to: Transform3D, to_fov := 45.0) -> void:
 	active = false
 	while switching:   # halfway into a car: finish getting in, then climb back out
 		await get_tree().physics_frame
+	_off_seat()
 	if car:
 		_leave_car()
 	player.set_controls(false)
@@ -238,9 +244,14 @@ func view_yaw() -> float:
 # ----------------------------------------------------------------------- cars ---
 
 func _on_interact() -> void:
-	if not active or switching or down or player.dead:
+	if not active or switching or down or player.dead or seating.busy or seating.seated:
 		return
 	var best := _free_car_near()
+	var seat := seating.find(player.global_position)
+	if not seat.is_empty() and (best == null or (seat.xform as Transform3D).origin.distance_to(player.global_position) \
+			< best.global_position.distance_to(player.global_position) - 1.0):
+		seating.sit(seat)
+		return
 	if best:
 		_enter_car(best)
 		return
@@ -613,7 +624,16 @@ func _process(delta: float) -> void:
 				near = true
 				break
 		_hint.text = "E  get in" if near and not switching else ""
-		if not near and not switching and _traffic_car_near() != null:
+		if seating.riding:
+			_hint.text = ""
+		elif seating.seated:
+			_hint.text = "E  stand up"
+		elif seating.busy:
+			_hint.text = ""
+		elif not switching and not player.puppet and not seating.nearest().is_empty() and (not near \
+				or (seating.nearest().xform as Transform3D).origin.distance_to(player.global_position) < 1.0):
+			_hint.text = "E  sit"
+		elif not near and not switching and _traffic_car_near() != null:
 			_hint.text = "E  carjack"
 
 
@@ -1032,6 +1052,7 @@ func _on_player_died() -> void:
 	wasted.emit()
 	if car:
 		_eject(car)
+	_off_seat()
 	player.set_controls(false)
 	player.visual.set_aim(CharacterModel.Aim.NONE)
 	player.aiming = false
@@ -1054,6 +1075,7 @@ func bust() -> void:
 		await get_tree().create_timer(0.6).timeout
 	if car:
 		_eject(car)
+	_off_seat()
 	player.set_controls(false)
 	player.visual.set_aim(CharacterModel.Aim.NONE)
 	player.aiming = false
@@ -1062,6 +1084,14 @@ func bust() -> void:
 	var fee := _take_cash(BUSTED_FEE, "bail")
 	await _respawn(_respawn_point(false), busted_wake)
 	hud.note("Bail and fines  -$%d" % fee)
+
+
+## Off any bench, chair or passenger seat at once.
+func _off_seat() -> void:
+	if seating.riding:
+		seating.end_ride(player.global_position)
+	if seating.seated or seating.busy:
+		seating.stand(true)
 
 
 func _down_sequence(text: String, col: Color) -> void:
