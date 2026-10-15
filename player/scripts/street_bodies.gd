@@ -510,13 +510,17 @@ func _player_hits() -> void:
 
 
 func _tidy_wrecks(focus: Vector3) -> void:
-	for w in _wrecks.duplicate():
+	# Wrecks can be freed elsewhere (blown up, towed). A freed one can't be erase()d from
+	# a typed array (it errors every frame and never leaves), so build the list afresh.
+	var keep: Array[Node3D] = []
+	for w in _wrecks:
 		if not is_instance_valid(w) or w == street.car:
-			_wrecks.erase(w)
 			continue
 		if Planet.flat(w.global_position).distance_to(focus) > WRECK_KEEP:
-			_wrecks.erase(w)
 			w.queue_free()
+			continue
+		keep.append(w)
+	_wrecks = keep
 	while _wrecks.size() > MAX_WRECKS:
 		var far: Node3D = _wrecks[0]
 		for w in _wrecks:

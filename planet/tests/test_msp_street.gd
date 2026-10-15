@@ -67,6 +67,20 @@ func _run() -> void:
 	ms = (Time.get_ticks_usec() - t0) / 1000.0
 	check(ms < 1.0, "an unchanged spot costs almost nothing (%.2f ms)" % ms)
 	bodies.rebuild_fixtures(flat_at)
+	# Wrecks freed elsewhere (blown up, towed) must leave the list, not jam it: in 0.4.2
+	# they could not be erase()d and the over-the-limit loop never ended (Fedge's freeze).
+	for i in 14:
+		var w := Node3D.new()
+		street.add_child(w)
+		w.global_position = p.global_position + Vector3(i, 0, 0)
+		bodies._wrecks.append(w)
+	for i in 6:
+		bodies._wrecks[i * 2].free()
+	bodies._tidy_wrecks(flat_at)
+	var all_ok := true
+	for w in bodies._wrecks:
+		all_ok = all_ok and is_instance_valid(w)
+	check(bodies._wrecks.size() <= StreetBodies.MAX_WRECKS and all_ok, "freed wrecks drop out of the list (%d left)" % bodies._wrecks.size())
 	# A car right here, and drive it.
 	# On the nearest east-west road, pointing east.
 	var city: City = main.city
