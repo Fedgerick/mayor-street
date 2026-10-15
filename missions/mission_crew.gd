@@ -120,7 +120,7 @@ func hurt(e: Enemy, damage: float, dir := Vector3.ZERO, _weapon := &"") -> void:
 	e.hp -= damage
 	_alert_all()
 	if is_inside_tree():
-		StreetFx.puff(self, e.pos + Vector3.UP * 1.2, Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
+		StreetFx.puff(self, Planet.place(e.pos + Vector3.UP * 1.2), Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
 	if e.hp <= 0.0:
 		_kill(e, dir)
 	elif e.model and e.model.has_method("play_hit"):
@@ -145,9 +145,10 @@ func _kill(e: Enemy, dir: Vector3) -> void:
 	e.dead = true
 	e.speed = 0.0
 	if e.model and is_instance_valid(e.model):
-		var away := Vector3(dir.x, 0.0, dir.z)
+		var away := Planet.to_local(e.model.global_position, dir)  # dir is a world direction
+		away.y = 0.0
 		if away.length() > 0.01:
-			e.model.global_basis = Basis.looking_at(-away.normalized(), Vector3.UP)
+			e.model.global_basis = Planet.basis(e.model.global_position) * Basis.looking_at(-away.normalized(), Vector3.UP)
 		e.model.set_aim(CharacterModel.Aim.NONE)
 		e.model.set_dead(true)
 		var m := e.model
@@ -209,9 +210,8 @@ func tick(delta: float) -> void:
 		if e.alert and outside:
 			_attack(e, me, d, delta)
 		if e.model and is_instance_valid(e.model):
-			e.model.global_position = e.pos
-			if e.fwd.length_squared() > 0.01:
-				e.model.global_basis = Basis.looking_at(e.fwd, Vector3.UP)
+			var mb := Basis.looking_at(e.fwd, Vector3.UP) if e.fwd.length_squared() > 0.01 else e.model.basis
+			e.model.global_transform = Planet.xf_rigid(Transform3D(mb, e.pos))  # crews walk the flat map
 			e.model.set_aim(CharacterModel.Aim.PISTOL if e.armed and e.alert else CharacterModel.Aim.NONE)
 			e.model.animate(delta, e.speed, true, 0.0, 0.0)
 
@@ -245,7 +245,7 @@ func _clear(a: Vector3, b: Vector3) -> bool:
 	var dist := Vector2(b.x - a.x, b.z - a.z).length()
 	var steps := int(dist / (City.TILE * 0.4)) + 1
 	for k in range(1, steps):
-		var cell := city.world_to_cell(a.lerp(b, float(k) / steps))
+		var cell := city.flat_to_cell(a.lerp(b, float(k) / steps))
 		if city.inside(cell.x, cell.y) and city.bld[city.idx(cell.x, cell.y)] >= 0:
 			return false
 	return true
@@ -257,7 +257,7 @@ func _walk(p: Vector3, step: Vector3) -> Vector3:
 		return p + step
 	for cand in [step, Vector3(step.x, 0, 0), Vector3(0, 0, step.z)]:
 		var q: Vector3 = p + cand
-		var c := city.world_to_cell(q)
+		var c := city.flat_to_cell(q)
 		if not city.inside(c.x, c.y) or city.bld[city.idx(c.x, c.y)] < 0:
 			return q
 	return p
@@ -274,5 +274,5 @@ func _make_model(e: Enemy) -> Node3D:
 		"bottom": "jeans", "hat": "" if e.boss else ("beanie" if _rng.randf() < 0.4 else ""),
 		"colors": {"Shirt": shirt, "Jacket": Color(0.1, 0.1, 0.11) if not e.boss else Color(0.2, 0.18, 0.16),
 			"Pants": Color(0.12, 0.12, 0.14), "Hat": Color(0.08, 0.08, 0.09)}})
-	m.global_position = e.pos
+	m.global_transform = Planet.xf_rigid(Transform3D(Basis.IDENTITY, e.pos))
 	return m

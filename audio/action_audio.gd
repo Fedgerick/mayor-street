@@ -172,7 +172,7 @@ func _on_hit(kind: StringName, pos: Vector3, weapon: StringName) -> void:
 
 
 func _on_officer_fired(pos: Vector3) -> void:
-	director.play_at("gun_cop", pos + Vector3.UP * 1.3, -1.0, _rng.randf_range(0.93, 1.07), 22.0)
+	director.play_at("gun_cop", Planet.place(pos + Vector3.UP * 1.3), -1.0, _rng.randf_range(0.93, 1.07), 22.0)
 
 
 func _on_player_damaged(_amount: float, _from: Vector3) -> void:
@@ -186,7 +186,7 @@ func _on_wanted(stars: int) -> void:
 
 
 func _on_car_taken(pos: Vector3, _fwd: Vector3) -> void:
-	director.play_at("carjack", pos + Vector3.UP, 0.0, _rng.randf_range(0.95, 1.05), 8.0)
+	director.play_at("carjack", Planet.place(pos + Vector3.UP), 0.0, _rng.randf_range(0.95, 1.05), 8.0)
 
 
 func _on_reloading(id: StringName) -> void:
@@ -201,7 +201,7 @@ func _on_bus_stopped(car, _stop) -> void:
 	if car == null or not ("pos" in car):
 		return
 	var pos: Vector3 = car.pos
-	director.play_at("bus_stop", pos + Vector3.UP * 1.5, -3.0, _rng.randf_range(0.95, 1.05), 9.0)
+	director.play_at("bus_stop", Planet.place(pos + Vector3.UP * 1.5), -3.0, _rng.randf_range(0.95, 1.05), 9.0)
 
 
 func _on_exploded(car: Node3D) -> void:
@@ -218,13 +218,17 @@ func _on_car_damaged(_amount: float, car: Node3D) -> void:
 		return
 	var p := director.attach_loop("car_alarm_loop", car, -4.0, 12.0)
 	_alarms[id] = p
-	get_tree().create_timer(ALARM_SECONDS).timeout.connect(_stop_alarm.bind(car))
+	# Bind the id, not the car: towed or blown-up cars are freed before the timer ends.
+	get_tree().create_timer(ALARM_SECONDS).timeout.connect(_stop_alarm_id.bind(id))
 
 
 func _stop_alarm(car: Object) -> void:
 	if car == null:
 		return
-	var id := car.get_instance_id()
+	_stop_alarm_id(car.get_instance_id())
+
+
+func _stop_alarm_id(id: int) -> void:
 	var p = _alarms.get(id)
 	_alarms.erase(id)
 	if p != null and is_instance_valid(p):
@@ -244,7 +248,7 @@ func _on_step(m) -> void:
 	if st.get("marker", "") == "vault" and bank_alarm <= 0.0:
 		bank_alarm = BANK_ALARM_SECONDS
 		var slot: Dictionary = m.slots.get(st.get("at", "start"), {})
-		_bank_pos = slot.get("pos", _player_pos())
+		_bank_pos = slot.get("pos", Planet.flat(_player_pos()))  # flat map metres
 
 
 func _on_interior_entered(id: String, _b: Dictionary) -> void:
@@ -281,11 +285,12 @@ func _update_sirens(delta: float, listener: Vector3) -> void:
 		var police = _life.get("police") if _life else null
 		if police and police.has_method("siren_list"):
 			list = police.siren_list()
-		list.sort_custom(func(a, b): return a[0].distance_squared_to(listener) < b[0].distance_squared_to(listener))
+		var here := Planet.flat(listener)  # police cars are in flat map metres
+		list.sort_custom(func(a, b): return Planet.fdist(a[0], here) < Planet.fdist(b[0], here))
 		for i in _sirens.size():
 			var p := _sirens[i]
 			if i < list.size():
-				var at: Vector3 = list[i][0] + Vector3.UP * 1.5
+				var at: Vector3 = Planet.place(list[i][0] + Vector3.UP * 1.5)
 				if not p.playing:
 					p.global_position = at
 					p.play(_rng.randf() * 0.9)
@@ -305,8 +310,9 @@ func _update_panic(listener: Vector3) -> void:
 	var n := 0
 	var crowd = _life.get("crowd") if _life else null
 	if crowd and _street and _street.get("active"):
+		var here := Planet.flat(listener)
 		for ped in crowd.peds:
-			if ped.flee > 0.0 and ped.pos.distance_squared_to(listener) < 1600.0:
+			if ped.flee > 0.0 and Planet.fdist(ped.pos, here) < 40.0:
 				n += 1
 	director.panic = clampf(n / 8.0, 0.0, 1.0)
 
@@ -326,7 +332,7 @@ func _update_bank(delta: float) -> void:
 		else:
 			_bank_in.stop()
 	if not inside and not _bank_out.playing:
-		_bank_out.global_position = _bank_pos + Vector3.UP * 4.0
+		_bank_out.global_position = Planet.place(_bank_pos + Vector3.UP * 4.0)
 		_bank_out.play()
 	elif inside and _bank_out.playing:
 		_bank_out.stop()

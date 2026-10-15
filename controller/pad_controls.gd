@@ -611,7 +611,7 @@ func _camera_step(delta: float) -> void:
 	# Zoom: right trigger in, left trigger out.
 	var z := Input.get_joy_axis(device, JOY_AXIS_TRIGGER_RIGHT) - Input.get_joy_axis(device, JOY_AXIS_TRIGGER_LEFT)
 	if absf(z) > 0.12:
-		cam._dist_goal = clampf(float(cam._dist_goal) * (1.0 - z * delta * 1.6), MayorCamera.MIN_DIST, MayorCamera.MAX_DIST)
+		cam._dist_goal = clampf(float(cam._dist_goal) * (1.0 - z * delta * 1.6), MayorCamera.MIN_DIST, cam.max_dist())
 		moved = true
 	# Rotate: bumpers.
 	var rot := float(Input.is_joy_button_pressed(device, binds.physical(JOY_BUTTON_LEFT_SHOULDER))) \

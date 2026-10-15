@@ -441,6 +441,49 @@
   "wheel_radius": 0.36,
   "width": 1.82
  },
+ "car_tow": {
+  "axles": [
+   {
+    "dual": false,
+    "radius": 0.5,
+    "steer": true,
+    "z": -2.85
+   },
+   {
+    "dual": true,
+    "radius": 0.5,
+    "steer": false,
+    "z": 2.3
+   }
+  ],
+  "damage": [
+   "car_tow_dmg1",
+   "car_tow_dmg2",
+   "car_tow_dmg3"
+  ],
+  "height": 2.9,
+  "length": 8.2,
+  "lods": [
+   "car_tow",
+   "car_tow_lod1",
+   "car_tow_lod2"
+  ],
+  "seat": [
+   -0.36,
+   1.26,
+   -2.25
+  ],
+  "siren": true,
+  "tinted": false,
+  "track": 1.0,
+  "tris": [
+   6384,
+   1434,
+   342
+  ],
+  "wheel_radius": 0.5,
+  "width": 2.36
+ },
  "car_truck": {
   "axles": [
    {

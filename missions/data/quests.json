@@ -193,6 +193,39 @@
 				{"text": "Keep Hart's rally safe", "job": "hart_rally"}
 			],
 			"reward": {"funds": 25000, "respect": {"hart": 10}, "flag": "hart_reelected", "note": "Hart is re-elected and the city budget grows"}
+		},
+		{
+			"id": "harbor_map",
+			"role": "good",
+			"title": "X Marks the Spot",
+			"desc": "The clerk at Harbor Arms swore the old harbor map was real. Find out.",
+			"when": {"flag": "item:harbor_map"},
+			"steps": [
+				{"text": "Follow the old harbor map (dispatch radio, Y)", "job": "map_dig", "times": 1}
+			],
+			"reward": {"cash": 2500, "flag": "harbor_map_done", "note": "The harbor map paid off: an old smuggler's cash box"}
+		},
+		{
+			"id": "yard_boss",
+			"role": "mayor",
+			"title": "Wreck Season",
+			"desc": "Rusty's trucks can't keep up. Pull three tow jobs and the yard will remember it.",
+			"when": {"built": "salvage_yard"},
+			"steps": [
+				{"text": "Tow broken-down cars to the salvage yard ({done}/3)", "job": "tow_call", "times": 3}
+			],
+			"reward": {"cash": 800, "funds": 2500, "flag": "yard_friend", "note": "Rusty's tow jobs now pay more"}
+		},
+		{
+			"id": "open_for_business",
+			"role": "mayor",
+			"title": "Open for Business",
+			"desc": "Harbor Arms needs a steady supply run before the shelves fill up.",
+			"when": {"built": "gun_shop"},
+			"steps": [
+				{"text": "Deliver ammunition crates ({done}/2)", "job": "arms_shipment", "times": 2}
+			],
+			"reward": {"cash": 600, "funds": 2000, "flag": "shop_discount", "note": "Harbor Arms gives you 20% off from now on"}
 		}
 	]
 }

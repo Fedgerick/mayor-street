@@ -90,6 +90,18 @@ func _init() -> void:
 		cnames.append(crowd.body.mesh.surface_get_name(s))
 	check(not ("Lashes" in cnames), "crowd lashes share the brows' draw call")
 
+	# A long session's crowd: outfit meshes hold GPU buffers, so the caches must stay capped.
+	for i in 200:
+		var walker := CharacterModel.new()
+		walker.seed_value = 1000 + i * 7919
+		walker.lod = 0
+		root.add_child(walker)
+		await process_frame
+		walker.queue_free()
+	await process_frame
+	check(CharacterModel._merged.size() <= CharacterModel.MERGED_MAX and HeroLook._built.size() <= HeroLook.BUILT_MAX,
+		"200 crowd outfits leave %d street and %d close-up meshes cached" % [CharacterModel._merged.size(), HeroLook._built.size()])
+
 	# Dogs: a drop-in for citylife's DogMesh.
 	check(HeroDog.available(), "dog.glb is built")
 	var d0 := HeroDog.build(0)

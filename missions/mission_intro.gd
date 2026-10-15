@@ -107,8 +107,11 @@ func _frame(t: float) -> void:
 	var ang := float(i) * 1.9 + u * 0.7
 	var dist := lerpf(80.0, 48.0, u)
 	var h := lerpf(52.0, 26.0, u)
-	_cam.global_position = target + Vector3(cos(ang) * dist, h, sin(ang) * dist)
-	_cam.look_at(target + Vector3.UP * 5.0)
+	# target is flat map; on msp the shot is framed on the ball over it.
+	var eye := Planet.place(target + Vector3(cos(ang) * dist, h, sin(ang) * dist))
+	var aim := Planet.place(target + Vector3.UP * 5.0)
+	_cam.global_position = eye
+	_cam.look_at(aim, Planet.up(aim))
 
 
 func _input(e: InputEvent) -> void:

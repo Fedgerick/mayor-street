@@ -39,11 +39,11 @@ func _run() -> void:
 
 	# The map picture: sea in the corner, a road tile's middle is road grey.
 	var img := MapPainter.paint(city)
-	check(img.get_width() == City.SIZE * MapPainter.PX, "map is %d px across" % img.get_width())
+	check(img.get_width() == City.W * MapPainter.PX, "map is %d px across" % img.get_width())
 	check(_same(img.get_pixel(1, 1), MapPainter.SEA), "corner is sea")
 	var roads: Array[Vector2i] = []
-	for y in City.SIZE:
-		for x in City.SIZE:
+	for y in City.H:
+		for x in City.W:
 			if city.is_road(x, y):
 				roads.append(Vector2i(x, y))
 	check(roads.size() > 20, "demo has roads (%d tiles)" % roads.size())
@@ -53,8 +53,8 @@ func _run() -> void:
 
 	# Repainting just a changed patch gives the same picture as painting it all again.
 	var lot := Vector2i(-1, -1)
-	for y in range(10, City.SIZE - 10):
-		for x in range(10, City.SIZE - 10):
+	for y in range(10, City.H - 10):
+		for x in range(10, City.W - 10):
 			var i := city.idx(x, y)
 			if lot.x < 0 and city.bld[i] < 0 and city.can_place_special("police_station", Vector2i(x, y), true) == "":
 				lot = Vector2i(x, y)
@@ -159,7 +159,7 @@ static func _same(a: Color, b: Color) -> bool:
 
 static func _reach(city: City, from: Vector2i) -> PackedInt32Array:
 	var dist := PackedInt32Array()
-	dist.resize(City.SIZE * City.SIZE)
+	dist.resize(City.W * City.H)
 	dist.fill(-1)
 	var start := city.idx(from.x, from.y)
 	dist[start] = 0
@@ -169,8 +169,8 @@ static func _reach(city: City, from: Vector2i) -> PackedInt32Array:
 		var i := q[head]
 		head += 1
 		for d: Vector2i in City.DIRS:
-			var x := i % City.SIZE + d.x
-			var y := i / City.SIZE + d.y
+			var x := i % City.W + d.x
+			var y := i / City.W + d.y
 			if city.is_road(x, y) and dist[city.idx(x, y)] == -1:
 				dist[city.idx(x, y)] = dist[i] + 1
 				q.append(city.idx(x, y))

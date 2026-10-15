@@ -3,6 +3,7 @@ extends Node3D
 ##
 ## Command-line options (after `--`):
 ##   --demo                 start straight into the demo city (no character creator)
+##   --update-url=URL, --update-test   see scripts/updater.gd
 ##   --hour=21.5            set the clock
 ##   --view=x,z,dist,yawdeg camera framing
 ##   --overlay=1            0 none, 1 zones, 2 traffic, 3 land value
@@ -14,6 +15,7 @@ extends Node3D
 ##   --perf                 show the frame rate readout (F3)
 ##   --benchmark            run the two-minute benchmark tour, write benchmark.txt and quit
 ##   --weather=rain         fix the weather: clear, cloudy, rain or fog
+##   --flat                 msp builds: play the flat island instead of the planet
 
 enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE, BUILD }
 
@@ -31,12 +33,17 @@ var services_panel: ServicesPanel
 var interiors: InteriorManager  # enterable buildings (interiors/)
 var missions: Missions  # jobs, payphones, goodness and quests (missions/)
 var resident: Resident  # the character you create, and their home (creator/)
+var tow: TowService  # tow trucks (vehicles/)
+var yards: SalvageYards  # salvage yards and their parked tow trucks (vehicles/)
+var shop: GunShop  # Harbor Arms & Supply: what you buy there (shop/)
+var bench_bus: BenchBus  # the hidden park-bench bus ride (missions/)
 var weather: Weather  # clear, cloudy, rain and fog on a calendar (weather/)
 var rain_fx: RainFX  # rain and splashes around the street camera
 var dresser: StreetDresser  # trees, benches, signs, shop fronts near the street camera (art/dresser/)
 var nav: CityNav  # minimap, GPS route and the city map on V (navigation/)
 var bench: Benchmark  # the benchmark tour, while one runs
 var pad: PadControls  # gamepad controls and button prompts (controller/)
+var planet_sky: PlanetSky  # msp only: sun, sky and atmosphere follow the view round the ball (planet/)
 var skip_creator := false  # no character creator; test scripts, --demo and look-dev runs skip it too
 var _dive_home := false  # after the creator, the first dive lands outside the Resident's front door
 var _gliding := false
@@ -78,6 +85,32 @@ const HERO_MAX := [6, 12, 24]  # close-up people on the full rigged model, per g
 # graphics level; 0 never. The street sees less of the city past the first blocks.
 const STREET_DETAIL := [250.0, 400.0, 700.0]
 const MAYOR_DETAIL := [600.0, 1000.0, 0.0]
+# msp: the ball hides a 40 m building past ~200 m from the street, and only chunks inside the
+# detail distance keep their full-detail GPU buffers (CityView._want_full), so it is shorter.
+const PLANET_STREET_DETAIL := [130.0, 180.0, 400.0]  # past ~180 m the curve hides all but tall buildings
+const PLANET_MAYOR_DETAIL := [400.0, 600.0, 1000.0]
+# msp street level: full-detail chunks past this stop casting sun shadows (CityView.shadow_reach).
+const PLANET_STREET_SHADOWS := [100.0, 150.0, 250.0]
+
+# msp (planet/): the belt is PLANET_COLS tiles round the equator and PLANET_ROWS from north
+# shore to south shore (Medium: Fedge's pick on 2026-10-14, after Large proved too
+# much for his laptop). The project setting mayor_street/planet turns it on.
+const PLANET_COLS := 192
+const PLANET_ROWS := 36
+# msp's look-dev views, same layout as LOOK_SHOTS, round the starter town on the equator.
+const PLANET_SHOTS := [
+	["day", 10.5, 1182.0, 204.0, 230.0, -35.0, 0.0],
+	["close", 11.0, 1192.0, 214.0, 75.0, -35.0, -8.0],
+	["golden", 18.4, 1212.0, 194.0, 300.0, -35.0, -32.0],
+	["belt", 13.5, 1152.0, 216.0, 600.0, -30.0, 0.0],
+	["globe", 12.0, 1152.0, 216.0, 1600.0, 0.0, 0.0],
+	["globe_dusk", 17.0, 1152.0, 216.0, 1600.0, 0.0, 0.0],
+	["globe_night", 23.0, 1152.0, 216.0, 1600.0, 0.0, 0.0],
+	["ice", 12.0, 1352.0, -60.0, 420.0, 180.0, -20.0],
+	["night", 21.5, 1182.0, 204.0, 230.0, -35.0, 0.0],
+	["street", 11.0, 1182.0, 204.0, 80.0, 0.0, 0.0],
+	["street_dusk", 19.2, 1182.0, 204.0, 80.0, 0.0, 0.0],
+]
 
 
 func _ready() -> void:
@@ -85,18 +118,27 @@ func _ready() -> void:
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	# A load restarts this scene with the save waiting in Progress.
+	if ProjectSettings.get_setting("mayor_street/planet", false) and not _args.has("flat"):
+		Planet.configure(PLANET_COLS, PLANET_ROWS)  # before the City is made: it sizes the grid
+		Planet.point_gravity(get_world_3d().space)
 	var save := Progress.take_pending_load()
 	HeroLook.install(get_tree())  # the player's high-detail look (characters/), before StreetMode and the creator
 	city = City.new(int(save.city.get("seed", 1337))) if not save.is_empty() else City.new()
 	city.message.connect(func(t): hud.show_toast(t))
 	day_night = DayNight.new()
 	add_child(day_night)
+	if Planet.on:
+		planet_sky = PlanetSky.new()
+		planet_sky.name = "PlanetSky"
+		add_child(planet_sky)
+		planet_sky.setup(day_night)
 	view = CityView.new()
 	add_child(view)
 	cam = MayorCamera.new()
 	add_child(cam)
-	var size := City.SIZE * City.TILE
-	cam.bounds = Rect2(-100, -100, size + 200, size + 200)
+	cam.bounds = Rect2(-100, -100, City.W * City.TILE + 200, City.H * City.TILE + 200)
+	if Planet.on:  # north onto the ice a little, south over the sea a little
+		cam.bounds = Rect2(0, -300, City.W * City.TILE, City.H * City.TILE + 500)
 	hud = Hud.new()
 	hud.city = city
 	add_child(hud)
@@ -146,6 +188,11 @@ func _ready() -> void:
 		cam.set_view(c, 620.0, deg_to_rad(-30.0))
 		cam.auto_orbit = 0.05
 		hud.show_start()
+		if Updater.should_check(_args):  # offers "Update now" when a newer build is out
+			var up := Updater.new()
+			up.url = _args.get("update-url", Updater.RELEASES)
+			up.test_mode = _args.has("update-test")
+			add_child(up)
 	day_night.update_time(city.time_of_day(), city.game_day())
 
 
@@ -199,6 +246,14 @@ func _start(demo: bool, save := {}) -> void:
 	add_child(street)
 	street.setup(city)  # registers its own save section, "street"
 	_warm_street_fx()
+	tow = TowService.new()  # tow trucks fetch flipped and burnt-out cars (vehicles/)
+	tow.setup(city, street)
+	add_child(tow)
+	yards = SalvageYards.new()  # the trucks belong to salvage yards: two each, parked out front
+	yards.name = "SalvageYards"
+	add_child(yards)
+	yards.setup(city, street)
+	tow.yards = yards
 	street.set_life(life)  # carjacking, people and cops as targets, police chases
 	interiors = InteriorManager.new()
 	interiors.name = "Interiors"
@@ -214,6 +269,14 @@ func _start(demo: bool, save := {}) -> void:
 	add_child(resident)
 	resident.setup(city, street, cam)  # registers "resident"; a load fills it here
 	resident.use_interiors(interiors)
+	shop = GunShop.new()  # Harbor Arms: the counter screen, med kits, home items (shop/)
+	shop.name = "GunShop"
+	add_child(shop)
+	shop.setup(city, street, interiors)  # registers "shop"
+	bench_bus = BenchBus.new()  # sit on a park bench and a bus may pick you up
+	bench_bus.name = "BenchBus"
+	add_child(bench_bus)
+	bench_bus.setup(city, street, missions)
 	weather = Weather.new()
 	weather.name = "Weather"
 	add_child(weather)
@@ -327,7 +390,7 @@ func _lookdev(dir: String) -> void:
 	## Renders LOOK_SHOTS in one run, so before/after sets match exactly.
 	DirAccess.make_dir_recursive_absolute(dir)
 	var only := String(_args.get("only", "")).split(",", false)
-	for s in LOOK_SHOTS:
+	for s in (PLANET_SHOTS if Planet.on else LOOK_SHOTS):
 		var nm: String = s[0]
 		if not only.is_empty() and not only.has(nm):
 			continue
@@ -392,7 +455,7 @@ func go_street() -> void:
 	_set_speed(1)
 	cam.set_process(false)
 	cam.set_process_unhandled_input(false)
-	street.enter_street(cam, at)
+	street.enter_street(cam, Planet.place(at))  # the mayor focus is flat map metres
 	life.set_camera(street.camera)
 	rain_fx.set_camera(street.camera)
 	_update_hint()
@@ -412,19 +475,30 @@ func go_mayor() -> void:
 		if not street.active or street.busy or not street.can_exit():
 			return
 	# Frame the mayor view on where the player ended up, looking the same way.
-	cam.set_view(street.focus_point(), 140.0, street.view_yaw())
+	cam.set_view(Planet.flat(street.focus_point()) * Vector3(1, 0, 1), 140.0, street.view_yaw())
 	street.exit_street(cam.global_transform, cam.fov)
 	_update_hint()
 
 
+func _detail(street_view: bool) -> float:
+	if Planet.on:
+		return (PLANET_STREET_DETAIL if street_view else PLANET_MAYOR_DETAIL)[quality]
+	return (STREET_DETAIL if street_view else MAYOR_DETAIL)[quality]
+
+
+func _set_view_detail(street_view: bool) -> void:
+	view.set_detail_distance(_detail(street_view))
+	view.shadow_reach = PLANET_STREET_SHADOWS[quality] if Planet.on and street_view else 0.0
+
+
 func _update_detail() -> void:
 	if view:
-		view.set_detail_distance((STREET_DETAIL if in_street() else MAYOR_DETAIL)[quality])
+		_set_view_detail(in_street())
 
 
 func _on_street_entered() -> void:
 	day_night.set_view_distance(30.0)
-	view.set_detail_distance(STREET_DETAIL[quality])
+	_set_view_detail(true)
 	_hero_detail()
 	day_night.exposure_scale = 1.25
 	day_night.ambient_scale = 1.4
@@ -436,7 +510,7 @@ func _on_street_exited() -> void:
 	cam.set_process(true)
 	cam.set_process_unhandled_input(true)
 	day_night.set_view_distance(cam.dist)
-	view.set_detail_distance(MAYOR_DETAIL[quality])
+	_set_view_detail(false)
 	day_night.exposure_scale = 1.0
 	day_night.ambient_scale = 1.0
 	life.set_camera(cam)
@@ -557,6 +631,8 @@ func _input(e: InputEvent) -> void:
 		return  # the tour drives itself; Benchmark._input takes every key and click
 	if resident and resident.get("_busy") == true and not menu.is_open:
 		return  # the character creator or the home picker has the keyboard (Esc skips there)
+	if shop and shop.is_open():
+		return  # the Harbor Arms counter has the keyboard (Esc leaves it)
 	if street and not _dragging and not alt and e.is_action_pressed("street_toggle_view"):
 		get_viewport().set_input_as_handled()
 		if street.active:
@@ -642,7 +718,7 @@ func _cell_at(screen: Vector2) -> Variant:
 	var p = cam.ground_point(screen)
 	if p == null:
 		return null
-	var c := city.world_to_cell(p)
+	var c := city.flat_to_cell(p)  # the camera's ground point is in flat map metres
 	return c if city.inside(c.x, c.y) else null
 
 
@@ -803,7 +879,10 @@ func _process(delta: float) -> void:
 		# (screenshots pause the clock but still let traffic settle).
 		if speed_index > 0 or _args.has("screenshot") or _args.has("shots") or (bench and bench.running):
 			life.step(minf(delta, 0.1))
-	day_night.update_time(city.time_of_day(), city.game_day())
+	if planet_sky:
+		_follow_planet_sky()
+	else:
+		day_night.update_time(city.time_of_day(), city.game_day())
 	if _perf != null and _perf.visible:
 		_perf_t -= delta
 		if _perf_t <= 0.0:
@@ -814,6 +893,17 @@ func _process(delta: float) -> void:
 				["Low", "Med", "High"][quality],
 				rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 				rs.get_rendering_info(rs.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME) / 1000]
+
+
+func _follow_planet_sky() -> void:
+	var where := Planet.warp(cam.focus)
+	if in_street() and street.get("player") and street.player.is_inside_tree():
+		where = street.player.global_position
+	var clock := city.time_of_day()
+	day_night.update_time(PlanetSky.local_hour(clock, where), city.game_day())
+	var eye := get_viewport().get_camera_3d()
+	if eye:
+		planet_sky.follow(where, eye.global_position, clock)
 
 
 func _toggle_perf() -> void:

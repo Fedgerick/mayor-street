@@ -12,7 +12,7 @@ const MAX_ZOOM := 5.0
 var nav: Node           # CityNav
 
 var zoom := 1.0
-var centre_w := Vector2(City.SIZE * City.TILE * 0.5, City.SIZE * City.TILE * 0.5)  # world XZ in the middle
+var centre_w := Vector2(City.W * City.TILE * 0.5, City.H * City.TILE * 0.5)  # world XZ in the middle
 var _font: Font
 var _drag_from := Vector2.INF
 var _dragged := false
@@ -29,7 +29,7 @@ func _ready() -> void:
 
 func open_at(w: Vector2) -> void:
 	zoom = 1.0
-	centre_w = Vector2(City.SIZE * City.TILE * 0.5, City.SIZE * City.TILE * 0.5)
+	centre_w = Vector2(City.W * City.TILE * 0.5, City.H * City.TILE * 0.5)
 	if w.is_finite():
 		zoom = 1.6
 		centre_w = w
@@ -57,7 +57,7 @@ func base_rect() -> Rect2:
 
 
 func px_per_m() -> float:
-	return base_rect().size.x / (City.SIZE * City.TILE) * zoom
+	return base_rect().size.x / (maxi(City.W, City.H) * City.TILE) * zoom
 
 
 func to_screen(w: Vector2) -> Vector2:
@@ -69,10 +69,10 @@ func to_world(p: Vector2) -> Vector2:
 
 
 func _clamp() -> void:
-	var world := City.SIZE * City.TILE
+	var world := Vector2(City.W, City.H) * City.TILE
 	var half := (get_viewport_rect().size * 0.5) / px_per_m()
-	centre_w.x = clampf(centre_w.x, minf(half.x, world * 0.5), maxf(world - half.x, world * 0.5))
-	centre_w.y = clampf(centre_w.y, minf(half.y, world * 0.5), maxf(world - half.y, world * 0.5))
+	centre_w.x = clampf(centre_w.x, minf(half.x, world.x * 0.5), maxf(world.x - half.x, world.x * 0.5))
+	centre_w.y = clampf(centre_w.y, minf(half.y, world.y * 0.5), maxf(world.y - half.y, world.y * 0.5))
 
 
 func _gui_input(e: InputEvent) -> void:
@@ -113,12 +113,11 @@ func _draw() -> void:
 	var vp := get_viewport_rect().size
 	var s := ui_scale()
 	draw_rect(Rect2(Vector2.ZERO, vp), Color(0.03, 0.05, 0.08, 0.94))
-	var world := City.SIZE * City.TILE
 	var tl := to_screen(Vector2.ZERO)
-	var span := world * px_per_m()
-	draw_rect(Rect2(tl, Vector2(span, span)), MapPainter.SEA)
+	var span := Vector2(City.W, City.H) * City.TILE * px_per_m()
+	draw_rect(Rect2(tl, span), MapPainter.SEA)
 	if nav.texture:
-		draw_texture_rect(nav.texture, Rect2(tl, Vector2(span, span)), false)
+		draw_texture_rect(nav.texture, Rect2(tl, span), false)
 	# GPS route.
 	var pts: PackedVector2Array = nav.route_points()
 	if pts.size() >= 2:

@@ -48,9 +48,18 @@ var _near_people: Array = []   # [data object, is_officer]
 var _cooldown := {}            # data object -> seconds before it can be hit again
 var _player_hit_cd := 0.0
 var _wrecks: Array[Node3D] = []
-var _fixtures: StaticBody3D   # benches, shelters and signal poles (rebuilt when they move)
+var _fixtures := {}            # fixture key -> static body RID (benches, shelters, signal poles)
+var _fixture_shapes := {}      # shared shape resources, kept alive while bodies use them
 var _fixture_key := ""
 var _fixture_timer := 0.0
+var _fixture_at := Vector3.INF  # flat point the fixtures were gathered round (INF: whole city)
+# Only fixtures this near the player get bodies: the whole city's (hundreds of shapes) took
+# ~60 ms to rebuild each time the city grew a bus stop, a hitch on Fedge's laptop. Each
+# fixture is its own small static body made straight on the physics server, and a move
+# only adds the ones that came into range and frees those that left: one StaticBody3D with
+# hundreds of CollisionShape3D children still cost 66-86 ms on the laptop (msp 0.4.1).
+const FIXTURE_RADIUS := 140.0
+const FIXTURE_MOVE := 50.0  # rebuild after the player has gone this far
 
 
 func setup(street_mode: Node) -> void:
@@ -100,7 +109,9 @@ func _physics_process(dt: float) -> void:
 	if street == null or traffic == null or not street.active:
 		_idle()
 		return
-	var focus: Vector3 = street.player_position()
+	# Worked out on the flat map, where traffic and people live (citylife/); the proxy
+	# bodies are stood up on the ball on msp.
+	var focus: Vector3 = Planet.flat(street.player_position())
 	_pick_timer -= dt
 	if _pick_timer <= 0.0:
 		_pick_timer = PICK_INTERVAL
@@ -135,52 +146,105 @@ func _idle() -> void:
 
 func _check_fixtures() -> void:
 	var key := "%d/%d" % [spots.spots.size() if spots else -1, signals.heads.size() if signals else -1]
-	if key != _fixture_key:
+	if street == null or not street.active:
+		# Nobody on the street to bump into them.
+		if not _fixtures.is_empty():
+			_clear_fixtures()
+		_fixture_at = Vector3.INF
+		_fixture_key = ""
+		return
+	var at: Vector3 = Planet.flat(street.player_position())
+	var moved := not _fixture_at.is_finite() or Vector2(Planet.fdx(_fixture_at.x, at.x), at.z - _fixture_at.z).length() > FIXTURE_MOVE
+	if key != _fixture_key or moved:
 		_fixture_key = key
-		rebuild_fixtures()
+		rebuild_fixtures(at)
 
 
-## Benches, bus shelters and signal poles: one static body for the whole city.
-func rebuild_fixtures() -> void:
-	if _fixtures:
-		_fixtures.queue_free()
-	_fixtures = StaticBody3D.new()
-	_fixtures.name = "Fixtures"
-	_fixtures.collision_mask = 0
-	var bench := BoxShape3D.new()
-	bench.size = Vector3(1.8, 0.85, 0.6)
-	var panel := BoxShape3D.new()      # shelter back wall
-	panel.size = Vector3(3.6, 2.5, 0.15)
-	var post := CylinderShape3D.new()  # shelter front posts and signal poles
-	post.radius = 0.08
-	post.height = 2.5
-	var pole := CylinderShape3D.new()
-	pole.radius = 0.12
-	pole.height = 3.6
+## Benches, bus shelters and signal poles: a static body each for those within
+## FIXTURE_RADIUS of `at` (a flat point), or for the whole city when `at` is INF. Bodies
+## already standing are kept, so only the change is paid for.
+func rebuild_fixtures(at := Vector3.INF) -> void:
+	_fixture_at = at
+	if _fixture_shapes.is_empty():
+		var bench := BoxShape3D.new()
+		bench.size = Vector3(1.8, 0.85, 0.6)
+		var panel := BoxShape3D.new()      # shelter back wall
+		panel.size = Vector3(3.6, 2.5, 0.15)
+		var post := CylinderShape3D.new()  # shelter front posts
+		post.radius = 0.08
+		post.height = 2.5
+		var pole := CylinderShape3D.new()  # signal poles
+		pole.radius = 0.12
+		pole.height = 3.6
+		_fixture_shapes = {"bench": bench, "panel": panel, "post": post, "pole": pole}
+	var r2 := FIXTURE_RADIUS * FIXTURE_RADIUS if at.is_finite() else INF
+	var want := {}
 	if spots:
 		for sp in spots.spots:
 			var xf: Transform3D = sp.xform
-			if sp.kind == StreetSpots.Kind.BENCH:
-				_fix(xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.42, -0.1)), bench)
-			else:
-				_fix(xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.25, -1.25)), panel)
-				for sx in [-1.7, 1.7]:
-					_fix(xf * Transform3D(Basis.IDENTITY, Vector3(sx, 1.25, 0.1)), post)
+			if r2 < INF and Vector2(Planet.fdx(at.x, xf.origin.x), xf.origin.z - at.z).length_squared() > r2:
+				continue
+			want[_fixture_id(1 + int(sp.kind), xf.origin)] = [0, xf] if sp.kind == StreetSpots.Kind.BENCH else [1, xf]
 	if signals:
 		for h in signals.heads:
 			var xf: Transform3D = h[2]
-			_fix(Transform3D(Basis.IDENTITY, xf.origin + Vector3(0, 1.8, 0)), pole)
-	add_child(_fixtures)
+			if r2 < INF and Vector2(Planet.fdx(at.x, xf.origin.x), xf.origin.z - at.z).length_squared() > r2:
+				continue
+			want[_fixture_id(0, xf.origin)] = [2, xf]
+	for k in _fixtures.keys():
+		if not want.has(k):
+			PhysicsServer3D.free_rid(_fixtures[k])
+			_fixtures.erase(k)
+	if not is_inside_tree():
+		return
+	var space := get_world_3d().space
+	for k in want:
+		if _fixtures.has(k):
+			continue
+		var kind: int = want[k][0]
+		var xf: Transform3D = want[k][1]
+		var body := PhysicsServer3D.body_create()
+		PhysicsServer3D.body_set_mode(body, PhysicsServer3D.BODY_MODE_STATIC)
+		PhysicsServer3D.body_set_collision_layer(body, 1)
+		PhysicsServer3D.body_set_collision_mask(body, 0)
+		match kind:
+			0:
+				_add_shape(body, "bench", xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.42, -0.1)))
+			1:
+				_add_shape(body, "panel", xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.25, -1.25)))
+				for sx in [-1.7, 1.7]:
+					_add_shape(body, "post", xf * Transform3D(Basis.IDENTITY, Vector3(sx, 1.25, 0.1)))
+			_:
+				_add_shape(body, "pole", Transform3D(Basis.IDENTITY, xf.origin + Vector3(0, 1.8, 0)))
+		PhysicsServer3D.body_set_space(body, space)
+		_fixtures[k] = body
 
 
-func _fix(xf: Transform3D, shape: Shape3D) -> void:
-	var cs := CollisionShape3D.new()
-	cs.shape = shape
-	cs.transform = xf
-	_fixtures.add_child(cs)
+## How many fixture bodies stand now (for tests).
+func fixture_count() -> int:
+	return _fixtures.size()
 
 
-# ------------------------------------------------------------------ selection ---
+func _fixture_id(kind: int, o: Vector3) -> Vector4i:
+	return Vector4i(kind, roundi(o.x * 10.0), roundi(o.y * 10.0), roundi(o.z * 10.0))
+
+
+func _add_shape(body: RID, shape: String, flat_xf: Transform3D) -> void:
+	var s: Shape3D = _fixture_shapes[shape]
+	PhysicsServer3D.body_add_shape(body, s.get_rid(), Planet.xf_rigid(flat_xf))
+
+
+func _clear_fixtures() -> void:
+	for k in _fixtures:
+		PhysicsServer3D.free_rid(_fixtures[k])
+	_fixtures.clear()
+
+
+func _exit_tree() -> void:
+	_clear_fixtures()
+	_fixture_key = ""
+	_fixture_at = Vector3.INF
+
 
 func _pick(focus: Vector3) -> void:
 	var cand: Array = []
@@ -281,7 +345,7 @@ func _place_cars() -> void:
 		if not box.size.is_equal_approx(half * 2.0):
 			box.size = half * 2.0
 			cs.position = Vector3(0, 0.3 + half.y, 0)
-		body.global_transform = _car_xform(c)
+		body.global_transform = Planet.xf_rigid(_car_xform(c))
 		cs.disabled = false
 
 
@@ -291,7 +355,7 @@ func _place_people() -> void:
 		if p == null:
 			continue
 		var body := _people_bodies[i]
-		body.global_position = p.pos
+		body.global_transform = Planet.xf_rigid(Transform3D(Basis.IDENTITY, p.pos))
 		(body.get_child(0) as CollisionShape3D).disabled = false
 
 
@@ -304,14 +368,17 @@ func _feed_obstacles(focus: Vector3) -> void:
 		var car := v as DrivableCar
 		if car == null or not car.is_inside_tree():
 			continue
-		var p := car.global_position
+		var w := car.global_position
+		var p := Planet.flat(w)
 		if p.distance_squared_to(focus) > r2:
 			continue
 		var half := _vehicle_half(car)
-		obs.append([p, car.global_basis.x.normalized() * half.x, car.global_basis.z.normalized() * half.z, car.linear_velocity])
+		obs.append([p, Planet.to_local(w, car.global_basis.x).normalized() * half.x,
+			Planet.to_local(w, car.global_basis.z).normalized() * half.z, Planet.to_local(w, car.linear_velocity)])
 	if street.car == null and not street.player.in_vehicle:
-		var pp: Vector3 = street.player.global_position
-		obs.append([pp, Vector3(0.45, 0, 0), Vector3(0, 0, 0.45), street.player.velocity])
+		var pw: Vector3 = street.player.global_position
+		var pp := Planet.flat(pw)
+		obs.append([pp, Vector3(0.45, 0, 0), Vector3(0, 0, 0.45), Planet.to_local(pw, street.player.velocity)])
 		crowd_block(pp)
 	elif crowd:
 		crowd.blockers.clear()
@@ -347,12 +414,16 @@ static func _boxes_touch(pa: Vector3, xa: Vector3, za: Vector3, ha: Vector2, pb:
 
 
 func _car_hits(car: DrivableCar) -> void:
-	var cp := car.global_position
-	var cx := Vector3(car.global_basis.x.x, 0, car.global_basis.x.z).normalized()
-	var cz := Vector3(car.global_basis.z.x, 0, car.global_basis.z.z).normalized()
+	# On the flat map, like the AI cars and people it is tested against.
+	var cw := car.global_position
+	var cp := Planet.flat(cw)
+	var bx := Planet.to_local(cw, car.global_basis.x)
+	var bz := Planet.to_local(cw, car.global_basis.z)
+	var cx := Vector3(bx.x, 0, bx.z).normalized()
+	var cz := Vector3(bz.x, 0, bz.z).normalized()
 	var ch3 := _vehicle_half(car)
 	var ch := Vector2(ch3.x, ch3.z)
-	var vel := car.linear_velocity
+	var vel := Planet.to_local(cw, car.linear_velocity)
 	# AI cars: a real knock turns the stand-in into a physics car.
 	for n in _near_cars.duplicate():
 		var c = n[0]
@@ -384,7 +455,7 @@ func _car_hits(car: DrivableCar) -> void:
 		_cooldown[p] = 1.5
 		run_over += 1
 		var dmg := speed * speed * 1.2   # ~11 km/h bruises, ~30 km/h kills
-		var dir := Vector3(vel.x, 0, vel.z).normalized() + Vector3.UP * 0.3
+		var dir := Planet.dir(cw, Vector3(vel.x, 0, vel.z).normalized() + Vector3.UP * 0.3)  # world, for the hit
 		if n[1]:
 			street.hurt_officer(p, dmg, dir, &"car")
 		else:
@@ -400,11 +471,14 @@ func _knock_out(c: Object) -> void:
 			_near_cars.remove_at(k)
 			break
 	var info: Dictionary = traffic.knock_out(c)
-	var xf: Transform3D = info.xform
+	var xf: Transform3D = info.xform  # flat map
 	var fwd := -xf.basis.z
 	var pos := xf.origin
 	pos.y = maxf(pos.y, 0.0) + 0.1
-	var wreck: DrivableCar = street.spawn_car(info.model, pos, atan2(fwd.x, fwd.z), info.tint)
+	pos = Planet.place(pos)
+	fwd = Planet.dir(pos, fwd)
+	var lf := Planet.to_local(pos, fwd)
+	var wreck: DrivableCar = street.spawn_car(info.model, pos, atan2(lf.x, lf.z), info.tint)
 	wreck.set_meta("parked", true)        # someone's car: taking it is still theft
 	wreck.set_meta("from_traffic", true)
 	wreck.linear_velocity = fwd * float(info.get("v", 0.0))
@@ -417,7 +491,8 @@ func _player_hits() -> void:
 	## AI and cop cars that run into the player on foot.
 	if _player_hit_cd > 0.0:
 		return
-	var pp: Vector3 = street.player.global_position
+	var pw: Vector3 = street.player.global_position
+	var pp := Planet.flat(pw)
 	for n in _near_cars:
 		var c = n[0]
 		if c.v < HIT_PLAYER_SPEED:
@@ -429,23 +504,27 @@ func _player_hits() -> void:
 			continue
 		_player_hit_cd = 1.2
 		var fwd: Vector3 = c.fwd
-		street.player.hurt(c.v * c.v * 0.5, xf.origin)
-		street.player.velocity += fwd * c.v * 0.9 + Vector3.UP * minf(2.0 + c.v * 0.3, 6.0)
+		street.player.hurt(c.v * c.v * 0.5, Planet.place(xf.origin))
+		street.player.velocity += Planet.dir(pw, fwd * c.v * 0.9 + Vector3.UP * minf(2.0 + c.v * 0.3, 6.0))
 		return
 
 
 func _tidy_wrecks(focus: Vector3) -> void:
-	for w in _wrecks.duplicate():
+	# Wrecks can be freed elsewhere (blown up, towed). A freed one can't be erase()d from
+	# a typed array (it errors every frame and never leaves), so build the list afresh.
+	var keep: Array[Node3D] = []
+	for w in _wrecks:
 		if not is_instance_valid(w) or w == street.car:
-			_wrecks.erase(w)
 			continue
-		if w.global_position.distance_to(focus) > WRECK_KEEP:
-			_wrecks.erase(w)
+		if Planet.flat(w.global_position).distance_to(focus) > WRECK_KEEP:
 			w.queue_free()
+			continue
+		keep.append(w)
+	_wrecks = keep
 	while _wrecks.size() > MAX_WRECKS:
 		var far: Node3D = _wrecks[0]
 		for w in _wrecks:
-			if w.global_position.distance_squared_to(focus) > far.global_position.distance_squared_to(focus):
+			if Planet.flat(w.global_position).distance_squared_to(focus) > Planet.flat(far.global_position).distance_squared_to(focus):
 				far = w
 		_wrecks.erase(far)
 		far.queue_free()

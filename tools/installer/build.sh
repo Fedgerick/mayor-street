@@ -11,12 +11,16 @@ mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 version="$(sed -n 's/^config\/version="\(.*\)"/\1/p' "$root/project.godot")"
 size_kb=$(( $(wc -c < "$exe") / 1024 ))
+# The planet fork installs beside the flat game: its own name, folder and shortcuts.
+app="${APP:-Mayor Street Planet}"
+key="${APPKEY:-MayorStreetPlanet}"
+setup="${key}-Setup"
 makensis -V2 -DEXE="$exe" -DVERSION="${version:-0.0.0}" -DSIZE_KB="$size_kb" \
-	-DOUTFILE="$out/MayorStreet-Setup.exe" "$here/mayor_street.nsi"
-echo "wrote $out/MayorStreet-Setup.exe"
+	-DAPP="$app" -DAPPKEY="$key" -DEXENAME="$key.exe" -DOUTFILE="$out/$setup.exe" "$here/mayor_street.nsi"
+echo "wrote $out/$setup.exe"
 # The project app won't download a bare .exe, so ship the installer zipped too.
 if command -v zip > /dev/null; then
-	rm -f "$out/MayorStreet-Setup.zip"
-	(cd "$out" && zip -q -9 MayorStreet-Setup.zip MayorStreet-Setup.exe)
-	echo "wrote $out/MayorStreet-Setup.zip"
+	rm -f "$out/$setup.zip"
+	(cd "$out" && zip -q -9 "$setup.zip" "$setup.exe")
+	echo "wrote $out/$setup.zip"
 fi

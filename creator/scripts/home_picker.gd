@@ -73,7 +73,7 @@ func _build_pins() -> void:
 	for i in _candidates.size():
 		var b := _candidates[i]
 		var p := city.building_center(b) + Vector3(0, building_height(b) + 6.0, 0)
-		mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, p))
+		mm.set_instance_transform(i, Planet.xf_rigid(Transform3D(Basis.IDENTITY, p)))
 		var is_cur := Vector2i(b.x, b.y) == current or _covers(b, current)
 		mm.set_instance_color(i, PIN_HOT if is_cur else PIN)
 	_pins = MultiMeshInstance3D.new()
@@ -142,6 +142,15 @@ func pick_at(screen: Vector2) -> int:
 	var dir := camera.project_ray_normal(screen)
 	var best := -1
 	var best_t := INF
+	if Planet.on:  # msp: pick by footprint under the cursor
+		var hit = Planet.ray_hit(from, dir)
+		if hit == null:
+			return -1
+		var cell := city.flat_to_cell(Planet.unwarp(hit))
+		for i in _candidates.size():
+			if _covers(_candidates[i], cell):
+				return i
+		return -1
 	for i in _candidates.size():
 		var b := _candidates[i]
 		var o := Vector3(b.x * City.TILE, -1.0, b.y * City.TILE)

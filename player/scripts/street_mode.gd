@@ -69,6 +69,7 @@ var heat: Wanted                    # wanted level; `wanted` / `wanted_stars` re
 var combat: StreetCombat
 var sanctioned := false             # missions: a good job's fight, so gunfire isn't reported
 var hud: StreetHud
+var seating: StreetSeating           # benches, bus stops and chairs indoors; passenger rides
 var life: Node = null               # CityLife, for traffic, people and police
 var hospitals: Array[Vector3] = []  # respawn overrides; otherwise read from the city
 var stations: Array[Vector3] = []
@@ -109,6 +110,10 @@ func _ready() -> void:
 	player.process_mode = Node.PROCESS_MODE_DISABLED
 	player.visible = false
 	player.died.connect(_on_player_died)
+	seating = StreetSeating.new()
+	seating.name = "Seating"
+	add_child(seating)
+	seating.setup(self)
 	camera = StreetCamera.new()
 	camera.name = "StreetCamera"
 	add_child(camera)
@@ -180,7 +185,7 @@ func enter_street(from_camera: Camera3D, ground_point: Vector3) -> void:
 	player.visual.set_sitting(false)
 	player.set_controls(false)
 	# Face the way the mayor camera looks, so the dive swings in from the same side.
-	var f := -from_camera.global_basis.z
+	var f := Planet.to_local(spot, -from_camera.global_basis.z)
 	var yaw := atan2(-f.x, -f.z)
 	player.place(spot, yaw)
 	player.rig.pitch = deg_to_rad(-14.0)
@@ -215,6 +220,7 @@ func exit_street(to: Transform3D, to_fov := 45.0) -> void:
 	active = false
 	while switching:   # halfway into a car: finish getting in, then climb back out
 		await get_tree().physics_frame
+	_off_seat()
 	if car:
 		_leave_car()
 	player.set_controls(false)
@@ -238,9 +244,14 @@ func view_yaw() -> float:
 # ----------------------------------------------------------------------- cars ---
 
 func _on_interact() -> void:
-	if not active or switching or down or player.dead:
+	if not active or switching or down or player.dead or seating.busy or seating.seated:
 		return
 	var best := _free_car_near()
+	var seat := seating.find(player.global_position)
+	if not seat.is_empty() and (best == null or (seat.xform as Transform3D).origin.distance_to(player.global_position) \
+			< best.global_position.distance_to(player.global_position) - 1.0):
+		seating.sit(seat)
+		return
 	if best:
 		_enter_car(best)
 		return
@@ -264,7 +275,7 @@ func _traffic_car_near() -> Object:
 	## A slow or stopped AI car close enough to pull the driver out of.
 	if life == null or life.get("traffic") == null:
 		return null
-	var tc = life.traffic.nearest_car(player.global_position, carjack_radius)
+	var tc = life.traffic.nearest_car(Planet.flat(player.global_position), carjack_radius)
 	if tc and absf(tc.v) < 6.0:
 		return tc
 	return null
@@ -276,19 +287,23 @@ func _carjack(tc: Object) -> void:
 	switching = true
 	player.set_puppet(true)
 	var info: Dictionary = life.traffic.take_car(tc)
-	var xf: Transform3D = info.xform
-	var fwd := -xf.basis.z
+	var xf: Transform3D = Planet.xf_rigid(info.xform)  # citylife hands back flat map
 	var pos := xf.origin
-	pos.y = maxf(pos.y, 0.0) + 0.15
+	var fwd := Planet.to_local(pos, -xf.basis.z)
+	if Planet.on:
+		var pf := Planet.unwarp(pos)
+		pos = Planet.warp(Vector3(pf.x, maxf(pf.y, 0.0) + 0.15, pf.z))
+	else:
+		pos.y = maxf(pos.y, 0.0) + 0.15
 	var c := spawn_car(info.model, pos, atan2(fwd.x, fwd.z), info.tint)
 	c.set_meta("player_owned", true)
 	_commit(&"carjack", pos, &"", _free_ride(c))
 	goodness_action.emit(&"steal_car")
 	await get_tree().physics_frame
 	# Step to the door facing the car, then the haul-out.
-	var door := c.exit_point() - Vector3.UP * 0.2
+	var door := c.exit_point() - Planet.up(c.global_position) * 0.2
 	var start := player.global_position
-	var side := -c.global_basis.x
+	var side := Planet.to_local(c.global_position, -c.global_basis.x)
 	var face := atan2(-side.x, -side.z)
 	var steps := maxi(int(start.distance_to(door) / 3.5 * 60.0), 4)
 	for i in steps:
@@ -345,7 +360,7 @@ func _enter_car(c: DrivableCar) -> void:
 	vehicle_changed.emit(c)
 	player.set_puppet(true)
 	player.rig.spring.add_excluded_object(c.get_rid())   # don't let the car squash the camera
-	var door := c.exit_point() - Vector3.UP * 0.2
+	var door := c.exit_point() - Planet.up(c.global_position) * 0.2
 	var seat := c.seat_point()
 	var yaw := c.heading_yaw()
 	# A quick turn-and-step to the door if we're not already there.
@@ -401,8 +416,9 @@ func _leave_car() -> void:
 	q.shape = cap
 	q.exclude = [c.get_rid()]
 	var door_side := true
-	for cand in [p, p - c.global_basis.x * (c._aabb.size.x + 1.4), c.global_position + Vector3.UP * (c._aabb.size.y + 1.0)]:
-		q.transform = Transform3D(Basis.IDENTITY, cand + Vector3.UP * 0.9)
+	var up := Planet.up(c.global_position)
+	for cand in [p, p - c.global_basis.x * (c._aabb.size.x + 1.4), c.global_position + up * (c._aabb.size.y + 1.0)]:
+		q.transform = Transform3D(Planet.basis(cand), cand + up * 0.9)
 		if space.intersect_shape(q, 1).is_empty():
 			p = cand
 			break
@@ -425,7 +441,7 @@ func _leave_car() -> void:
 		while t < dur:
 			t += get_physics_process_delta_time()
 			var k := clampf(t / dur, 0.0, 1.0)
-			player.global_position = seat.lerp(p - Vector3.UP * 0.2, k * k * (3.0 - 2.0 * k))
+			player.global_position = seat.lerp(p - up * 0.2, k * k * (3.0 - 2.0 * k))
 			player.face(c.heading_yaw())
 			await get_tree().physics_frame
 	else:
@@ -442,7 +458,7 @@ func spawn_car(model: String, pos: Vector3, yaw: float, color: Color) -> Drivabl
 	c.model = model
 	c.tint = color
 	_cars_root.add_child(c)
-	c.global_transform = Transform3D(Basis(Vector3.UP, yaw), pos)
+	c.global_transform = Transform3D(Planet.basis(pos) * Basis(Vector3.UP, yaw), pos)  # yaw in the local frame
 	c.exploded.connect(_on_car_exploded)
 	return c
 
@@ -483,6 +499,7 @@ func spawn_parked_cars_near(p: Vector3, count: int) -> void:
 		else:            # along Z
 			pos = c + Vector3(side * PARK_OUT, 0.15, _rng.randf_range(-2.5, 2.5))
 			yaw = 0.0 if side < 0.0 else PI
+		pos = Planet.place(pos)  # flat map -> world
 		var clear := true
 		for v in get_tree().get_nodes_in_group("vehicles"):
 			if (v as Node3D).global_position.distance_to(pos) < 6.0:
@@ -500,8 +517,9 @@ const SPAWN_POLE_CLEAR := 0.45  # capsule radius plus a lamp post's, metres
 func sidewalk_spawn(p: Vector3) -> Vector3:
 	## Nearest sidewalk to a ground point, or the point itself if there are no roads.
 	if city == null:
-		return p + Vector3.UP * 0.3
+		return p + Planet.up(p) * 0.3
 	var o := city.world_to_cell(p)
+	var pf := Planet.flat(p)  # the search runs on the flat map
 	for r in range(0, 12):
 		var best := Vector3.ZERO
 		var best_d := INF
@@ -515,16 +533,18 @@ func sidewalk_spawn(p: Vector3) -> Vector3:
 						Vector3(0, 0, 4.9) if not (m & 4) else Vector3(4.9, 0, 0),
 						Vector3(0, 0, -4.9) if not (m & 1) else Vector3(-4.9, 0, 0)]:
 					var w: Vector3 = c + cand
+					if Planet.on:
+						w.x = pf.x + Planet.dx(pf.x, w.x)
 					# Not on a lamp post: the corners are where the posts stand.
-					if collision and collision.pole_near(w, SPAWN_POLE_CLEAR):
+					if collision and collision.pole_near(Planet.place(w), SPAWN_POLE_CLEAR):
 						continue
-					var d := w.distance_squared_to(p)
+					var d := w.distance_squared_to(pf)
 					if d < best_d:
 						best_d = d
 						best = w
 		if best_d < INF:
-			return best + Vector3.UP * 0.3
-	return p + Vector3.UP * 0.3
+			return Planet.place(best + Vector3.UP * 0.3)
+	return p + Planet.up(p) * 0.3
 
 
 # ------------------------------------------------------------------------ HUD ---
@@ -589,12 +609,13 @@ func _process(delta: float) -> void:
 		# Wider and leaning into corners at speed.
 		var sp := absf(car.speed())
 		camera.fov_boost = pow(clampf(sp / 38.0, 0.0, 1.0), 1.4)
-		camera.lean = clampf(-car.angular_velocity.y * sp * 0.0035, -0.07, 0.07)
+		camera.lean = clampf(-car.angular_velocity.dot(Planet.up(car.global_position)) * sp * 0.0035, -0.07, 0.07)
 		var w = life.get("weather") if life else null
 		car.weather_grip = w.grip() if w and w.has_method("grip") else 1.0
 	else:
 		_speedo.text = ""
-		var run := Vector2(player.velocity.x, player.velocity.z).length()
+		var lv := Planet.to_local(player.global_position, player.velocity)
+		var run := Vector2(lv.x, lv.z).length()
 		camera.fov_boost = clampf((run - 4.0) / 4.0, 0.0, 1.0) * 0.3   # a touch wider when sprinting
 		camera.lean = 0.0
 		var near := false
@@ -603,7 +624,16 @@ func _process(delta: float) -> void:
 				near = true
 				break
 		_hint.text = "E  get in" if near and not switching else ""
-		if not near and not switching and _traffic_car_near() != null:
+		if seating.riding:
+			_hint.text = ""
+		elif seating.seated:
+			_hint.text = "E  stand up"
+		elif seating.busy:
+			_hint.text = ""
+		elif not switching and not player.puppet and not seating.nearest().is_empty() and (not near \
+				or (seating.nearest().xform as Transform3D).origin.distance_to(player.global_position) < 1.0):
+			_hint.text = "E  sit"
+		elif not near and not switching and _traffic_car_near() != null:
 			_hint.text = "E  carjack"
 
 
@@ -645,7 +675,7 @@ func _on_car_crashed(strength: float, c: DrivableCar) -> void:
 	# A real smash draws a crowd (citylife/): people jump clear, then stop and stare.
 	if strength >= 0.3 and _crash_report <= 0.0 and life and life.has_method("report_crash"):
 		_crash_report = 1.5
-		life.report_crash(c.global_position, 1 if strength < 0.5 else (2 if strength < 0.8 else 3))
+		life.report_crash(Planet.flat(c.global_position), 1 if strength < 0.5 else (2 if strength < 0.8 else 3))
 
 
 func _free_ride(c: DrivableCar) -> bool:
@@ -693,6 +723,7 @@ func _witnessed(pos: Vector3) -> bool:
 	## Somebody saw it: a pedestrian within 30 m or a cop within 60 m.
 	if life == null:
 		return true
+	pos = Planet.flat(pos)  # people and cops live on the flat map
 	var crowd = life.get("crowd")
 	if crowd:
 		for p in crowd.peds:
@@ -731,20 +762,20 @@ func trace_shot(from: Vector3, dir: Vector3, reach: float, melee := false) -> Di
 		var crowd = life.get("crowd")
 		if crowd:
 			for p in crowd.peds:
-				var t := _ray_person(from, dir, p.pos, radius)
+				var t := _ray_person(from, dir, Planet.place(p.pos), radius)
 				if t >= 0.0 and t < out.t:
 					out = {"kind": &"ped", "pos": from + dir * t, "target": p, "t": t}
 		var police = life.get("police")
 		if police:
 			for o in police.officers:
-				var t := _ray_person(from, dir, o.pos, radius)
+				var t := _ray_person(from, dir, Planet.place(o.pos), radius)
 				if t >= 0.0 and t < out.t:
 					out = {"kind": &"officer", "pos": from + dir * t, "target": o, "t": t}
 	# Anyone else who can be shot (missions/' armed crews): nodes in "street_targets" list
 	# them with targets() (things with a pos) and take the hit in hurt().
 	for g in get_tree().get_nodes_in_group("street_targets"):
 		for e in g.targets():
-			var t := _ray_person(from, dir, e.pos, radius)
+			var t := _ray_person(from, dir, Planet.place(e.pos), radius)
 			if t >= 0.0 and t < out.t:
 				out = {"kind": &"target", "pos": from + dir * t, "target": e, "owner": g, "t": t}
 	return out
@@ -752,6 +783,11 @@ func trace_shot(from: Vector3, dir: Vector3, reach: float, melee := false) -> Di
 
 static func _ray_person(from: Vector3, dir: Vector3, base: Vector3, radius: float) -> float:
 	## Distance along the ray to a standing person (a vertical capsule), or -1.
+	if Planet.on:  # stand the person up in their own frame on the ball
+		var q := Planet.basis(base).inverse()
+		from = q * (from - base)
+		dir = q * dir
+		base = Vector3.ZERO
 	var d := Vector2(dir.x, dir.z)
 	var dd := d.length_squared()
 	if dd < 1e-6:
@@ -804,46 +840,48 @@ func on_shot_fired(_weapon: StringName, pos: Vector3) -> void:
 func _scare(pos: Vector3, severity: int) -> void:
 	if life and life.has_method("report_crime") and _panic_report <= 0.0:
 		_panic_report = 0.5
-		life.report_crime(pos, severity)
+		life.report_crime(Planet.flat(pos), severity)
 
 
+## dir is a world direction; p.pos is on the flat map (citylife).
 func hurt_person(p: Object, damage: float, dir: Vector3, weapon := &"fists") -> void:
 	var hp: float = _hp.get(p, PED_HEALTH) - damage
-	var at: Vector3 = p.pos + Vector3.UP * 1.2
-	StreetFx.puff(_fx_root, at, Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
+	var w := Planet.place(p.pos)
+	StreetFx.puff(_fx_root, w + Planet.up(w) * 1.2, Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
 	if hp <= 0.0:
 		_hp.erase(p)
-		_spawn_corpse(p.pos, dir, p.outfit, false)
+		_spawn_corpse(w, dir, p.outfit, false)
 		life.crowd.remove(p)
-		_commit(&"murder", p.pos)
+		_commit(&"murder", w)
 		goodness_action.emit(&"kill_person")
 	else:
 		_hp[p] = hp
 		if p.get("hero"):
 			p.hero.play_hit()
-		_commit(&"assault", p.pos, weapon)
+		_commit(&"assault", w, weapon)
 		goodness_action.emit(&"hit_person")
-	_scare(p.pos, 1 if weapon == &"fists" else 3)
+	_scare(w, 1 if weapon == &"fists" else 3)
 
 
 func hurt_officer(o: Object, damage: float, dir: Vector3, _weapon := &"fists") -> void:
 	var hp: float = _hp.get(o, OFFICER_HEALTH) - damage
-	StreetFx.puff(_fx_root, o.pos + Vector3.UP * 1.2, Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
+	var w := Planet.place(o.pos)
+	StreetFx.puff(_fx_root, w + Planet.up(w) * 1.2, Color(0.6, 0.02, 0.02, 0.95), 0.1, 0.4)
 	goodness_action.emit(&"hit_cop")
 	if hp <= 0.0:
 		_hp.erase(o)
-		_spawn_corpse(o.pos, dir, 777, true)
+		_spawn_corpse(w, dir, 777, true)
 		var police = life.police
 		if police.has_method("kill_officer"):
 			police.kill_officer(o)
 		else:
 			police._remove_officer(o)
-		_commit(&"cop_killed", o.pos)
+		_commit(&"cop_killed", w)
 	else:
 		_hp[o] = hp
 		if o.model:
 			o.model.play_hit()
-		_commit(&"cop_assault", o.pos)
+		_commit(&"cop_assault", w)
 
 
 func _spawn_corpse(pos: Vector3, dir: Vector3, outfit: int, cop: bool) -> void:
@@ -855,9 +893,15 @@ func _spawn_corpse(pos: Vector3, dir: Vector3, outfit: int, cop: bool) -> void:
 	if cop:
 		Police._uniform(m)
 	# Fall away from the hit.
-	var away := Vector3(dir.x, 0.0, dir.z)
+	var away := Planet.to_local(pos, dir)
+	away.y = 0.0
 	var yaw := atan2(away.x, away.z) if away.length() > 0.01 else randf() * TAU
-	m.global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(pos.x, maxf(pos.y, 0.05), pos.z))
+	if Planet.on:
+		var pf := Planet.unwarp(pos)
+		pos = Planet.warp(Vector3(pf.x, maxf(pf.y, 0.05), pf.z))
+	else:
+		pos.y = maxf(pos.y, 0.05)
+	m.global_transform = Transform3D(Planet.basis(pos) * Basis(Vector3.UP, yaw), pos)
 	m.set_dead(true)
 	_corpses.append(m)
 	while _corpses.size() > MAX_CORPSES:
@@ -882,29 +926,31 @@ func _on_car_exploded(c: DrivableCar) -> void:
 		var d := player.global_position.distance_to(at)
 		if d < BLAST_RADIUS:
 			player.hurt(160.0 * (1.0 - d / BLAST_RADIUS), at)
-			player.velocity += (player.global_position - at).normalized() * 6.0 + Vector3.UP * 4.0
+			player.velocity += (player.global_position - at).normalized() * 6.0 + Planet.up(at) * 4.0
 	if life:
 		var crowd = life.get("crowd")
 		if crowd:
 			for p in crowd.peds.duplicate():
-				if p.pos.distance_to(at) < BLAST_RADIUS * 0.7:
+				var pw := Planet.place(p.pos)
+				if pw.distance_to(at) < BLAST_RADIUS * 0.7:
 					if by_player:
-						hurt_person(p, 999.0, p.pos - at)
+						hurt_person(p, 999.0, pw - at)
 					else:
-						_spawn_corpse(p.pos, p.pos - at, p.outfit, false)
+						_spawn_corpse(pw, pw - at, p.outfit, false)
 						crowd.remove(p)
 		var police = life.get("police")
 		if police:
 			for o in police.officers.duplicate():
-				if o.pos.distance_to(at) < BLAST_RADIUS * 0.7:
-					hurt_officer(o, 999.0, o.pos - at)
+				var ow := Planet.place(o.pos)
+				if ow.distance_to(at) < BLAST_RADIUS * 0.7:
+					hurt_officer(o, 999.0, ow - at)
 		_scare(at, 3)
 	for v in get_tree().get_nodes_in_group("vehicles"):
 		if v != c and not v.wrecked:
 			var d: float = v.global_position.distance_to(at)
 			if d < BLAST_RADIUS:
 				v.take_hit(900.0 * (1.0 - d / BLAST_RADIUS), at)
-				v.apply_central_impulse((v.global_position - at).normalized() * v.mass * 3.0 + Vector3.UP * v.mass * 2.0)
+				v.apply_central_impulse((v.global_position - at).normalized() * v.mass * 3.0 + Planet.up(at) * v.mass * 2.0)
 
 
 # --------------------------------------------------------------------- pickups ---
@@ -916,7 +962,7 @@ func spawn_pickup(kind: StringName, pos: Vector3, respawn := 45.0) -> Pickup:
 	p.respawn_seconds = respawn
 	p.street = self
 	_fx_root.add_child(p)
-	p.global_position = pos
+	p.global_transform = Transform3D(Planet.basis(pos), pos)
 	return p
 
 
@@ -929,8 +975,8 @@ func scatter_pickups(around: Vector3, count: int) -> void:
 	for i in range(near, count):
 		var a := _rng.randf() * TAU
 		var r := _rng.randf_range(20.0, 90.0)
-		var at := sidewalk_spawn(around + Vector3(cos(a), 0.0, sin(a)) * r)
-		spawn_pickup(Pickup.KINDS[i % Pickup.KINDS.size()], at - Vector3.UP * 0.12)
+		var at := sidewalk_spawn(around + Planet.dir(around, Vector3(cos(a), 0.0, sin(a))) * r)
+		spawn_pickup(Pickup.KINDS[i % Pickup.KINDS.size()], at - Planet.up(at) * 0.12)
 
 
 func try_pickup(kind: StringName) -> bool:
@@ -1006,6 +1052,7 @@ func _on_player_died() -> void:
 	wasted.emit()
 	if car:
 		_eject(car)
+	_off_seat()
 	player.set_controls(false)
 	player.visual.set_aim(CharacterModel.Aim.NONE)
 	player.aiming = false
@@ -1028,6 +1075,7 @@ func bust() -> void:
 		await get_tree().create_timer(0.6).timeout
 	if car:
 		_eject(car)
+	_off_seat()
 	player.set_controls(false)
 	player.visual.set_aim(CharacterModel.Aim.NONE)
 	player.aiming = false
@@ -1036,6 +1084,14 @@ func bust() -> void:
 	var fee := _take_cash(BUSTED_FEE, "bail")
 	await _respawn(_respawn_point(false), busted_wake)
 	hud.note("Bail and fines  -$%d" % fee)
+
+
+## Off any bench, chair or passenger seat at once.
+func _off_seat() -> void:
+	if seating.riding:
+		seating.end_ride(player.global_position)
+	if seating.seated or seating.busy:
+		seating.stand(true)
 
 
 func _down_sequence(text: String, col: Color) -> void:
@@ -1078,14 +1134,14 @@ func _respawn_point(hospital: bool) -> Vector3:
 	if pts.is_empty() and city:
 		if city.has_method("find_tagged"):
 			for b in city.find_tagged("hospital" if hospital else "police"):
-				pts.append(city.building_center(b))
+				pts.append(Planet.place(city.building_center(b)))
 		if pts.is_empty() and not hospital and life and life.get("police"):
 			for cell in life.police.stations:
-				pts.append(city.cell_center(cell.x, cell.y))
+				pts.append(Planet.place(city.cell_center(cell.x, cell.y)))
 		if pts.is_empty():
 			# No hospital or station built yet: the middle of town (a clinic off-screen).
 			var cc := city.center_cell()
-			pts.append(city.cell_center(cc.x + (2 if hospital else -2), cc.y))
+			pts.append(Planet.place(city.cell_center(cc.x + (2 if hospital else -2), cc.y)))
 	if pts.is_empty():
 		return player.global_position
 	var from := player.global_position

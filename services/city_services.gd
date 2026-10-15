@@ -12,7 +12,7 @@ signal stats_changed               ## the daily numbers were updated
 signal facilities_changed          ## a service building was added or removed
 signal police_stations_changed     ## the list from police_stations() changed
 
-const N := City.SIZE * City.SIZE
+var N := City.W * City.H  # set when made; Planet.configure runs first on msp
 ## Below this population the city may grow without power, so a new game can get going.
 const POWER_GRACE_POP := 100
 ## Days without power (or this unhappy) before a building drops a stage or empties out.
@@ -421,13 +421,15 @@ func _compute_coverage() -> void:
 func _stamp(field: PackedFloat32Array, cx: float, cy: float, r: float, s: float, flat: bool) -> void:
 	if r <= 0.0:
 		return
-	for y in range(maxi(0, floori(cy - r)), mini(City.SIZE, ceili(cy + r) + 1)):
-		for x in range(maxi(0, floori(cx - r)), mini(City.SIZE, ceili(cx + r) + 1)):
+	for y in range(maxi(0, floori(cy - r)), mini(City.H, ceili(cy + r) + 1)):
+		var x0 := floori(cx - r) if Planet.on else maxi(0, floori(cx - r))
+		var x1 := ceili(cx + r) + 1 if Planet.on else mini(City.W, ceili(cx + r) + 1)
+		for x in range(x0, x1):
 			var t := Vector2(x + 0.5 - cx, y + 0.5 - cy).length() / r
 			if t >= 1.0:
 				continue
 			var v := s * (clampf((1.0 - t) * 5.0, 0.0, 1.0) if flat else 1.0 - t * t)
-			field[y * City.SIZE + x] += v
+			field[y * City.W + posmod(x, City.W)] += v
 
 
 # --------------------------------------------------------------------- power ---
@@ -522,13 +524,15 @@ func _compute_power() -> void:
 
 
 func _neighbours(c: int) -> PackedInt32Array:
-	var x := c % City.SIZE
-	var y := c / City.SIZE
+	var x := c % City.W
+	var y := c / City.W
 	var out := PackedInt32Array()
 	if x > 0: out.append(c - 1)
-	if x < City.SIZE - 1: out.append(c + 1)
-	if y > 0: out.append(c - City.SIZE)
-	if y < City.SIZE - 1: out.append(c + City.SIZE)
+	elif Planet.on: out.append(c + City.W - 1)
+	if x < City.W - 1: out.append(c + 1)
+	elif Planet.on: out.append(c - City.W + 1)
+	if y > 0: out.append(c - City.W)
+	if y < City.H - 1: out.append(c + City.W)
 	return out
 
 

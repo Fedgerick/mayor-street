@@ -6,7 +6,7 @@ extends SceneTree
 
 const BUDGET := [7000, 1750, 450]          # cars (LOD0 ~6k, LOD1 ~1.5k, LOD2 ~300)
 const BIG_BUDGET := [8500, 1900, 500]      # bus, trucks, fire engine
-const BIG := ["car_bus", "car_truck", "car_garbage", "car_firetruck", "car_ambulance"]
+const BIG := ["car_bus", "car_truck", "car_garbage", "car_firetruck", "car_ambulance", "car_tow"]
 
 var fails := 0
 

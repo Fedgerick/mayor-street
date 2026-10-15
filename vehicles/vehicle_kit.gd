@@ -18,11 +18,11 @@ const GLASS_SHADER := preload("res://vehicles/shaders/vehicle_glass.gdshader")
 
 const MODELS := [
 	"car_sedan", "car_hatch", "car_taxi", "car_sports", "car_pickup", "car_van",
-	"car_bus", "car_police", "car_ambulance", "car_firetruck", "car_garbage", "car_truck",
+	"car_bus", "car_police", "car_ambulance", "car_firetruck", "car_garbage", "car_truck", "car_tow",
 ]
 ## Everyday traffic (tinted by the instance colour) and the service vehicles (fixed livery).
 const CIVILIAN := ["car_sedan", "car_hatch", "car_sports", "car_pickup", "car_van", "car_truck"]
-const SERVICE := ["car_taxi", "car_bus", "car_police", "car_ambulance", "car_firetruck", "car_garbage"]
+const SERVICE := ["car_taxi", "car_bus", "car_police", "car_ambulance", "car_firetruck", "car_garbage", "car_tow"]
 
 ## Distances (m) where traffic should switch to LOD1 and LOD2.
 const LOD_DISTANCES := [28.0, 80.0]

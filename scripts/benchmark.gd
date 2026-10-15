@@ -55,6 +55,11 @@ const CHASE_SPEED := 18.0
 const TURN_SPEED := 7.5
 const CHASE_STARS := 3
 
+# The route cells above are for the island, whose town centre is cell (40, 40). On msp the
+# demo town is laid out the same way round its own centre, so the route moves with it.
+# Positions below are flat map metres; Planet.place / xf_rigid stand them on the ball.
+var _shift := Vector2i.ZERO
+
 var main: Node
 var running := false
 var quit_when_done := false     # started from the command line
@@ -140,6 +145,8 @@ func run(m: Node) -> void:
 
 	# 1. The island from above: a slow orbit, then a swoop down over downtown.
 	_set_hour(DAY_HOUR)
+	if Planet.on:
+		_shift = main.city.center_cell() - Vector2i(40, 40)
 	var c: Vector3 = main.city.cell_center(main.city.center_cell().x, main.city.center_cell().y)
 	_fly(c, 0.0)
 	await _frames(30)  # the sky catches up with the jump in time of day
@@ -196,7 +203,7 @@ func run(m: Node) -> void:
 		main.street._leave_car()
 		await _seconds(1.4)
 	p.set_controls(false)
-	p.place(_walk_point(0.0), -PI * 0.5)
+	p.place(Planet.place(_walk_point(0.0)), -PI * 0.5)
 	p.set_puppet(true)
 	_set_hour(NIGHT_HOUR)
 	_set_weather(Weather.Kind.RAIN)  # the heaviest street: lamps, wet roads, rain and umbrellas
@@ -491,15 +498,15 @@ func _fly(c: Vector3, t: float) -> void:
 
 func _walk_point(t: float) -> Vector3:
 	# The outer half of the sidewalk, clear of the shop awnings, with the street to the right.
-	var road_z := (WALK_ROW + 0.5) * City.TILE
-	var x := (WALK_FROM + 0.5) * City.TILE + t * WALK_SPEED * PARTS[1][2]
+	var road_z := (WALK_ROW + _shift.y + 0.5) * City.TILE
+	var x := (WALK_FROM + _shift.x + 0.5) * City.TILE + t * WALK_SPEED * PARTS[1][2]
 	return Vector3(x, 0.17, road_z - 5.3)
 
 
 func _place_walker(t: float) -> void:
 	## Jog along the sidewalk with the camera behind, looking down the street.
 	var p: StreetPlayer = main.street.player
-	p.global_position = _walk_point(t)
+	p.global_position = Planet.place(_walk_point(t))
 	p.face(-PI * 0.5)
 	p.visual.animate(get_process_delta_time(), WALK_SPEED, true, 0.0, 0.0)
 	p.rig.yaw = -PI * 0.5 - 0.1
@@ -510,19 +517,19 @@ func _get_in_car() -> void:
 	## A car at the kerb where the walk ended, already ours, then off round the avenues.
 	var st: Node = main.street
 	var net: RoadNet = main.life.net
-	_cell = main.city.idx(DRIVE_FROM.x, DRIVE_FROM.y)
+	_cell = main.city.idx(DRIVE_FROM.x + _shift.x, DRIVE_FROM.y + _shift.y)
 	_din = 1
 	_dout = _exit_for(_cell, 1)
 	_s = 2.0
 	var smp := net.sample(_din * 4 + _dout, _s)
 	var at: Vector3 = net.center(_cell) + smp[0]
-	_car = st.spawn_car("car_sedan", at + Vector3.UP * 0.6, _body_yaw(smp[1]), Color(0.85, 0.12, 0.1))
+	_car = st.spawn_car("car_sedan", Planet.place(at + Vector3.UP * 0.6), _body_yaw(smp[1]), Color(0.85, 0.12, 0.1))
 	_car.set_meta("player_owned", true)  # no theft, no stars
 	for i in 45:  # let it settle on its wheels to learn the ride height
 		await get_tree().physics_frame
 	if _stopped:
 		return
-	_car_y = _car.global_position.y - at.y
+	_car_y = Planet.flat(_car.global_position).y - at.y
 	var p: StreetPlayer = st.player
 	p.set_puppet(false)
 	p.place(_car.exit_point(), _car.heading_yaw())
@@ -560,15 +567,15 @@ func _drive(dt: float) -> void:
 		m = _din * 4 + _dout
 	var smp := net.sample(m, _s)
 	var fwd: Vector3 = smp[1]
-	_car.global_transform = Transform3D(Basis(Vector3.UP, _body_yaw(fwd)),
-		net.center(_cell) + smp[0] + Vector3.UP * _car_y)
+	_car.global_transform = Planet.xf_rigid(Transform3D(Basis(Vector3.UP, _body_yaw(fwd)),
+		net.center(_cell) + smp[0] + Vector3.UP * _car_y))
 	_car.rig.heading = _car.heading_yaw()
 
 
 func _exit_for(cell: int, din: int) -> int:
 	var net: RoadNet = main.life.net
-	var c := Vector2i(cell % City.SIZE, cell / City.SIZE)
-	var d: int = DRIVE_TURNS.get(c, din)
+	var c := Vector2i(cell % City.W, cell / City.W)
+	var d: int = DRIVE_TURNS.get(c - _shift, din)
 	if net.has_arm(cell, d):
 		return d
 	return net.exits(cell, din)[0]
@@ -701,6 +708,11 @@ func make_report() -> String:
 		(", %.1f GB RAM" % gb) if gb > 0.0 else ""])
 	lines.append("System    %s %s, video memory in use %d MB" % [OS.get_name(), OS.get_version(),
 		rs.get_rendering_info(rs.RENDERING_INFO_VIDEO_MEM_USED) / 1048576])
+	# Kept-around people meshes and materials: each one holds a few GPU buffers.
+	lines.append("Caches    %d people meshes, %d close-up outfits, %d people materials, %d resources" % [
+		CharacterModel._merged.size(), HeroLook._built.size(),
+		CharacterModel._mat_cache.size() + HeroLook._mats.size(),
+		Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)])
 	lines.append("")
 	lines.append("%-24s %6s %7s %8s %13s %10s %7s %7s %7s %5s %6s" % ["Part", "fps", "1% low", "worst ms",
 		"draw calls", "triangles", "GPU ms", "CPU ms", "game ms", "cars", "people"])

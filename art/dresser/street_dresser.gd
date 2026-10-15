@@ -155,7 +155,8 @@ func _process(_delta: float) -> void:
 	if city == null:
 		return
 	var cam := get_viewport().get_camera_3d()
-	var show := enabled and cam != null and cam.global_position.y < max_height
+	var eye := Planet.flat(cam.global_position) if cam else Vector3.ZERO
+	var show := enabled and cam != null and eye.y < max_height
 	visible = show
 	if _body:
 		_body.process_mode = Node.PROCESS_MODE_INHERIT if show else Node.PROCESS_MODE_DISABLED
@@ -163,16 +164,17 @@ func _process(_delta: float) -> void:
 		return
 	if spots and spots.get("spots") != null and spots.spots.size() != _spot_count:
 		_forget_all()   # citylife moved its benches and stops (road edits, a new day)
-	var fwd := -cam.global_basis.z
+	var fwd := Planet.to_local(cam.global_position, -cam.global_basis.z)  # flat map axes
 	fwd.y = 0.0
-	var at := cam.global_position + (fwd.normalized() * 25.0 if fwd.length() > 0.01 else Vector3.ZERO)
+	var at := eye + (fwd.normalized() * 25.0 if fwd.length() > 0.01 else Vector3.ZERO)
 	at.y = 0.0
-	if _dirty or at.distance_to(center) > rebuild_distance:
+	if _dirty or Planet.fdist(at, center) > rebuild_distance:
 		rebuild(at)
 
 
 func rebuild(at: Vector3) -> void:
 	## Re-dress around a point. Called on its own as the camera moves; tests call it directly.
+	## Everything here is flat map metres; _fill and _build_collision put it on the ball.
 	center = at
 	_dirty = false
 	var groups := {}
@@ -182,18 +184,19 @@ func rebuild(at: Vector3) -> void:
 	var colliders: Array = []
 	prop_count = 0
 	for y in range(cr.y - reach, cr.y + reach + 1):
-		for x in range(cr.x - reach, cr.x + reach + 1):
+		for xx in range(cr.x - reach, cr.x + reach + 1):
+			var x := posmod(xx, City.W) if Planet.on else xx  # msp: wrap across the seam
 			if not city.inside(x, y):
 				continue
 			var cc := city.cell_center(x, y)
-			var dc := Vector2(cc.x - at.x, cc.z - at.z).length()
+			var dc := Planet.fdist(at, cc)
 			if dc > 205.0:
 				continue
 			var data := cell(x, y)
 			for it in data.props:
 				var t: Array = TYPES[it[0]]
 				var p: Vector3 = it[1].origin
-				var d := Vector2(p.x - at.x, p.z - at.z).length()
+				var d := Planet.fdist(at, p)
 				if d > t[1]:
 					continue
 				if not groups.has(it[0]):
@@ -204,7 +207,7 @@ func rebuild(at: Vector3) -> void:
 			if dc < DECAL_RADIUS + 10.0:
 				for dd in data.decals:
 					var q: Vector3 = dd[1].origin
-					if Vector2(q.x - at.x, q.z - at.z).length() < DECAL_RADIUS:
+					if Planet.fdist(at, q) < DECAL_RADIUS:
 						decals.append(dd)
 	for nm in _mmis:
 		if not groups.has(nm):
@@ -239,11 +242,11 @@ func _fill(nm: String, items: Array) -> void:
 	m.instance_count = items.size()
 	for k in items.size():
 		var it: Array = items[k]
-		m.set_instance_transform(k, it[1])
+		m.set_instance_transform(k, Planet.xf_rigid(it[1]))
 		m.set_instance_color(k, it[2])
 		m.set_instance_custom_data(k, it[3])
 	# Bounds for culling: the whole dressed area.
-	mmi.custom_aabb = AABB(center - Vector3(210, 5, 210), Vector3(420, 40, 420))
+	mmi.custom_aabb = _bounds(210.0, 40.0)
 
 
 func _fill_decals(items: Array) -> void:
@@ -269,10 +272,17 @@ func _fill_decals(items: Array) -> void:
 	m.instance_count = items.size()
 	for k in items.size():
 		var d: Array = items[k]
-		m.set_instance_transform(k, d[1])
+		m.set_instance_transform(k, Planet.xf_rigid(d[1]))
 		m.set_instance_color(k, d[2])
 		m.set_instance_custom_data(k, Color(float(d[0]), d[3], 0, 0))
-	_decal_mmi.custom_aabb = AABB(center - Vector3(80, 5, 80), Vector3(160, 30, 160))
+	_decal_mmi.custom_aabb = _bounds(80.0, 30.0)
+
+
+func _bounds(half: float, tall: float) -> AABB:
+	## Culling box for the dressed area (on msp, around the warped centre, any way up).
+	if Planet.on:
+		return AABB(Planet.place(center) - Vector3.ONE * (half + tall), Vector3.ONE * (half + tall) * 2.0)
+	return AABB(center - Vector3(half, 5, half), Vector3(half * 2.0, tall, half * 2.0))
 
 
 # ---------------------------------------------------------------- collision ---
@@ -318,7 +328,7 @@ func _build_collision(colliders: Array) -> void:
 		var s: Array = _shapes[c[0]]
 		var cs := CollisionShape3D.new()
 		cs.shape = s[0]
-		var xf: Transform3D = c[1]
+		var xf: Transform3D = Planet.xf_rigid(c[1])
 		cs.transform = Transform3D(xf.basis.orthonormalized(), xf * s[1])
 		_body.add_child(cs)
 	add_child(_body)

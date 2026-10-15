@@ -36,22 +36,24 @@ float caustics(vec2 p, float t) {
 }
 
 void fragment() {
+	vec3 mpos = map_pos(wpos);  // flat map metres (planet/ unwraps the ball)
 	float t = TIME;
 	float far_k = smoothstep(60.0, 900.0, length(CAMERA_POSITION_WORLD - wpos));
-	vec3 na = texture(wave_a, wpos.xz * 0.018 + vec2(t * 0.012, t * 0.007)).rgb;
-	vec3 nb = texture(wave_b, wpos.xz * 0.041 - vec2(t * 0.009, -t * 0.014)).rgb;
+	vec3 na = texture(wave_a, mpos.xz * 0.018 + vec2(t * 0.012, t * 0.007)).rgb;
+	vec3 nb = texture(wave_b, mpos.xz * 0.041 - vec2(t * 0.009, -t * 0.014)).rgb;
 	vec3 nm = mix(na, nb, 0.5);
 	if (gfx_quality > 0) {
 		// Small ripples near the camera catch the sun.
-		vec3 nc = texture(wave_b, wpos.xz * 0.19 + vec2(t * 0.03, t * 0.021)).rgb;
+		vec3 nc = texture(wave_b, mpos.xz * 0.19 + vec2(t * 0.03, t * 0.021)).rgb;
 		nm = mix(nm, nc, 0.4 * (1.0 - far_k));
 	}
 
-	float depth = max(wpos.y - floor_height(wpos.xz), 0.0);
-	float day = 1.0 - night;
+	float depth = max(mpos.y - floor_height(mpos.xz), 0.0);
+	float nt = night_at(wpos);
+	float day = 1.0 - nt;
 
 	// The bottom, seen through the water and bent a little by the waves.
-	vec2 bp = wpos.xz + (nm.xy - 0.5) * min(depth, 4.0) * 0.5;
+	vec2 bp = mpos.xz + (nm.xy - 0.5) * min(depth, 4.0) * 0.5;
 	vec2 fw = fwidth(bp);
 	float px = max(fw.x, fw.y);  // metres per pixel
 	vec3 sand = bed * (0.86 + 0.22 * vnoise(bp * 0.45));
@@ -66,14 +68,14 @@ void fragment() {
 	vec3 col = sand * tr + deep * (1.0 - tr);
 
 	// Surf: foam at the water's edge and lines of breaking waves rolling in.
-	float n = fbm(wpos.xz * 0.35 + vec2(t * 0.15, t * 0.1));
+	float n = fbm(mpos.xz * 0.35 + vec2(t * 0.15, t * 0.1));
 	float shore = 1.0 - smoothstep(0.0, 0.25 + n * 0.35, depth);
 	float wave = smoothstep(0.8, 0.97, sin(depth * 4.0 - t * 1.4 + n * 4.0)) * (1.0 - smoothstep(0.2, 1.8, depth));
-	vec2 fp = wpos.xz * 1.5 + vec2(t * 0.35, -t * 0.25);
+	vec2 fp = mpos.xz * 1.5 + vec2(t * 0.35, -t * 0.25);
 	float bubbles = mix(0.55, vnoise(fp) * 0.6 + vnoise(fp * 2.7) * 0.4, clamp(1.0 - px * 2.0, 0.0, 1.0));
 	float foam = clamp(shore + wave * 0.85, 0.0, 1.0) * smoothstep(0.3, 0.62, bubbles + shore * 0.35 + n * 0.2);
 	col = mix(col, vec3(0.92, 0.96, 1.0), foam);
-	col *= mix(1.0, 0.35, night);
+	col *= mix(1.0, 0.35, nt);
 
 	// At grazing angles the surface mostly reflects the sky.
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);

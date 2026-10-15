@@ -93,6 +93,7 @@ class Room:
         self.v = Mesh()
         self.c = Mesh()
         self.markers = []   # (name, (x, y, z), yaw_deg)
+        self.seats = []     # [x, height, z, yaw_deg, kind] in Godot room space (see seat())
 
     # solid furniture / walls: drawn and collidable
     def solid(self, x0, y0, z0, x1, y1, z1, mat, top=None, collide=True):
@@ -110,6 +111,13 @@ class Room:
 
     def mark(self, name, x, y, z=0.0, yaw=0.0):
         self.markers.append(("M_" + name, (x, y, z), yaw))
+
+    def seat(self, x, y, h, facing="N", kind="chair", z=0.0):
+        """Somewhere the player can sit: the middle of the seat at (x, y), seat top h above
+        the floor at z, facing N/S/E/W or a yaw in degrees (Blender, 0 = +Y). Written to
+        interiors/seats.json in Godot space: x, seat height, -y, yaw (0 faces -Z)."""
+        yaw = {"N": 0.0, "S": 180.0, "W": 90.0, "E": -90.0}.get(facing, facing)
+        self.seats.append([round(x, 3), round(z + h, 3), round(-y, 3), yaw, kind])
 
     def light(self, x, y, z, color="ffd9a0", rng=8.0, energy=1.5):
         self.markers.append((f"L_{color}_{int(rng)}_{int(energy * 10)}", (x, y, z), 0.0))
@@ -190,15 +198,36 @@ class Room:
         path = os.path.join(OUT, self.name + ".glb")
         bpy.ops.export_scene.gltf(filepath=path, use_selection=True, export_format="GLB", export_apply=True,
                                   export_yup=True, export_normals=True, export_materials="EXPORT")
+        write_seats(self.name, self.seats)
         tris = sum(len(p.vertices) - 2 for p in vis.data.polygons)
         print(f"  interiors/{self.name}.glb  {tris} tris, {len(self.markers)} markers")
         for o in objs:
             bpy.data.objects.remove(o, do_unlink=True)
 
 
+SEATS = os.path.normpath(os.path.join(OUT, "..", "seats.json"))
+
+
+def write_seats(room, seats):
+    """interiors/seats.json: room -> [[x, seat height, z, yaw, kind], ...] for the player's
+    StreetSeating (player/). Rooms built in another run keep their entries."""
+    import json
+    data = {}
+    if os.path.exists(SEATS):
+        with open(SEATS) as f:
+            data = json.load(f)
+    data[room] = seats
+    with open(SEATS, "w") as f:
+        json.dump(data, f, indent=1, sort_keys=True)
+
+
 # -------------------------------------------------------------- furniture ---
 
 def sofa(r, x, y, w=2.2, facing="N", mat="I_Fabric"):
+    n = max(1, int(w / 0.75))
+    for i in range(n):
+        sx = x - w / 2 + 0.2 + (w - 0.4) * (i + 0.5) / n
+        r.seat(sx, y + (0.1 if facing == "N" else -0.1), 0.45, facing, "sofa")
     if facing == "N":
         r.solid(x - w / 2, y - 0.45, 0, x + w / 2, y + 0.45, 0.45, mat)
         r.solid(x - w / 2, y - 0.45, 0.45, x + w / 2, y - 0.2, 0.95, mat)
@@ -220,6 +249,7 @@ def table(r, x, y, w, d, h=0.75, top="I_Wood", leg="I_WoodDark"):
 
 
 def chair(r, x, y, facing="N", mat="I_WoodDark"):
+    r.seat(x, y, 0.47, facing, "chair")
     r.deco(x - 0.22, y - 0.22, 0.42, x + 0.22, y + 0.22, 0.47, mat)
     by = y - 0.22 if facing == "N" else y + 0.18
     r.deco(x - 0.22, by, 0.47, x + 0.22, by + 0.04, 0.95, mat)
@@ -562,6 +592,7 @@ def shop(variant):
             x = -0.5 + i * 0.9
             r.cyl(x, 1.0, 0, 0.7, 0.06, "I_Steel", seg=6)
             r.cyl(x, 1.0, 0.7, 0.78, 0.22, "I_Red", seg=10, collide=True)
+            r.seat(x, 1.0, 0.78, "N", "stool")
         r.deco(-1.0, y1 - 0.4, 0.0, 4.8, y1 - 0.02, 1.0, "I_Steel")
         r.deco(-1.0, y1 - 0.4, 1.4, 4.8, y1 - 0.02, 1.5, "I_Steel")
         r.deco(0.0, y1 - 0.05, 1.8, 2.5, y1 - 0.02, 2.3, "I_Screen")    # menu board
@@ -571,6 +602,9 @@ def shop(variant):
             table(r, bx, by + 0.35, 1.6, 0.7, h=0.75, top="I_White", leg="I_Steel")
             r.solid(bx - 0.9, by + 0.85, 0, bx + 0.9, by + 1.3, 0.45, "I_Red")
             r.solid(bx - 0.9, by + 1.15, 0.45, bx + 0.9, by + 1.3, 1.1, "I_Red")
+            for sx in (-0.45, 0.45):
+                r.seat(bx + sx, by - 0.3, 0.45, "N", "bench")
+                r.seat(bx + sx, by + 1.0, 0.45, "S", "bench")
         r.deco(-4.8, y0 + 0.02, 2.5, 4.8, y0 + 0.06, 2.6, "I_NeonCyan")
         lamps = [(-3.0, 0.5), (0.0, -2.6), (3.0, -2.6), (2.0, 1.7)]
         lamp_mat, lamp_col = "I_LampWarm", "ffe0b0"
@@ -631,6 +665,7 @@ def nightclub():
             r.cyl(x0 + 0.22, y, z, z + 0.3, 0.06, rng.choice(["I_Green", "I_Brass", "I_Glass", "I_Red"]), seg=6)
     for i in range(6):
         r.cyl(x0 + 3.0, -3.5 + i * 1.3, 0, 0.75, 0.2, "I_Steel", seg=8, collide=True)
+        r.seat(x0 + 3.0, -3.5 + i * 1.3, 0.75, "W", "stool")
     r.light(x0 + 1.5, -0.5, 3.0, "ff60d0", 7, 1.2)
     # booths on the east side
     for k in range(3):
@@ -674,6 +709,8 @@ def police():
     # waiting area benches, front desk with a raised counter and a flag
     for y in (-4.6, -3.4):
         r.solid(-6.6, y, 0, -4.4, y + 0.45, 0.45, "I_SteelDark")
+        for x in (-6.1, -5.5, -4.9):
+            r.seat(x, y + 0.2, 0.45, "N", "bench")
     counter(r, -4.0, -2.6, 1.0, -1.8, h=1.2, body="I_WoodDark", top="I_MarbleDark")
     r.deco(-3.2, -1.95, 1.2, -2.6, -1.85, 1.6, "I_Screen")
     r.deco(-0.6, -1.95, 1.2, 0.0, -1.85, 1.6, "I_Screen")
@@ -698,6 +735,7 @@ def police():
         ya, yb = -1.3 + k * 2.4, -1.3 + (k + 1) * 2.4 - 0.2
         r.deco(cx0 + 0.6 + 2.9, ya + 0.1, 0, x1 - 0.1, ya + 0.9, 0.5, "I_SteelDark")   # bunk
         r.solid(cx0 + 3.5, ya + 0.1, 0, x1 - 0.1, ya + 0.9, 0.5, "I_SteelDark")
+        r.seat(cx0 + 4.15, ya + 0.5, 0.5, "W", "bench")
         r.deco(cx0 + 3.6, ya + 0.15, 0.5, x1 - 0.15, ya + 0.85, 0.58, "I_White")
         r.cyl(cx0 + 1.2, yb - 0.35, 0, 0.45, 0.22, "I_Steel", seg=8, collide=True)        # toilet
         for i in range(10):
@@ -786,6 +824,8 @@ def shop_clothes():
     r.deco(-0.4, y1 - 0.06, 0.3, 1.4, y1 - 0.02, 2.4, "I_Glass")
     r.deco(-0.5, y1 - 0.08, 0.2, 1.5, y1 - 0.06, 2.5, "I_Brass")
     r.solid(-0.2, y1 - 1.2, 0, 1.2, y1 - 0.8, 0.45, "I_Leather")
+    for x in (0.15, 0.85):
+        r.seat(x, y1 - 1.0, 0.45, "S", "bench")
     # counter by the door
     counter(r, 1.6, -0.6, 3.6, 0.0, h=1.0, body="I_White", top="I_Wood")
     r.deco(2.4, -0.4, 1.0, 2.9, -0.1, 1.3, "I_SteelDark")
@@ -860,6 +900,7 @@ def casino():
     for i in range(5):
         r.cyl(9.4, -1.4 + i * 1.2, 0, 0.75, 0.05, "I_Brass", seg=6)
         r.cyl(9.4, -1.4 + i * 1.2, 0.75, 0.82, 0.22, "I_Leather", seg=10, collide=True)
+        r.seat(9.4, -1.4 + i * 1.2, 0.82, "E", "stool")
     r.deco(10.0, 4.0, 1.1, 11.0, -2.0, 1.12, "I_NeonPurple")
     # cashier cage on the north wall; the counting room door is behind it, reached through
     # the staff gap between the cage and the bar

@@ -632,7 +632,7 @@ func fleeing_count() -> int:
 
 ## A person who just appeared at `pos` (a driver pulled from a car) and runs from `from`.
 func spawn_fleeing(pos: Vector3, from: Vector3) -> Ped:
-	var cell := net.city.world_to_cell(pos)
+	var cell := net.city.flat_to_cell(pos)
 	if not net.city.inside(cell.x, cell.y):
 		return null
 	var i := net.city.idx(cell.x, cell.y)
@@ -857,9 +857,10 @@ func render() -> void:
 				var grip: Vector3 = p.hero.umbrella_grip()
 				if grip.distance_to(hand) < 0.8:
 					up += grip - hand
-			_brolly_buf[ou] = right.x; _brolly_buf[ou + 1] = 0.0; _brolly_buf[ou + 2] = back.x; _brolly_buf[ou + 3] = up.x
-			_brolly_buf[ou + 4] = 0.0; _brolly_buf[ou + 5] = p.size; _brolly_buf[ou + 6] = 0.0; _brolly_buf[ou + 7] = up.y
-			_brolly_buf[ou + 8] = right.z; _brolly_buf[ou + 9] = 0.0; _brolly_buf[ou + 10] = back.z; _brolly_buf[ou + 11] = up.z
+			var t := _onto(right, Vector3(0, p.size, 0), back, up)
+			_brolly_buf[ou] = t.basis.x.x; _brolly_buf[ou + 1] = t.basis.y.x; _brolly_buf[ou + 2] = t.basis.z.x; _brolly_buf[ou + 3] = t.origin.x
+			_brolly_buf[ou + 4] = t.basis.x.y; _brolly_buf[ou + 5] = t.basis.y.y; _brolly_buf[ou + 6] = t.basis.z.y; _brolly_buf[ou + 7] = t.origin.y
+			_brolly_buf[ou + 8] = t.basis.x.z; _brolly_buf[ou + 9] = t.basis.y.z; _brolly_buf[ou + 10] = t.basis.z.z; _brolly_buf[ou + 11] = t.origin.z
 			_brolly_buf[ou + 12] = float(p.outfit % 6)
 			_brolly_buf[ou + 13] = p.phase
 			_brolly_buf[ou + 14] = st.x
@@ -868,9 +869,15 @@ func render() -> void:
 		if p.hero != null:
 			continue
 		var o := n * 16
-		_buf[o] = right.x; _buf[o + 1] = 0.0; _buf[o + 2] = back.x; _buf[o + 3] = p.pos.x
-		_buf[o + 4] = 0.0; _buf[o + 5] = p.size; _buf[o + 6] = 0.0; _buf[o + 7] = p.pos.y
-		_buf[o + 8] = right.z; _buf[o + 9] = 0.0; _buf[o + 10] = back.z; _buf[o + 11] = p.pos.z
+		if Planet.on:
+			var t := _onto(right, Vector3(0, p.size, 0), back, p.pos)
+			_buf[o] = t.basis.x.x; _buf[o + 1] = t.basis.y.x; _buf[o + 2] = t.basis.z.x; _buf[o + 3] = t.origin.x
+			_buf[o + 4] = t.basis.x.y; _buf[o + 5] = t.basis.y.y; _buf[o + 6] = t.basis.z.y; _buf[o + 7] = t.origin.y
+			_buf[o + 8] = t.basis.x.z; _buf[o + 9] = t.basis.y.z; _buf[o + 10] = t.basis.z.z; _buf[o + 11] = t.origin.z
+		else:
+			_buf[o] = right.x; _buf[o + 1] = 0.0; _buf[o + 2] = back.x; _buf[o + 3] = p.pos.x
+			_buf[o + 4] = 0.0; _buf[o + 5] = p.size; _buf[o + 6] = 0.0; _buf[o + 7] = p.pos.y
+			_buf[o + 8] = right.z; _buf[o + 9] = 0.0; _buf[o + 10] = back.z; _buf[o + 11] = p.pos.z
 		_buf[o + 12] = p.phase
 		_buf[o + 13] = st.x + 4.0 * st.y
 		_buf[o + 14] = float(p.look)
@@ -885,6 +892,12 @@ func render() -> void:
 	_brolly_mmi.multimesh.buffer = _brolly_buf
 	_brolly_mmi.multimesh.visible_instance_count = nu
 	_brolly_mmi.cast_shadow = _mmi.cast_shadow
+
+
+## A flat-map instance frame (columns right, up, back at pos) as it stands on the ball on
+## msp; unchanged on the flat island.
+static func _onto(right: Vector3, up: Vector3, back: Vector3, pos: Vector3) -> Transform3D:
+	return Planet.xf_rigid(Transform3D(Basis(right, up, back), pos))
 
 
 func umbrella_count() -> int:
@@ -932,9 +945,10 @@ func _put_dog(p: Ped, k: int, moving: bool) -> void:
 	var back := -p.fwd
 	var r := Vector3(back.z, 0, -back.x)
 	var o := k * 16
-	_dog_buf[o] = r.x; _dog_buf[o + 1] = 0.0; _dog_buf[o + 2] = back.x; _dog_buf[o + 3] = pos.x
-	_dog_buf[o + 4] = 0.0; _dog_buf[o + 5] = 1.0; _dog_buf[o + 6] = 0.0; _dog_buf[o + 7] = pos.y
-	_dog_buf[o + 8] = r.z; _dog_buf[o + 9] = 0.0; _dog_buf[o + 10] = back.z; _dog_buf[o + 11] = pos.z
+	var t := _onto(r, Vector3.UP, back, pos)
+	_dog_buf[o] = t.basis.x.x; _dog_buf[o + 1] = t.basis.y.x; _dog_buf[o + 2] = t.basis.z.x; _dog_buf[o + 3] = t.origin.x
+	_dog_buf[o + 4] = t.basis.x.y; _dog_buf[o + 5] = t.basis.y.y; _dog_buf[o + 6] = t.basis.z.y; _dog_buf[o + 7] = t.origin.y
+	_dog_buf[o + 8] = t.basis.x.z; _dog_buf[o + 9] = t.basis.y.z; _dog_buf[o + 10] = t.basis.z.z; _dog_buf[o + 11] = t.origin.z
 	_dog_buf[o + 12] = p.phase * 1.6
 	_dog_buf[o + 13] = (1.6 if p.flee > 0.0 else 1.0) if moving else 0.0
 	_dog_buf[o + 14] = float(p.coat)
@@ -949,11 +963,23 @@ const HERO_MAX := 24
 var hero_max := HERO_MAX  # main lowers it on Low and Med graphics: each costs script time
 const HERO_RADIUS := 28.0
 const HERO_KEEP := 34.0        # hysteresis so people don't flicker at the edge
-const HERO_SPAWNS_PER_FRAME := 2
+const HERO_SPAWNS_PER_FRAME := 1
+# A new outfit costs 8-9 ms to build here and twice that on Fedge's laptop (two in one
+# frame were the 38 ms on-foot hitch in msp 0.4.1), so after a slow one wait a frame or two.
+const HERO_DRESS_BUDGET_MS := 5.0
+# No close-up people while the camera rushes past (driving): each one re-dresses a rigged
+# model and builds its close-up mesh, which stalled the benchmark's drive and chase for
+# 40-150 ms a frame and churned GPU buffers. Hysteresis in m/s.
+const HERO_FAST := 9.0
+const HERO_SLOW := 5.0
+var _eye_last := Vector3.INF
+var _eye_speed := 0.0
+var _rushing := false
 
 var _heroes_on := false
 var _pool: Array[CharacterModel] = []   # idle models
 var _hero_count := 0
+var _dress_wait := 0          # frames to wait before dressing the next close-up person
 
 
 func update_heroes(dt: float) -> void:
@@ -961,8 +987,16 @@ func update_heroes(dt: float) -> void:
 		for p in peds:
 			_release_hero(p)
 		return
-	var eye := camera.global_position
-	var close := eye.y < 40.0
+	var eye := Planet.flat(camera.global_position)  # people live on the flat map
+	if _eye_last.is_finite() and dt > 0.0:
+		var v := Vector2(Planet.fdx(_eye_last.x, eye.x), eye.z - _eye_last.z).length() / dt
+		_eye_speed = lerpf(_eye_speed, minf(v, 60.0), 1.0 - exp(-4.0 * dt))
+	_eye_last = eye
+	if _rushing:
+		_rushing = _eye_speed > HERO_SLOW
+	else:
+		_rushing = _eye_speed > HERO_FAST
+	var close := eye.y < 40.0 and not _rushing
 	# Let go of anyone who walked away (or when the camera went up).
 	for p in peds:
 		if p.hero != null and (not close or p.pos.distance_to(eye) > HERO_KEEP):
@@ -976,34 +1010,37 @@ func update_heroes(dt: float) -> void:
 					cand.append([d, p])
 		cand.sort_custom(func(a, b): return a[0] < b[0])
 		var made := 0
+		_dress_wait -= 1
 		for c in cand:
 			if _hero_count >= hero_max:
 				break
 			var p: Ped = c[1]
-			if _pool.is_empty() or _pool.back().seed_value != p.outfit:
-				if made >= HERO_SPAWNS_PER_FRAME:
-					break  # spread model creation and re-dressing over frames
+			if _pooled(p.outfit) < 0:
+				if made >= HERO_SPAWNS_PER_FRAME or _dress_wait > 0:
+					continue  # spread model creation and re-dressing over frames
 				made += 1
+				var t0 := Time.get_ticks_usec()
+				_take_hero(p)
+				var ms := (Time.get_ticks_usec() - t0) / 1000.0
+				_dress_wait = mini(int(ms / HERO_DRESS_BUDGET_MS), 3)
+				continue
 			_take_hero(p)
 	for p in peds:
 		if p.hero == null:
 			continue
 		var m: CharacterModel = p.hero
-		m.global_position = p.pos
-		m.global_basis = Basis.looking_at(p.fwd, Vector3.UP).scaled(Vector3.ONE * p.size)
+		m.global_transform = Planet.xf_rigid(Transform3D(Basis.looking_at(p.fwd, Vector3.UP).scaled(Vector3.ONE * p.size), p.pos))
 		if p.flee > 0.0:
 			m.set_sitting(false)
 			m.set_activity("")
-			m.animate(dt, RUN, true, 0.0, 0.0)
+			m.animate(dt, RUN / p.size, true, 0.0, 0.0)
 			continue
 		var st := _stance(p)
-		m.set_sitting(st.y == Pose.SIT)
+		m.set_sitting(st.y == Pose.SIT, "bench")
 		m.set_activity(_hero_activity(p, int(st.y)))
 		var moving := st.x > 0.0
-		m.animate(dt, CharacterModel.WALK_SPEED if moving else 0.0, true, 0.0, 0.0)
-		if moving:
-			# The walk clip is authored at 3.6 m/s; play it slower to match a stroll.
-			m.tree.set("parameters/pace/scale", clampf(p.speed / CharacterModel.WALK_SPEED * 1.7, 0.5, 1.0))
+		# The gait plays at the real speed, so a stroll looks like a stroll and feet don't slide.
+		m.animate(dt, p.speed / p.size if moving else 0.0, true, 0.0, 0.0)  # model is scaled by size
 
 
 ## What a close-up person's rigged model is doing, from the crowd's pose.
@@ -1016,6 +1053,14 @@ func _hero_activity(p: Ped, pose: int) -> String:
 	return "look" if p.gawk else ""
 
 
+## Index in the pool of a model already dressed in this outfit, or -1.
+func _pooled(outfit: int) -> int:
+	for i in range(_pool.size() - 1, -1, -1):
+		if _pool[i].seed_value == outfit:
+			return i
+	return -1
+
+
 func _take_hero(p: Ped) -> void:
 	var m: CharacterModel
 	if _pool.is_empty():
@@ -1023,7 +1068,8 @@ func _take_hero(p: Ped) -> void:
 		m.seed_value = p.outfit
 		add_child(m)
 	else:
-		m = _pool.pop_back()
+		var i := _pooled(p.outfit)
+		m = _pool.pop_back() if i < 0 else _pool.pop_at(i)
 		m.visible = true
 		if m.seed_value != p.outfit:
 			m.seed_value = p.outfit

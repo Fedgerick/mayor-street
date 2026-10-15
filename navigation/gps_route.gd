@@ -38,8 +38,8 @@ func clear() -> void:
 ## Recomputes the route from `me` to `goal` (world positions) when it has to, and refreshes
 ## its two loose ends every call. Returns true when the road part changed.
 func update(me: Vector3, goal: Vector3) -> bool:
-	var a := nearest_road(city.world_to_cell(me))
-	var b := nearest_road(city.world_to_cell(goal))
+	var a := nearest_road(city.flat_to_cell(me))
+	var b := nearest_road(city.flat_to_cell(goal))
 	var changed := false
 	if _dirty or a != _from or b != _to:
 		_dirty = false
@@ -78,7 +78,7 @@ func find(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 	if _toward[i] == -1:
 		return out
 	while true:
-		out.append(Vector2i(i % City.SIZE, i / City.SIZE))
+		out.append(Vector2i(i % City.W, i / City.W))
 		if i == goal:
 			break
 		i = _toward[i]
@@ -88,7 +88,7 @@ func find(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 func _search_from(goal: int) -> void:
 	## Breadth-first out from the target over the roads, storing the way back at every tile.
 	_field_to = goal
-	_toward.resize(City.SIZE * City.SIZE)
+	_toward.resize(City.W * City.H)
 	_toward.fill(-1)
 	_toward[goal] = goal
 	var queue := PackedInt32Array([goal])
@@ -96,8 +96,8 @@ func _search_from(goal: int) -> void:
 	while head < queue.size():
 		var i := queue[head]
 		head += 1
-		var x := i % City.SIZE
-		var y := i / City.SIZE
+		var x := i % City.W
+		var y := i / City.W
 		for d: Vector2i in City.DIRS:
 			if city.is_road(x + d.x, y + d.y):
 				var j := city.idx(x + d.x, y + d.y)
