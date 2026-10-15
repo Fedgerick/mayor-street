@@ -48,12 +48,16 @@ var _near_people: Array = []   # [data object, is_officer]
 var _cooldown := {}            # data object -> seconds before it can be hit again
 var _player_hit_cd := 0.0
 var _wrecks: Array[Node3D] = []
-var _fixtures: StaticBody3D   # benches, shelters and signal poles (rebuilt when they move)
+var _fixtures := {}            # fixture key -> static body RID (benches, shelters, signal poles)
+var _fixture_shapes := {}      # shared shape resources, kept alive while bodies use them
 var _fixture_key := ""
 var _fixture_timer := 0.0
 var _fixture_at := Vector3.INF  # flat point the fixtures were gathered round (INF: whole city)
 # Only fixtures this near the player get bodies: the whole city's (hundreds of shapes) took
-# ~60 ms to rebuild each time the city grew a bus stop, a hitch on Fedge's laptop.
+# ~60 ms to rebuild each time the city grew a bus stop, a hitch on Fedge's laptop. Each
+# fixture is its own small static body made straight on the physics server, and a move
+# only adds the ones that came into range and frees those that left: one StaticBody3D with
+# hundreds of CollisionShape3D children still cost 66-86 ms on the laptop (msp 0.4.1).
 const FIXTURE_RADIUS := 140.0
 const FIXTURE_MOVE := 50.0  # rebuild after the player has gone this far
 
@@ -142,64 +146,105 @@ func _idle() -> void:
 
 func _check_fixtures() -> void:
 	var key := "%d/%d" % [spots.spots.size() if spots else -1, signals.heads.size() if signals else -1]
-	var at := Vector3.INF
-	if street != null and street.active:
-		at = Planet.flat(street.player_position())
-	var moved := at.is_finite() != _fixture_at.is_finite() or (at.is_finite()
-		and Vector2(Planet.fdx(_fixture_at.x, at.x), at.z - _fixture_at.z).length() > FIXTURE_MOVE)
+	if street == null or not street.active:
+		# Nobody on the street to bump into them.
+		if not _fixtures.is_empty():
+			_clear_fixtures()
+		_fixture_at = Vector3.INF
+		_fixture_key = ""
+		return
+	var at: Vector3 = Planet.flat(street.player_position())
+	var moved := not _fixture_at.is_finite() or Vector2(Planet.fdx(_fixture_at.x, at.x), at.z - _fixture_at.z).length() > FIXTURE_MOVE
 	if key != _fixture_key or moved:
 		_fixture_key = key
 		rebuild_fixtures(at)
 
 
-## Benches, bus shelters and signal poles: one static body for those within FIXTURE_RADIUS
-## of `at` (a flat point), or for the whole city when `at` is INF.
+## Benches, bus shelters and signal poles: a static body each for those within
+## FIXTURE_RADIUS of `at` (a flat point), or for the whole city when `at` is INF. Bodies
+## already standing are kept, so only the change is paid for.
 func rebuild_fixtures(at := Vector3.INF) -> void:
 	_fixture_at = at
+	if _fixture_shapes.is_empty():
+		var bench := BoxShape3D.new()
+		bench.size = Vector3(1.8, 0.85, 0.6)
+		var panel := BoxShape3D.new()      # shelter back wall
+		panel.size = Vector3(3.6, 2.5, 0.15)
+		var post := CylinderShape3D.new()  # shelter front posts
+		post.radius = 0.08
+		post.height = 2.5
+		var pole := CylinderShape3D.new()  # signal poles
+		pole.radius = 0.12
+		pole.height = 3.6
+		_fixture_shapes = {"bench": bench, "panel": panel, "post": post, "pole": pole}
 	var r2 := FIXTURE_RADIUS * FIXTURE_RADIUS if at.is_finite() else INF
-	if _fixtures:
-		_fixtures.queue_free()
-	_fixtures = StaticBody3D.new()
-	_fixtures.name = "Fixtures"
-	_fixtures.collision_mask = 0
-	var bench := BoxShape3D.new()
-	bench.size = Vector3(1.8, 0.85, 0.6)
-	var panel := BoxShape3D.new()      # shelter back wall
-	panel.size = Vector3(3.6, 2.5, 0.15)
-	var post := CylinderShape3D.new()  # shelter front posts and signal poles
-	post.radius = 0.08
-	post.height = 2.5
-	var pole := CylinderShape3D.new()
-	pole.radius = 0.12
-	pole.height = 3.6
+	var want := {}
 	if spots:
 		for sp in spots.spots:
 			var xf: Transform3D = sp.xform
 			if r2 < INF and Vector2(Planet.fdx(at.x, xf.origin.x), xf.origin.z - at.z).length_squared() > r2:
 				continue
-			if sp.kind == StreetSpots.Kind.BENCH:
-				_fix(Planet.xf_rigid(xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.42, -0.1))), bench)
-			else:
-				_fix(Planet.xf_rigid(xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.25, -1.25))), panel)
-				for sx in [-1.7, 1.7]:
-					_fix(Planet.xf_rigid(xf * Transform3D(Basis.IDENTITY, Vector3(sx, 1.25, 0.1))), post)
+			want[_fixture_id(1 + int(sp.kind), xf.origin)] = [0, xf] if sp.kind == StreetSpots.Kind.BENCH else [1, xf]
 	if signals:
 		for h in signals.heads:
 			var xf: Transform3D = h[2]
 			if r2 < INF and Vector2(Planet.fdx(at.x, xf.origin.x), xf.origin.z - at.z).length_squared() > r2:
 				continue
-			_fix(Planet.xf_rigid(Transform3D(Basis.IDENTITY, xf.origin + Vector3(0, 1.8, 0))), pole)
-	add_child(_fixtures)
+			want[_fixture_id(0, xf.origin)] = [2, xf]
+	for k in _fixtures.keys():
+		if not want.has(k):
+			PhysicsServer3D.free_rid(_fixtures[k])
+			_fixtures.erase(k)
+	if not is_inside_tree():
+		return
+	var space := get_world_3d().space
+	for k in want:
+		if _fixtures.has(k):
+			continue
+		var kind: int = want[k][0]
+		var xf: Transform3D = want[k][1]
+		var body := PhysicsServer3D.body_create()
+		PhysicsServer3D.body_set_mode(body, PhysicsServer3D.BODY_MODE_STATIC)
+		PhysicsServer3D.body_set_collision_layer(body, 1)
+		PhysicsServer3D.body_set_collision_mask(body, 0)
+		match kind:
+			0:
+				_add_shape(body, "bench", xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.42, -0.1)))
+			1:
+				_add_shape(body, "panel", xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.25, -1.25)))
+				for sx in [-1.7, 1.7]:
+					_add_shape(body, "post", xf * Transform3D(Basis.IDENTITY, Vector3(sx, 1.25, 0.1)))
+			_:
+				_add_shape(body, "pole", Transform3D(Basis.IDENTITY, xf.origin + Vector3(0, 1.8, 0)))
+		PhysicsServer3D.body_set_space(body, space)
+		_fixtures[k] = body
 
 
-func _fix(xf: Transform3D, shape: Shape3D) -> void:
-	var cs := CollisionShape3D.new()
-	cs.shape = shape
-	cs.transform = xf
-	_fixtures.add_child(cs)
+## How many fixture bodies stand now (for tests).
+func fixture_count() -> int:
+	return _fixtures.size()
 
 
-# ------------------------------------------------------------------ selection ---
+func _fixture_id(kind: int, o: Vector3) -> Vector4i:
+	return Vector4i(kind, roundi(o.x * 10.0), roundi(o.y * 10.0), roundi(o.z * 10.0))
+
+
+func _add_shape(body: RID, shape: String, flat_xf: Transform3D) -> void:
+	var s: Shape3D = _fixture_shapes[shape]
+	PhysicsServer3D.body_add_shape(body, s.get_rid(), Planet.xf_rigid(flat_xf))
+
+
+func _clear_fixtures() -> void:
+	for k in _fixtures:
+		PhysicsServer3D.free_rid(_fixtures[k])
+	_fixtures.clear()
+
+
+func _exit_tree() -> void:
+	_clear_fixtures()
+	_fixture_key = ""
+	_fixture_at = Vector3.INF
+
 
 func _pick(focus: Vector3) -> void:
 	var cand: Array = []

@@ -22,6 +22,7 @@ var heads: Array = []    # [cell, heading, Transform3D]
 var _poles: MultiMeshInstance3D
 var _bulbs: MultiMeshInstance3D
 var _accum := 0.0
+var _lit := PackedInt32Array()  # lamp lit per head (0 red, 1 amber, 2 green; -1 not set yet)
 
 
 func setup(road_net: RoadNet) -> void:
@@ -71,11 +72,20 @@ func rebuild() -> void:
 	mm.instance_count = heads.size()
 	for k in heads.size():
 		mm.set_instance_transform(k, Planet.xf(heads[k][2]))
-	_bulbs.multimesh.instance_count = heads.size() * 3
+	var bm := _bulbs.multimesh
+	bm.instance_count = heads.size() * 3
+	for k in heads.size():
+		var xf: Transform3D = heads[k][2]
+		for b in 3:
+			bm.set_instance_transform(k * 3 + b, Planet.xf(Transform3D(xf.basis, xf * Vector3(0, LAMP_Y[b], -0.2))))
+	_lit.resize(heads.size())
+	_lit.fill(-1)
 	_accum = 1.0
 	update(0.0)
 
 
+## Lamp colours a few times a second. Lamps sit still, so only heads whose light changed
+## are touched (setting every lamp of the city each time cost up to 10 ms on Fedge's laptop).
 func update(dt: float) -> void:
 	_accum += dt
 	if _accum < 0.2:
@@ -86,12 +96,13 @@ func update(dt: float) -> void:
 		var h: Array = heads[k]
 		var state := net.light(h[0], h[1] % 2)
 		var on_idx := 0 if state == RoadNet.Light.RED else (1 if state == RoadNet.Light.AMBER else 2)
-		var xf: Transform3D = h[2]
+		if _lit[k] == on_idx:
+			continue
+		_lit[k] = on_idx
 		for b in 3:
 			var c: Color = ON[b]
 			if b != on_idx:
 				c = Color(c.r * 0.12, c.g * 0.12, c.b * 0.12, 0.0)
-			bm.set_instance_transform(k * 3 + b, Planet.xf(Transform3D(xf.basis, xf * Vector3(0, LAMP_Y[b], -0.2))))
 			bm.set_instance_color(k * 3 + b, c)
 
 

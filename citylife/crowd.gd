@@ -963,7 +963,10 @@ const HERO_MAX := 24
 var hero_max := HERO_MAX  # main lowers it on Low and Med graphics: each costs script time
 const HERO_RADIUS := 28.0
 const HERO_KEEP := 34.0        # hysteresis so people don't flicker at the edge
-const HERO_SPAWNS_PER_FRAME := 2
+const HERO_SPAWNS_PER_FRAME := 1
+# A new outfit costs 8-9 ms to build here and twice that on Fedge's laptop (two in one
+# frame were the 38 ms on-foot hitch in msp 0.4.1), so after a slow one wait a frame or two.
+const HERO_DRESS_BUDGET_MS := 5.0
 # No close-up people while the camera rushes past (driving): each one re-dresses a rigged
 # model and builds its close-up mesh, which stalled the benchmark's drive and chase for
 # 40-150 ms a frame and churned GPU buffers. Hysteresis in m/s.
@@ -976,6 +979,7 @@ var _rushing := false
 var _heroes_on := false
 var _pool: Array[CharacterModel] = []   # idle models
 var _hero_count := 0
+var _dress_wait := 0          # frames to wait before dressing the next close-up person
 
 
 func update_heroes(dt: float) -> void:
@@ -1006,14 +1010,20 @@ func update_heroes(dt: float) -> void:
 					cand.append([d, p])
 		cand.sort_custom(func(a, b): return a[0] < b[0])
 		var made := 0
+		_dress_wait -= 1
 		for c in cand:
 			if _hero_count >= hero_max:
 				break
 			var p: Ped = c[1]
-			if _pool.is_empty() or _pool.back().seed_value != p.outfit:
-				if made >= HERO_SPAWNS_PER_FRAME:
-					break  # spread model creation and re-dressing over frames
+			if _pooled(p.outfit) < 0:
+				if made >= HERO_SPAWNS_PER_FRAME or _dress_wait > 0:
+					continue  # spread model creation and re-dressing over frames
 				made += 1
+				var t0 := Time.get_ticks_usec()
+				_take_hero(p)
+				var ms := (Time.get_ticks_usec() - t0) / 1000.0
+				_dress_wait = mini(int(ms / HERO_DRESS_BUDGET_MS), 3)
+				continue
 			_take_hero(p)
 	for p in peds:
 		if p.hero == null:
@@ -1045,6 +1055,14 @@ func _hero_activity(p: Ped, pose: int) -> String:
 	return "look" if p.gawk else ""
 
 
+## Index in the pool of a model already dressed in this outfit, or -1.
+func _pooled(outfit: int) -> int:
+	for i in range(_pool.size() - 1, -1, -1):
+		if _pool[i].seed_value == outfit:
+			return i
+	return -1
+
+
 func _take_hero(p: Ped) -> void:
 	var m: CharacterModel
 	if _pool.is_empty():
@@ -1052,7 +1070,8 @@ func _take_hero(p: Ped) -> void:
 		m.seed_value = p.outfit
 		add_child(m)
 	else:
-		m = _pool.pop_back()
+		var i := _pooled(p.outfit)
+		m = _pool.pop_back() if i < 0 else _pool.pop_at(i)
 		m.visible = true
 		if m.seed_value != p.outfit:
 			m.seed_value = p.outfit

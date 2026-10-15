@@ -47,6 +47,7 @@ var nightlife := PackedFloat32Array()   # the part of ped_night from nightlife s
 var focus := Vector3.ZERO
 var cam_height := 300.0
 var car_radius := 600.0
+const PLANET_STREET_RADIUS := 105.0  # msp street level: life within this of the camera
 var ped_radius := 140.0
 var want_cars := 0
 var want_peds := 0
@@ -440,6 +441,14 @@ func _update_view() -> void:
 	if cam_height < 40.0:
 		# Close to the ground the focus is far ahead; centre on the camera instead.
 		focus = Vector3(o.x, 0, o.z) + Vector3(d.x, 0, d.z).normalized() * 40.0
+		if Planet.on:
+			# On the ball the ground drops behind the horizon: from eye height a car or a
+			# walker is out of sight past about 70-90 m, so only the ring that can be seen
+			# is filled. Same density as before, about half as many cars and people.
+			focus = Vector3(o.x, 0, o.z) + Vector3(d.x, 0, d.z).normalized() * 15.0
+			car_radius = PLANET_STREET_RADIUS
+			if ped_radius > 0.0:
+				ped_radius = PLANET_STREET_RADIUS
 
 
 func _update_area() -> void:
@@ -470,12 +479,17 @@ func _update_area() -> void:
 			_ped_cells.append(i)
 			_ped_cum.append(pt)
 	# Cap the city's demand first, then apply the hour, so a big city is still quiet at 3am.
-	want_cars = int(minf(ct * density * 0.55, max_cars) * hour_factor(CAR_HOURS))
-	want_peds = int(minf(pt * density * 1.4, max_peds) * hour_factor(PED_HOURS))
+	# The caps are for the usual 150 m street ring; a smaller ring (msp) gets a smaller
+	# cap, so a busy downtown is as busy as before rather than packed tighter.
+	var ring := clampf(pow(minf(car_radius, ped_radius if ped_radius > 0.0 else car_radius) / 150.0, 2.0), 0.0, 1.0)
+	var cap_cars := max_cars * ring
+	var cap_peds := max_peds * ring
+	want_cars = int(minf(ct * density * 0.55, cap_cars) * hour_factor(CAR_HOURS))
+	want_peds = int(minf(pt * density * 1.4, cap_peds) * hour_factor(PED_HOURS))
 	if weather != null:
 		want_peds = int(want_peds * (1.0 - 0.4 * weather.rain))  # rain keeps people in
 	# Clubs and the casino keep their blocks busy late.
-	want_peds = mini(want_peds + int(minf(lt * density * 1.4, max_peds * 0.35) * nm), max_peds)
+	want_peds = mini(want_peds + int(minf(lt * density * 1.4, cap_peds * 0.35) * nm), int(cap_peds))
 	if ped_radius <= 0.0:
 		want_peds = 0
 

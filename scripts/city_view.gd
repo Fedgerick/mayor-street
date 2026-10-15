@@ -41,6 +41,8 @@ var preview_img: Image
 var preview_tex: ImageTexture
 var lamp_positions := {}  # Vector2i chunk -> Array[Vector3] (lamp heads, used by real lights)
 var _map_dirty := false
+var _detail_dirty := {}   # chunks dirty only because they switch detail (the map is unchanged)
+const REBUILD_MS := 3.0
 var services: Object = null  # CityServices: buildings without power go dark at night
 var _tops := {}  # mesh name -> its highest vertex
 var _beacon_mesh: SphereMesh
@@ -83,6 +85,7 @@ func setup(c: City) -> void:
 	for cy in ceili(float(City.H) / _chunk):
 		for cx in ceili(float(City.W) / _chunk):
 			dirty[Vector2i(cx, cy)] = true
+	_detail_dirty.clear()
 	refresh_map()
 
 
@@ -275,12 +278,14 @@ func _mark_rect(r: Rect2i) -> void:
 		for cy in range(y0, y1 + 1):
 			for cx in range(floori(float(r.position.x) / _chunk), floori(float(r.end.x) / _chunk) + 1):
 				dirty[Vector2i(posmod(cx, across), cy)] = true
+				_detail_dirty.erase(Vector2i(posmod(cx, across), cy))
 		return
 	var a := Vector2i(maxi(r.position.x, 0) / _chunk, maxi(r.position.y, 0) / _chunk)
 	var b := Vector2i(mini(r.end.x, City.W - 1) / _chunk, mini(r.end.y, City.H - 1) / _chunk)
 	for cy in range(a.y, b.y + 1):
 		for cx in range(a.x, b.x + 1):
 			dirty[Vector2i(cx, cy)] = true
+			_detail_dirty.erase(Vector2i(cx, cy))
 
 
 func _on_building_added(id: int, animate: bool) -> void:
@@ -332,20 +337,29 @@ func _process(delta: float) -> void:
 				_mark_rect(Rect2i(b.x, b.y, b.size, b.size))
 		else:
 			_set_grow(id, g.t)
+	# A few chunks a frame, and no more than REBUILD_MS of them after the first: four
+	# full-detail chunks at once were a 40 ms hitch on Fedge's laptop.
 	var budget := 4
 	var order := dirty.keys()
-	if Planet.on and order.size() > budget:
+	if Planet.on and order.size() > 1:
 		# Chunks coming into full detail first: they are the ones next to the camera.
 		order.sort_custom(func(a, b): return _want_full.get(a, false) and not _want_full.get(b, false))
+	var t0 := Time.get_ticks_usec()
+	var lamps := false
 	for key in order:
-		if budget <= 0:
+		if budget <= 0 or (budget < 4 and Time.get_ticks_usec() - t0 > REBUILD_MS * 1000.0):
 			break
 		_rebuild_chunk(key)
 		dirty.erase(key)
 		budget -= 1
-		_map_dirty = true
+		lamps = true
+		# Only a change in the city redraws the map (6 ms); a chunk swapping detail does not.
+		if not _detail_dirty.has(key):
+			_map_dirty = true
+		_detail_dirty.erase(key)
 	if _map_dirty:
 		refresh_map()
+	if lamps or _map_dirty:
 		lamp_tex.update(lamp_img)
 	if Planet.on:
 		_cull_t -= delta
@@ -374,8 +388,9 @@ func cull() -> void:
 		# Behind the horizon nothing of it shows, so it needs no detail either.
 		var want := node.visible and d < reach + half + (FULL_OUT if was else FULL_IN)
 		_want_full[key] = want
-		if want != _full.get(key, false):
+		if want != _full.get(key, false) and not dirty.has(key):
 			dirty[key] = true
+			_detail_dirty[key] = true
 		var cast := shadow_reach <= 0.0 or d < shadow_reach + half
 		if _shadowed.get(key, true) != cast:
 			_set_shadows(node, cast)

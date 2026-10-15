@@ -83,7 +83,7 @@ const STREET_DETAIL := [250.0, 400.0, 700.0]
 const MAYOR_DETAIL := [600.0, 1000.0, 0.0]
 # msp: the ball hides a 40 m building past ~200 m from the street, and only chunks inside the
 # detail distance keep their full-detail GPU buffers (CityView._want_full), so it is shorter.
-const PLANET_STREET_DETAIL := [150.0, 220.0, 400.0]
+const PLANET_STREET_DETAIL := [130.0, 180.0, 400.0]  # past ~180 m the curve hides all but tall buildings
 const PLANET_MAYOR_DETAIL := [400.0, 600.0, 1000.0]
 # msp street level: full-detail chunks past this stop casting sun shadows (CityView.shadow_reach).
 const PLANET_STREET_SHADOWS := [100.0, 150.0, 250.0]

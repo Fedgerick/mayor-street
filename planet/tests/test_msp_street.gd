@@ -39,6 +39,34 @@ func _run() -> void:
 	var up := Planet.up(p.global_position)
 	check(absf(p.global_position.length() - Planet.R) < 3.0, "player stands on the ball (%.1f m off sea level)" % (p.global_position.length() - Planet.R))
 	check(p.global_basis.y.dot(up) > 0.99, "player stands upright")
+	# Benches, shelters and signal poles near the player are solid, and a move only pays
+	# for what changed.
+	await _wait(1.2)
+	var bodies: StreetBodies = street.bodies
+	var n := bodies.fixture_count()
+	check(n > 0, "fixtures near the player have bodies (%d)" % n)
+	var pole_hit := false
+	var side := p.global_basis.x
+	for h in main.life.signals.heads:
+		var w: Vector3 = Planet.xf_rigid(Transform3D(Basis.IDENTITY, h[2].origin + Vector3(0, 1.8, 0))).origin
+		if w.distance_to(p.global_position) > 100.0:
+			continue
+		var q := PhysicsRayQueryParameters3D.create(w + side * 1.5, w - side * 1.5, 1)
+		var hit := p.get_world_3d().direct_space_state.intersect_ray(q)
+		if hit and bodies._fixtures.values().has(hit.rid):
+			pole_hit = true
+			break
+	check(pole_hit, "a signal pole near the player is solid")
+	var flat_at := Planet.flat(p.global_position)
+	var t0 := Time.get_ticks_usec()
+	bodies.rebuild_fixtures(flat_at + Vector3(60, 0, 0))
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	check(ms < 4.0, "moving 60 m updates fixtures in %.2f ms (%d bodies)" % [ms, bodies.fixture_count()])
+	t0 = Time.get_ticks_usec()
+	bodies.rebuild_fixtures(flat_at + Vector3(60, 0, 0))
+	ms = (Time.get_ticks_usec() - t0) / 1000.0
+	check(ms < 1.0, "an unchanged spot costs almost nothing (%.2f ms)" % ms)
+	bodies.rebuild_fixtures(flat_at)
 	# A car right here, and drive it.
 	# On the nearest east-west road, pointing east.
 	var city: City = main.city
