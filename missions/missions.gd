@@ -684,6 +684,11 @@ func _update_markers() -> void:
 					if s.do == "destroy":
 						_target_mark.visible = true
 						_put(_target_mark, goal + Vector3.UP * (3.4 + sin(Time.get_ticks_msec() * 0.006) * 0.3))
+			"tow":
+				if m.tow_car is Node3D and is_instance_valid(m.tow_car):
+					goal = Planet.flat((m.tow_car as Node3D).global_position)
+					_target_mark.visible = true
+					_put(_target_mark, goal + Vector3.UP * (2.8 + sin(Time.get_ticks_msec() * 0.006) * 0.3))
 			"fight":
 				# Point at the hit target (or the nearest gunman) once you're close; until then the spot.
 				var e = director.crew.nearest(link.position())

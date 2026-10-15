@@ -25,7 +25,8 @@ func check(cond: bool, what: String) -> void:
 
 func _needs_landmark(t: Dictionary) -> bool:
 	for slot in t.slots:
-		if t.slots[slot].tag in ["casino", "stadium", "airfield", "radio_tower", "mansion", "vault", "park"]:
+		if t.slots[slot].tag in ["casino", "stadium", "airfield", "radio_tower", "mansion", "vault", "park",
+				"salvage_yard", "gun_shop"]:   # placed buildings only: shop/tests/test_salvage_shop.gd
 			return true
 	return false
 

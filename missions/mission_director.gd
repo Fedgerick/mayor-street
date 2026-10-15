@@ -162,6 +162,8 @@ func _generate(t: Dictionary, from: Vector3) -> Mission:
 	var raw: float = (p.get("base", 0.0) + p.get("per_km", 0.0) * m.km()) * m.risk * goodness.pay_multiplier(m.side)
 	if t.get("stolen_goods", false):
 		raw *= progress.resident_perk("stolen_goods_price", 1.0)  # Hustler sells for more
+	if t.has("flag_bonus") and progress.get_flag(str(t.flag_bonus.flag), false):
+		raw *= float(t.flag_bonus.get("mult", 1.0))  # e.g. Rusty pays friends of the yard more
 	m.pay = int(round(raw / 10.0)) * 10
 	m.city_bonus = t.get("city_bonus", 0)
 	m.goodness = t.get("goodness", 0)
@@ -318,6 +320,9 @@ func _cleanup(m: Mission) -> void:
 	if m.target and is_instance_valid(m.target):
 		m.target.queue_free()
 	m.target = null
+	if m.tow_car is Node and is_instance_valid(m.tow_car):
+		m.tow_car.queue_free()   # crushed at the yard, or left for the street to tidy
+	m.tow_car = null
 	m.points.clear()
 	crew.clear()
 	link.set_sanctioned(false)
@@ -337,6 +342,8 @@ func _enter_step() -> void:
 				_spawn_chase(m, s)
 			"vehicle":
 				_spawn_vehicle(m, s)
+			"tow":
+				_spawn_tow(m, s)
 			"collect":
 				_scatter(m, s)
 			"fight":
@@ -394,10 +401,26 @@ func tick(delta: float) -> void:
 	if link.wanted() > m.max_wanted:
 		fail("You drew the cops")
 		return
+	_carry(m)
 	var s := m.step()
 	var me := link.position()
 	var near: bool = flat_dist(me, m.step_pos()) <= s.get("radius", GOTO_RADIUS)
 	match s.do:
+		"tow":
+			var c = m.tow_car
+			if c == null or (c is Node and not is_instance_valid(c)):
+				fail("The car is gone")
+				return
+			var truck = m.mission_car
+			if truck == null or link.car() != truck:
+				m.hold = 0.0
+			elif flat_dist(me, _flat_of(c)) < s.get("radius", TOW_REACH) and link.car_speed() < 1.5:
+				m.hold += delta
+				if m.hold >= s.get("seconds", 2.0):
+					_hook(m)
+					_advance()
+			else:
+				m.hold = maxf(0.0, m.hold - delta * 2.0)
 		"goto":
 			if s.has("interior") and _walk_in(m, s):
 				if link.inside() == s.interior and link.inside_building() == m.slots[s.at].building:
@@ -534,10 +557,69 @@ func _spawn_vehicle(m: Mission, s: Dictionary) -> void:
 		m.mission_car = FakeCar.new()
 
 
+# ------------------------------------------------------------------- towing ---
+
+const TOW_REACH := 9.0                    # m between the truck and the car to hook it
+const TOW_BED := Vector3(0, 1.2, 1.575)   # deck centre in the tow truck's space (TowService.BED)
+
+
+func _spawn_tow(m: Mission, s: Dictionary) -> void:
+	## The car to tow: parked at the kerb by the slot, smashed unless "wreck" is false.
+	var cell: Vector2i = m.slots[s.at].cell
+	var c := city.cell_center(cell.x, cell.y)
+	var mask := city.road_mask(cell.x, cell.y)
+	var along_x := (mask & 10) != 0 and (mask & 5) == 0
+	var pos := c + (Vector3(0, 0.15, -2.85) if along_x else Vector3(-2.85, 0.15, 0))
+	var yaw := -PI * 0.5 if along_x else 0.0
+	var color := Color.from_string(s.get("color", "#5a6470"), Color(0.35, 0.4, 0.45))
+	var car = link.spawn_car(s.model, pos, yaw, color)
+	if car == null:
+		m.tow_car = FakeCar.new()
+		m.tow_car.pos = pos
+		return
+	car.set_meta("towing", true)     # TowService leaves it to you
+	car.set_meta("parked", true)     # someone's car: driving it off is theft
+	if s.get("wreck", true) and car.has_method("_set_damage"):
+		car._set_damage(2)
+	m.tow_car = car
+
+
+func _hook(m: Mission) -> void:
+	## Winch the car up on to the truck's deck; from now on it rides there (_carry).
+	var c = m.tow_car
+	m.tow_on = true
+	if not c is RigidBody3D:
+		return
+	c.remove_from_group("vehicles")    # nobody climbs into it on the deck
+	c.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	c.freeze = true
+	c.collision_layer = 0
+	c.collision_mask = 0
+	_carry(m)
+
+
+func _carry(m: Mission) -> void:
+	if not m.tow_on or not (m.tow_car is Node3D) or not is_instance_valid(m.tow_car):
+		return
+	var truck = m.mission_car
+	if not (truck is Node3D) or not is_instance_valid(truck):
+		return
+	var t: Transform3D = truck.global_transform
+	m.tow_car.global_transform = Transform3D(t.basis * Basis(Vector3.UP, PI),
+		t * (TOW_BED + Vector3(0, 0.15, 0)))
+
+
+func _flat_of(o: Object) -> Vector3:
+	if o is Node3D:
+		return Planet.flat((o as Node3D).global_position)
+	return o.get("pos")
+
+
 ## Stands in for a mission car in tests (no street): "drive" it, or set `wrecked`.
 class FakeCar:
 	extends RefCounted
 	var wrecked := false
+	var pos := Vector3.ZERO   # where it is (tow targets in tests)
 
 
 func _send_wave(m: Mission, s: Dictionary) -> void:

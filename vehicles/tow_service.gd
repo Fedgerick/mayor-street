@@ -16,8 +16,13 @@ extends Node
 ## Wiring (scripts/main.gd, after `street` and `life` exist):
 ##   tow = TowService.new(); tow.setup(city, street); add_child(tow)
 ## `street` needs `car` (the car being driven), `active` and `focus_point()`: StreetMode has all three.
+##
+## With `yards` set (SalvageYards, msp) the trucks belong to salvage yards: no yard, no
+## trucks; each yard's two trucks can be out at once; a truck leaves from its yard's kerb
+## when the yard is near, and brings the wreck back there, which pays the city a fee.
 
 signal towed(model: String)
+signal delivered(model: String, yard_id: int)   # a wreck brought back to a salvage yard
 
 const MODEL := "car_tow"
 const RANGE := 150.0          # cars further than this from the player are left alone
@@ -36,6 +41,8 @@ const BED := Vector3(0, 1.2, 1.575)     # deck centre in truck space (the truck 
 const GONE := 160.0           # removed once this far from the player, driving away
 const MAX_DRIVE_OUT := 70.0   # ... or after this many seconds
 const SPAWN_CELLS := Vector2i(6, 10)    # road cells between where a truck appears and the car
+const YARD_REACH := 60          # road cells: a yard this near sends its truck from its gate
+const YARD_FEE := 120           # city funds a salvage yard makes on each wreck brought in
 
 enum { DRIVE_IN, LOAD, DRIVE_OUT }
 
@@ -60,6 +67,8 @@ class Truck:
 	var lod := 0
 	var seed := 0.0
 	var layers := Vector2i.ZERO   # the car's own collision layer and mask, restored if it is let go
+	var yard := -1                # the salvage yard it belongs to (-1: none)
+	var going_home := false       # DRIVE_OUT is a route to the yard's gate
 
 var city: City
 var street: Node
@@ -67,6 +76,8 @@ var trucks: Array[Truck] = []
 var towed_count := 0          # cars taken away (for tests)
 var sent := 0                 # trucks sent out (for tests)
 var enabled := true
+var yards: SalvageYards = null  # msp: trucks belong to salvage yards (none: one truck, no yard needed)
+var delivered_count := 0      # wrecks brought back to a yard (for tests)
 var rng := RandomNumberGenerator.new()
 
 var _dwell := {}              # car instance id -> seconds it has been stuck
@@ -91,11 +102,22 @@ func busy() -> bool:
 	return not trucks.is_empty()
 
 
+## How many trucks may be out at once.
+func capacity() -> int:
+	if yards == null:
+		return 1
+	return yards.free_trucks() + yards.out_trucks()
+
+
+func _can_send() -> bool:
+	return trucks.size() < capacity() and (yards == null or yards.free_trucks() > 0)
+
+
 func _physics_process(dt: float) -> void:
 	if city == null or street == null:
 		return
 	_cooldown = maxf(0.0, _cooldown - dt)
-	if enabled and trucks.is_empty() and _cooldown <= 0.0:
+	if enabled and _can_send() and _cooldown <= 0.0:
 		_scan -= dt
 		if _scan <= 0.0:
 			_scan = SCAN
@@ -217,7 +239,7 @@ func _route(seen: Dictionary, from_cell: Vector2i) -> Array[Vector3]:
 
 
 func _dispatch(car: DrivableCar) -> bool:
-	if city == null or not trucks.is_empty() or car == null or not is_instance_valid(car):
+	if city == null or not _can_send() or car == null or not is_instance_valid(car):
 		return false
 	var id := car.get_instance_id()
 	var at := Planet.flat(car.global_position)
@@ -225,11 +247,23 @@ func _dispatch(car: DrivableCar) -> bool:
 	if tcell.x < 0 or Planet.fdist(city.cell_center(tcell.x, tcell.y), at) > MAX_REACH:
 		_given_up[id] = true
 		return false
-	var seen := _bfs(tcell, SPAWN_CELLS.y + 2)
-	var p := Planet.flat(_player())
+	var yard := -1
 	var spawn := Vector2i(-1, -1)
+	var seen := {}
+	if yards != null:
+		yard = yards.nearest_free(at)
+		if yard < 0:
+			return false
+		var gate := yards.gate_cell(yard)
+		if gate.x >= 0:
+			seen = _bfs(tcell, YARD_REACH)
+			if seen.has(gate):
+				spawn = gate   # near enough: the truck pulls out of its yard
+	if spawn.x < 0:
+		seen = _bfs(tcell, SPAWN_CELLS.y + 2)
+	var p := Planet.flat(_player())
 	var far := -1.0
-	for c in seen:
+	for c in (seen if spawn.x < 0 else {}):
 		var depth: int = seen[c][0]
 		if depth < SPAWN_CELLS.x or depth > SPAWN_CELLS.y:
 			continue
@@ -258,6 +292,9 @@ func _dispatch(car: DrivableCar) -> bool:
 	tr.car = car
 	tr.cell = tcell
 	tr.seed = rng.randf()
+	tr.yard = yard
+	if yard >= 0:
+		yards.take(yard)
 	var d0 := path[1] - path[0]
 	tr.yaw = atan2(-d0.x, -d0.z)
 	_build(tr, path[0])
@@ -431,7 +468,8 @@ func _release(tr: Truck) -> void:
 
 
 func _leave(tr: Truck) -> void:
-	## Pick a road away from here, preferring the way the truck already faces.
+	## Pick a road away from here, preferring the way the truck already faces. A yard's
+	## truck carrying a wreck heads back to its yard when the yard is in reach.
 	tr.state = DRIVE_OUT
 	tr.t = 0.0
 	var here := city.flat_to_cell(tr.pos)
@@ -439,6 +477,18 @@ func _leave(tr: Truck) -> void:
 	if root.x < 0:
 		_finish(tr)
 		return
+	tr.going_home = false
+	if tr.yard >= 0 and yards != null and city.buildings.has(tr.yard) and tr.car != null and is_instance_valid(tr.car):
+		var gate := yards.gate_cell(tr.yard)
+		if gate == root:
+			_finish(tr, true)
+			return
+		var to_yard := _bfs(gate, YARD_REACH) if gate.x >= 0 else {}
+		if to_yard.has(root):
+			tr.path = _route(to_yard, root)   # root ... gate
+			tr.i = 1 if tr.path.size() > 1 else 0
+			tr.going_home = true
+			return
 	var seen := _bfs(root, 14)
 	var f := Vector3(-sin(tr.yaw), 0, -cos(tr.yaw))
 	var best := Vector2i(-1, -1)
@@ -474,8 +524,11 @@ func _drive_out(tr: Truck, dt: float) -> void:
 		tr.car = null
 	if tr.i < tr.path.size():
 		var last := tr.i >= tr.path.size() - 1
-		if _steer_to(tr, dt, tr.path[tr.i], CRUISE, false):
-			if last:
+		if _steer_to(tr, dt, tr.path[tr.i], CRUISE, last and tr.going_home):
+			if last and tr.going_home:
+				_finish(tr, true)
+				return
+			elif last:
 				_leave(tr)       # keep going somewhere else
 			else:
 				tr.i += 1
@@ -483,19 +536,27 @@ func _drive_out(tr: Truck, dt: float) -> void:
 		_leave(tr)
 	var far := tr.node.global_position.distance_to(_player())
 	if far > GONE or tr.t > MAX_DRIVE_OUT and far > 70.0 or tr.t > MAX_DRIVE_OUT * 2.0:
-		_finish(tr)
+		_finish(tr, tr.going_home)   # out of sight on its way home counts as home
 
 
-func _finish(tr: Truck) -> void:
+func _finish(tr: Truck, at_yard := false) -> void:
 	if tr.car != null and is_instance_valid(tr.car):
 		if tr.car.get_meta("on_deck", false):
 			var m := tr.car.model
 			tr.car.queue_free()
 			towed_count += 1
 			towed.emit(m)
+			if at_yard and tr.yard >= 0:
+				delivered_count += 1
+				var prog := get_node_or_null("/root/Progress")
+				if prog and prog.has_method("add_city_funds"):
+					prog.add_city_funds(YARD_FEE, "Salvage")
+				delivered.emit(m, tr.yard)
 		else:
 			_release(tr)
 	trucks.erase(tr)
 	if tr.node != null:
 		tr.node.queue_free()
+	if tr.yard >= 0 and yards != null:
+		yards.back(tr.yard)
 	_cooldown = COOLDOWN

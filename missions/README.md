@@ -53,7 +53,9 @@ Keys: J quest log (both views); at street level Y takes a dispatch-radio job, K 
   `defend` at a slot (`seconds`, `waves`, `per_wave`, `from_m`, `leave_s`): hold off attackers, fail if you leave;
   `race` (`from`, `to`, `every_m`, `base_s`, `per_km_s`): checkpoints along the road route, in a car, against the clock;
   `rampage` (`count`, `seconds`, `weapon`): kills in time. Good-side `fight`/`defend` don't draw stars from your gunfire
+  `tow` (`at`, `seconds`, msp): a smashed `{car}` waits at a slot; stop the mission tow truck beside it for `seconds` to hook it on, then it rides the deck to the next step
 - `route`: slots whose road distance sets pay; `pay {base, per_km}`; `time {base, per_km}` (seconds)
+- `flag_bonus`: `{flag: multiplier}`, pay times the multiplier while that Progress flag is set (yard_friend 1.5)
 - `goodness`, `city_bonus` (city funds), `crime` (counted into Progress counts `job_crime`), `max_wanted`, `stolen_goods` (Hustler perk)
 
 pay = (base + per_km x km) x risk x lean bonus. Risk (bad jobs) grows with land value at the start and police buildings near the route.

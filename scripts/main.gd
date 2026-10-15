@@ -33,6 +33,9 @@ var services_panel: ServicesPanel
 var interiors: InteriorManager  # enterable buildings (interiors/)
 var missions: Missions  # jobs, payphones, goodness and quests (missions/)
 var resident: Resident  # the character you create, and their home (creator/)
+var tow: TowService  # tow trucks (vehicles/)
+var yards: SalvageYards  # salvage yards and their parked tow trucks (vehicles/)
+var shop: GunShop  # Harbor Arms & Supply: what you buy there (shop/)
 var weather: Weather  # clear, cloudy, rain and fog on a calendar (weather/)
 var rain_fx: RainFX  # rain and splashes around the street camera
 var dresser: StreetDresser  # trees, benches, signs, shop fronts near the street camera (art/dresser/)
@@ -242,9 +245,14 @@ func _start(demo: bool, save := {}) -> void:
 	add_child(street)
 	street.setup(city)  # registers its own save section, "street"
 	_warm_street_fx()
-	var tow := TowService.new()  # tow trucks fetch flipped and burnt-out cars (vehicles/)
+	tow = TowService.new()  # tow trucks fetch flipped and burnt-out cars (vehicles/)
 	tow.setup(city, street)
 	add_child(tow)
+	yards = SalvageYards.new()  # the trucks belong to salvage yards: two each, parked out front
+	yards.name = "SalvageYards"
+	add_child(yards)
+	yards.setup(city, street)
+	tow.yards = yards
 	street.set_life(life)  # carjacking, people and cops as targets, police chases
 	interiors = InteriorManager.new()
 	interiors.name = "Interiors"
@@ -260,6 +268,10 @@ func _start(demo: bool, save := {}) -> void:
 	add_child(resident)
 	resident.setup(city, street, cam)  # registers "resident"; a load fills it here
 	resident.use_interiors(interiors)
+	shop = GunShop.new()  # Harbor Arms: the counter screen, med kits, home items (shop/)
+	shop.name = "GunShop"
+	add_child(shop)
+	shop.setup(city, street, interiors)  # registers "shop"
 	weather = Weather.new()
 	weather.name = "Weather"
 	add_child(weather)
@@ -614,6 +626,8 @@ func _input(e: InputEvent) -> void:
 		return  # the tour drives itself; Benchmark._input takes every key and click
 	if resident and resident.get("_busy") == true and not menu.is_open:
 		return  # the character creator or the home picker has the keyboard (Esc skips there)
+	if shop and shop.is_open():
+		return  # the Harbor Arms counter has the keyboard (Esc leaves it)
 	if street and not _dragging and not alt and e.is_action_pressed("street_toggle_view"):
 		get_viewport().set_input_as_handled()
 		if street.active:
