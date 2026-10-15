@@ -1033,16 +1033,14 @@ func update_heroes(dt: float) -> void:
 		if p.flee > 0.0:
 			m.set_sitting(false)
 			m.set_activity("")
-			m.animate(dt, RUN, true, 0.0, 0.0)
+			m.animate(dt, RUN / p.size, true, 0.0, 0.0)
 			continue
 		var st := _stance(p)
-		m.set_sitting(st.y == Pose.SIT)
+		m.set_sitting(st.y == Pose.SIT, "bench")
 		m.set_activity(_hero_activity(p, int(st.y)))
 		var moving := st.x > 0.0
-		m.animate(dt, CharacterModel.WALK_SPEED if moving else 0.0, true, 0.0, 0.0)
-		if moving:
-			# The walk clip is authored at 3.6 m/s; play it slower to match a stroll.
-			m.tree.set("parameters/pace/scale", clampf(p.speed / CharacterModel.WALK_SPEED * 1.7, 0.5, 1.0))
+		# The gait plays at the real speed, so a stroll looks like a stroll and feet don't slide.
+		m.animate(dt, p.speed / p.size if moving else 0.0, true, 0.0, 0.0)  # model is scaled by size
 
 
 ## What a close-up person's rigged model is doing, from the crowd's pose.

@@ -3,8 +3,9 @@ extends Node3D
 ## A street person: the rigged wardrobe in player/assets/character.glb (built by
 ## player/tools/build_character.py), dressed as one merged mesh, and driven by an
 ## AnimationTree made in code:
-##   idle / walk / run blended by speed, jump and fall in the air, sitting in cars,
-##   idle variations (looking around, arms folded, sitting on a bench) when standing,
+##   idle / walk / jog / run blended by speed with the feet planted, jump and fall in the
+##   air and a landing, sitting in cars, sitting down on and standing up from benches and
+##   chairs, idle variations (looking around, arms folded, sitting on a bench) when standing,
 ##   talking and phone calls over any of that, and one-shots: get in / out of a car,
 ##   wave, jab / cross / hook, reloads, flinch, stumble, knocked down and getting up,
 ##   carjack, and dying.
@@ -20,9 +21,21 @@ signal dressed   # end of _dress(); creator/ re-applies a created look on it
 
 const SCENE := "res://player/assets/character.glb"
 const LOD_SHADER := preload("res://player/scripts/person.gdshader")
-const WALK_SPEED := 3.6     # m/s the Walk clip was authored for
+const WALK_SPEED := 3.6     # the player's walking pace, m/s (a brisk jog on screen)
 const RUN_SPEED := 7.2
-const LOOPS := ["Idle", "IdleLook", "IdleArms", "Walk", "Run", "Jump", "Fall", "Sit", "SitBench",
+# Walk, Jog and Run are one 1 s cycle each, left heel down at the start, so they blend in
+# phase. Each sits at a speed in the blend space, and the stance foot slides back STRIDES
+# metres per clip second (player/tools/build_character.py GAITS), so playing them at
+# speed / stride keeps the feet planted at any speed.
+const GAITS := ["Walk", "Jog", "Run"]
+const GAIT_AT := [1.4, 3.6, 7.2]
+const STRIDES := [1.24, 2.3, 3.4]
+const MOVE_FROM := 0.08     # below this speed the idle shows, blending to the gait by MOVE_FULL
+const MOVE_FULL := 0.7
+## Sitting down and standing up keep the feet still while the origin slides this far
+## between the standing spot (in front) and the seat, along seat_k() of the clip's time.
+const SEAT_SHIFT := 0.4
+const LOOPS := ["Idle", "IdleLook", "IdleArms", "Walk", "Jog", "Run", "Jump", "Fall", "Sit", "SitBench",
 	"Talk", "Phone", "AimPistol", "AimShotgun"]
 const UPPER := ["Chest", "Neck", "Head", "Jaw",
 	"UpperArm.L", "LowerArm.L", "Hand.L", "Fingers1.L", "Fingers2.L", "Thumb.L",
@@ -81,6 +94,7 @@ var mats := {}                    # material name -> the StandardMaterial3D in u
 var _air := 0.0
 var _sit := 0.0
 var _sitting := false
+var _sit_kind := "car"            # "car" (hands on the wheel) or "bench"
 var _lean := 0.0
 var _aim := 0.0
 var _aim_kind := Aim.NONE
@@ -497,15 +511,18 @@ func _one_shot(bt: AnimationNodeBlendTree, k: String, last: String, x: int, uppe
 func _build_tree() -> void:
 	var bt := AnimationNodeBlendTree.new()
 	var loco := AnimationNodeBlendSpace1D.new()
-	loco.add_blend_point(_clip("Idle"), 0.0)
-	loco.add_blend_point(_clip("Walk"), WALK_SPEED)
-	loco.add_blend_point(_clip("Run"), RUN_SPEED)
+	for i in GAITS.size():
+		loco.add_blend_point(_clip(GAITS[i]), GAIT_AT[i])
 	loco.min_space = 0.0
-	loco.max_space = RUN_SPEED
-	loco.sync = true
+	loco.max_space = GAIT_AT[-1]
+	loco.sync = true   # same length, same phase: keep every gait running so they stay in step
 	bt.add_node("loco", loco, Vector2(0, 0))
 	bt.add_node("pace", AnimationNodeTimeScale.new(), Vector2(200, 0))
 	bt.connect_node("pace", 0, "loco")
+	bt.add_node("idle", _clip("Idle"), Vector2(0, -150))
+	bt.add_node("move", AnimationNodeBlend2.new(), Vector2(300, -50))
+	bt.connect_node("move", 0, "idle")
+	bt.connect_node("move", 1, "pace")
 	var airmix := AnimationNodeBlend2.new()
 	bt.add_node("jump", _clip("Jump"), Vector2(0, 200))
 	bt.add_node("fall", _clip("Fall"), Vector2(0, 300))
@@ -513,7 +530,7 @@ func _build_tree() -> void:
 	bt.connect_node("airmix", 0, "jump")
 	bt.connect_node("airmix", 1, "fall")
 	bt.add_node("air", AnimationNodeBlend2.new(), Vector2(400, 100))
-	bt.connect_node("air", 0, "pace")
+	bt.connect_node("air", 0, "move")
 	bt.connect_node("air", 1, "airmix")
 	# Idle variations (full body, only while standing still).
 	var pick := AnimationNodeTransition.new()
@@ -529,12 +546,27 @@ func _build_tree() -> void:
 	bt.add_node("idlevar", AnimationNodeBlend2.new(), Vector2(800, 100))
 	bt.connect_node("idlevar", 0, "air")
 	bt.connect_node("idlevar", 1, "idle_pick")
-	bt.add_node("sit_clip", _clip("Sit"), Vector2(800, 300))
+	var sit_pick := AnimationNodeTransition.new()
+	sit_pick.xfade_time = 0.2
+	sit_pick.add_input("car")
+	sit_pick.add_input("bench")
+	bt.add_node("sit_car", _clip("Sit"), Vector2(600, 500))
+	bt.add_node("sit_bench", _clip("SitBench"), Vector2(600, 600))
+	bt.add_node("sit_pick", sit_pick, Vector2(800, 500))
+	bt.connect_node("sit_pick", 0, "sit_car")
+	bt.connect_node("sit_pick", 1, "sit_bench")
 	bt.add_node("sit", AnimationNodeBlend2.new(), Vector2(1000, 100))
 	bt.connect_node("sit", 0, "idlevar")
-	bt.connect_node("sit", 1, "sit_clip")
+	bt.connect_node("sit", 1, "sit_pick")
 	var last := "sit"
 	var x := 1200
+	# Landing after a drop; sitting down and standing up (no fade in: their first frame is
+	# the pose underneath, and the origin starts sliding with them).
+	last = _one_shot(bt, "Land", last, x, false, 0.05, 0.15)
+	x += 200
+	for k in ["SitDown", "StandUp"]:
+		last = _one_shot(bt, k, last, x, false, 0.0, 0.12)
+		x += 200
 	for k in ["EnterCar", "ExitCar"]:
 		last = _one_shot(bt, k, last, x, false, 0.08, 0.12)
 		x += 200
@@ -606,17 +638,16 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, turn: float)
 	_update_lod(delta)
 	_air = move_toward(_air, 0.0 if on_floor else 1.0, delta * (8.0 if on_floor else 5.0))
 	_sit = move_toward(_sit, 1.0 if _sitting else 0.0, delta * 6.0)
-	tree.set("parameters/loco/blend_position", clampf(speed, 0.0, RUN_SPEED))
-	# Slow the clips down when moving slower than they were authored for, so feet don't slide.
-	var pace := 1.0
-	if speed > 0.2 and speed < WALK_SPEED:
-		pace = maxf(speed / WALK_SPEED, 0.45)
-	elif speed > RUN_SPEED:
-		pace = speed / RUN_SPEED
-	tree.set("parameters/pace/scale", pace)
+	tree.set("parameters/loco/blend_position", clampf(speed, GAIT_AT[0], GAIT_AT[-1]))
+	# Play the gait at the rate that moves the stance foot back exactly as fast as we go.
+	tree.set("parameters/pace/scale", clampf(speed / stride_at(speed), 0.35, 3.0))
+	tree.set("parameters/move/blend_amount", smoothstep(MOVE_FROM, MOVE_FULL, speed))
 	tree.set("parameters/airmix/blend_amount", clampf(-vy / 3.0 + 0.3, 0.0, 1.0))
 	tree.set("parameters/air/blend_amount", _air)
 	tree.set("parameters/sit/blend_amount", _sit)
+	var kind := "bench" if _sit_kind == "bench" or activity == "bench" else "car"
+	if tree.get("parameters/sit_pick/current_state") != kind:
+		tree.set("parameters/sit_pick/transition_request", kind)
 	_aim = move_toward(_aim, 0.0 if _aim_kind == Aim.NONE else 1.0, delta * 8.0)
 	tree.set("parameters/aim/blend_amount", _aim)
 	if _aim_kind != Aim.NONE:
@@ -691,8 +722,52 @@ func _show_phone(on: bool) -> void:
 		_phone.visible = on
 
 
-func set_sitting(on: bool) -> void:
+## Sitting in a car seat (hands on the wheel), or on a bench or chair with kind "bench".
+func set_sitting(on: bool, kind := "car") -> void:
 	_sitting = on
+	if on:
+		_sit_kind = kind
+
+
+## Metres the gait clips move the stance foot per second of clip, at this speed.
+static func stride_at(speed: float) -> float:
+	if speed <= GAIT_AT[0]:
+		return STRIDES[0]
+	for i in range(1, GAIT_AT.size()):
+		if speed <= GAIT_AT[i]:
+			var k: float = (speed - GAIT_AT[i - 1]) / (GAIT_AT[i] - GAIT_AT[i - 1])
+			return lerpf(STRIDES[i - 1], STRIDES[i], k)
+	return STRIDES[-1]
+
+
+## How far (0..1) the origin has moved from the standing spot to the seat at time t of
+## SitDown, or from the seat back to the standing spot at time t of StandUp.
+static func seat_k(t: float) -> float:
+	return smoothstep(0.15, 0.85, t)
+
+
+## Sit down on a bench or chair. The caller puts the origin SEAT_SHIFT in front of the
+## seat and slides it onto the seat along seat_k() over clip_length("SitDown").
+func sit_down() -> void:
+	_sitting = true
+	_sit_kind = "bench"
+	_sit = 1.0
+	tree.set("parameters/sit/blend_amount", 1.0)
+	tree.set("parameters/sit_pick/transition_request", "bench")
+	_fire("SitDown")
+
+
+## Stand up from a bench or chair; the caller slides the origin back off the seat.
+func stand_up() -> void:
+	_sitting = false
+	_sit = 0.0
+	tree.set("parameters/sit/blend_amount", 0.0)
+	_fire("StandUp")
+
+
+## A landing after a drop (knees give). Best when not running on.
+func play_land() -> void:
+	_fire("Land")
 
 
 func _fire(k: String) -> void:

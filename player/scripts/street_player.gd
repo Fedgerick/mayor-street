@@ -46,6 +46,7 @@ var _since_floor := 0.0
 var _jump_buffer := 0.0
 var _facing := 0.0
 var _turn_rate := 0.0
+var _air_time := 0.0
 
 
 func _init() -> void:
@@ -189,6 +190,13 @@ func _physics_process(delta: float) -> void:
 		_facing = lerp_angle(_facing, atan2(-hv.x, -hv.z), 1.0 - exp(-turn_speed * delta))
 	_turn_rate = lerpf(_turn_rate, wrapf(_facing - prev, -PI, PI) / maxf(delta, 1e-4), 0.2)
 	visual.rotation.y = _facing
+	# A real drop ends in a landing (knees give) unless we land running.
+	if is_on_floor():
+		if _air_time > 0.45 and hv.length() < 3.0:
+			visual.play_land()
+		_air_time = 0.0
+	else:
+		_air_time += delta
 	visual.animate(delta, hv.length(), is_on_floor(), lv.y, _turn_rate)
 
 

@@ -1171,18 +1171,11 @@ def sit(t):
 def sit_bench(t):
     """Sitting on a bench or chair (seat about 0.45 m), hands resting on the thighs."""
     w = math.sin(t * math.tau)
-    p = base_pose()
-    for side, sg in (("L", 1), ("R", -1)):
-        p["UpperLeg." + side] = Dir((0.1 * sg, -1, 0.04))
-        p["LowerLeg." + side] = Dir((0.04 * sg, -0.12, -1))
-        p["Foot." + side] = Dir((0.0, -0.92, -0.4))
-        p["UpperArm." + side] = Dir((0.14 * sg, -0.34, -0.93))
-        p["LowerArm." + side] = Dir((-0.05 * sg, -0.92, -0.38))
-        hand(p, side, (22, 28, 10))
+    p = seat_pose(1.0, 1.0, 0.0, 1.0)
     p["Spine"] = X(5 + 1.2 * w)
     p["Chest"] = X(2 - 0.6 * w)
     p["Head"] = X(-4) @ Z(6 * math.sin(t * math.tau * 0.5 + 1.0))
-    return p, Vector((0, 0.06, -0.43 + 0.003 * w))
+    return p, SIT_HIPS + Vector((0, 0, 0.003 * w))
 
 
 def enter_car(t):
@@ -1569,17 +1562,241 @@ def carjack(t):
     return p, Vector((0, 0.08 * pull * back, -0.05 * reach))
 
 
+# ------------------------------------------------------- planted-foot moves ---
+# Walk, Jog and Run share one 30-frame cycle with the left heel down at t = 0, so the
+# game blends them in phase. The stance foot slides back under the body at exactly
+# GAITS[name]["stride"] metres per second of clip, and CharacterModel plays the clips at
+# speed / stride, so the feet stay planted at any speed (CharacterModel.STRIDES must
+# match). The legs are solved with two-bone IK from where the ankles have to be.
+
+THIGH = (BONES["UpperLeg.L"][1] - BONES["UpperLeg.L"][0]).length
+SHIN = (BONES["LowerLeg.L"][1] - BONES["LowerLeg.L"][0]).length
+HIPS_HEAD = BONES["Hips"][0]
+FOOT_DIR = rest_dir("Foot.L")
+HEEL = Vector((0, 0.06, -0.1))    # from the ankle, foot flat
+BALL = Vector((0, -0.1, -0.1))
+ANKLE_UP = 0.1
+
+GAITS = {
+    # stride: m per clip second (two steps). duty: stance share of a cycle. back: stance
+    # shifted behind the hip (reach). drop/bob: hip
+    # height. sway: hips over the stance foot. lift: swing clearance. kick: heel up behind
+    # (running). heel/toe: foot roll at contact / push-off, degrees. lean: forward lean.
+    # arm/elbow: arm swing and bend. curl: open hand 0 .. fist 1.
+    "Walk": dict(stride=1.24, duty=0.58, back=0.04, drop=0.042, bob=0.016, sway=0.022, lift=0.06, kick=0.0,
+                 heel=16, toe=26, lean=3, arm=30, elbow=22, curl=0.0, yaw=6, roll=4, flight=False),
+    "Jog": dict(stride=2.3, duty=0.32, back=0.04, drop=0.078, bob=0.028, sway=0.012, lift=0.12, kick=0.12,
+                heel=6, toe=30, lean=8, arm=32, elbow=72, curl=0.55, yaw=8, roll=3, flight=True),
+    "Run": dict(stride=3.4, duty=0.26, back=0.04, drop=0.1, bob=0.035, sway=0.008, lift=0.2, kick=0.28,
+                heel=0, toe=36, lean=14, arm=48, elbow=90, curl=0.85, yaw=10, roll=2, flight=True),
+}
+
+
+def pitch_q(deg):
+    """Foot roll about the side axis; + lifts the toe."""
+    return Quaternion((1, 0, 0), math.radians(-deg))
+
+
+def leg_ik(p, side, hip, ankle, pitch, rh):
+    """Aim the thigh and shin so the ankle lands on `ankle` (knee bending forward), and
+    the foot at `pitch`. hip/ankle are world points, rh the hips rotation."""
+    sg = 1 if side == "L" else -1
+    d = ankle - hip
+    ln = min(d.length, (THIGH + SHIN) * 0.999)
+    u = d.normalized()
+    pole = Vector((0.08 * sg, -1, 0))
+    pole = (pole - u * pole.dot(u)).normalized()
+    ca = (THIGH * THIGH + ln * ln - SHIN * SHIN) / (2 * THIGH * ln)
+    a = math.acos(max(-1.0, min(1.0, ca)))
+    knee = hip + (u * math.cos(a) + pole * math.sin(a)) * THIGH
+    ank = hip + u * ln
+    inv = rh.inverted()
+    p["UpperLeg." + side] = Dir(inv @ (knee - hip))
+    p["LowerLeg." + side] = Dir(inv @ (ank - knee))
+    p["Foot." + side] = Dir(inv @ (pitch_q(pitch) @ FOOT_DIR))
+    return p
+
+
+def hip_joint(side, rh, off):
+    rest = BONES["UpperLeg." + side][0]
+    return HIPS_HEAD + off + rh @ (rest - HIPS_HEAD)
+
+
+def planted(flat, pitch):
+    """Ankle position for a foot rolling on the ground: flat is where the ankle is with the
+    foot flat; the heel (toe up) or the ball (heel up) stays where it was."""
+    piv = HEEL if pitch > 0 else BALL
+    return flat + piv - pitch_q(pitch) @ piv
+
+
+def foot_track(g, ph, sx):
+    """(ankle, pitch) for one foot at phase ph of the gait, in the body frame."""
+    st = g["stride"]
+    duty = g["duty"]
+    reach = st * duty * 0.5 - g.get("back", 0.0)   # lands this far ahead of the hip
+    x = sx * LEG_X * 1.02
+
+    def stance(u):
+        y = -reach + st * duty * u   # +Y is backward: the ground slides back under us
+        if u < 0.18:
+            pt = g["heel"] * (1 - smooth(u / 0.18))
+        elif u > 0.5:
+            pt = -g["toe"] * smooth((u - 0.5) / 0.5)
+        else:
+            pt = 0.0
+        return planted(Vector((x, y, ANKLE_UP)), pt), pt
+
+    if ph < duty:
+        return stance(ph / duty)
+    s = (ph - duty) / (1 - duty)
+    a0, p0 = stance(1.0)
+    a1, p1 = stance(0.0)
+    k = smooth(s)
+    if g["flight"]:
+        k = smooth(s * 1.08 - 0.04)
+    pos = a0.lerp(a1, k)
+    arc = math.sin(math.pi * s)
+    pos.z += g["lift"] * arc
+    # Running: the heel folds up behind before the knee drives through.
+    kick = math.sin(math.pi * min(s / 0.7, 1.0)) * (1 - s)
+    pos.z += g["kick"] * kick * 1.4
+    pos.y += g["kick"] * kick * 0.5
+    pt = lerp(p0, p1, smooth(s * 1.3 - 0.15)) - (25 if g["flight"] else 8) * arc * (1 - s)
+    return pos, pt
+
+
+def locomotion(name):
+    g = GAITS[name]
+
+    def fn(t):
+        ph = t % 1.0
+        c2 = math.cos(math.tau * ph)
+        mid = g["duty"] * 0.5
+        p = base_pose()
+        # Hips: lowest at foot contact when walking, mid-stance when running.
+        if g["flight"]:
+            z = -g["drop"] - g["bob"] * math.cos(2 * math.tau * (ph - mid))
+        else:
+            z = -g["drop"] - g["bob"] * math.cos(2 * math.tau * ph)
+        sway = g["sway"] * math.cos(math.tau * (ph - mid))
+        off = Vector((sway, 0, z))
+        yaw = -g["yaw"] * c2                     # the leading leg's hip comes forward
+        roll = -g["roll"] * math.cos(math.tau * (ph - mid))   # the swing side dips
+        rh = Z(yaw) @ Y(roll)
+        p["Hips"] = rh
+        for side, sx, shift in (("L", 1, 0.0), ("R", -1, 0.5)):
+            pos, pt = foot_track(g, (ph + shift) % 1.0, sx)
+            leg_ik(p, side, hip_joint(side, rh, off), pos, pt, rh)
+        # Shoulders turn against the hips; the head stays on the road ahead.
+        sh = g["yaw"] * 1.2 * c2
+        nod = math.cos(2 * math.tau * ph)
+        p["Spine"] = Z(-yaw) @ X(g["lean"] * 0.6 + 0.6 * nod)
+        p["Chest"] = Z(sh) @ X(g["lean"] * 0.4) @ Y(-roll * 0.5)
+        p["Neck"] = Z(-sh * 0.5)
+        p["Head"] = Z(-sh * 0.5) @ X(-g["lean"] * 0.8 - 0.8 * nod)
+        lag = 0.04
+        for side, sg in (("L", 1.0), ("R", -1.0)):
+            # Each arm swings with the opposite leg, a touch behind it.
+            fwd = -sg * math.cos(math.tau * (ph - lag))
+            swing = g["arm"] * fwd
+            back = g["arm"] * 0.15                     # arms hang a little behind
+            p["UpperArm." + side] = (Y((ARM_DOWN + lerp(2, 6, g["curl"])) * sg) @
+                                     X(-swing + back) @ Z(-sg * 6 * max(fwd, 0.0) * g["curl"]))
+            bend = g["elbow"] + (g["elbow"] * 0.25 + 10) * max(fwd, 0.0)
+            p["LowerArm." + side] = X(-bend)
+            p["Hand." + side] = X(-6 * g["curl"])
+            hand(p, side, lerp_curl(RELAXED, FIST, g["curl"]))
+        return p, off
+
+    return fn
+
+
+# Sitting down and standing up. The game keeps the feet still by sliding the character's
+# origin SEAT_SHIFT metres between the standing spot and the seat while these play, along
+# seat_k(t) (CharacterModel.seat_k() is the same curve). Seat height 0.45 m.
+SEAT_SHIFT = 0.4
+SIT_HIPS = Vector((0, 0.06, -0.43))
+SIT_FEET = Vector((0.172, -0.405, ANKLE_UP))   # left ankle when seated (x mirrors)
+
+
+def seat_k(t):
+    return smooth((t - 0.15) / 0.7)
+
+
+def seat_pose(hips_k, root_k, lean, arm_k):
+    """hips_k 0 standing .. 1 seated, root_k how far the origin has moved toward the seat
+    (feet stay put), lean forward lean in degrees, arm_k 0 hanging .. 1 hands on thighs."""
+    p = base_pose()
+    off = Vector((0, SIT_HIPS.y * root_k, SIT_HIPS.z * hips_k))
+    for side, sx in (("L", 1), ("R", -1)):
+        foot = Vector((sx * lerp(LEG_X * 1.05, SIT_FEET.x, root_k),
+                       SIT_FEET.y + SEAT_SHIFT * (1 - root_k), ANKLE_UP))
+        leg_ik(p, side, hip_joint(side, Quaternion(), off), foot, 0.0, Quaternion())
+        stand_u = Dir((0.14 * sx, 0.03, -0.99))
+        stand_l = Dir((0.06 * sx, -0.2, -0.98))
+        p["UpperArm." + side] = dir_lerp(stand_u, Dir((0.14 * sx, -0.34, -0.93)), arm_k)
+        p["LowerArm." + side] = dir_lerp(stand_l, Dir((-0.05 * sx, -0.92, -0.38)), arm_k)
+        hand(p, side, lerp_curl(RELAXED, (22, 28, 10), arm_k))
+    p["Spine"] = X(5 * hips_k + lean * 0.65)
+    p["Chest"] = X(2 * hips_k + lean * 0.35)
+    p["Head"] = X(-4 * hips_k - lean * 0.6)
+    return p
+
+
+def sit_down(t):
+    """From standing a step in front of a seat, back and down onto it."""
+    rk = seat_k(t)
+    hk = smooth((t - 0.2) / 0.7)
+    lean = 30 * math.sin(math.pi * min(t / 0.88, 1.0))
+    ak = smooth((t - 0.3) / 0.6)
+    p = seat_pose(hk, rk, lean, ak)
+    p["Head"] = p["Head"] @ Z(6 * math.sin(1.0) * smooth((t - 0.6) / 0.4))
+    return p, Vector((0, SIT_HIPS.y * rk, SIT_HIPS.z * hk))
+
+
+def stand_up(t):
+    """Lean forward, push off the thighs and rise, ending a step in front of the seat."""
+    rk = 1 - seat_k(t)
+    hk = 1 - smooth((t - 0.2) / 0.6)
+    lean = 40 * math.sin(math.pi * min(t / 0.8, 1.0))
+    ak = 1 - smooth((t - 0.15) / 0.55)
+    p = seat_pose(hk, rk, lean, ak)
+    p["Head"] = p["Head"] @ Z(6 * math.sin(1.0) * (1 - smooth(t / 0.3)))
+    return p, Vector((0, SIT_HIPS.y * rk, SIT_HIPS.z * hk))
+
+
+def land(t):
+    """Touching down after a fall: knees give, arms out, back up."""
+    a = math.sin(math.pi * min(t / 0.85, 1.0)) * (1.0 - 0.3 * t)
+    p = relaxed(base_pose())
+    off = Vector((0, 0.02 * a, -0.14 * a))
+    for side, sx in (("L", 1), ("R", -1)):
+        leg_ik(p, side, hip_joint(side, Quaternion(), off), Vector((sx * LEG_X * 1.15, -0.03, ANKLE_UP)),
+               0.0, Quaternion())
+        p["UpperArm." + side] = Y((ARM_DOWN - 18 * a) * sx) @ X(-14 * a)
+        p["LowerArm." + side] = X(-20 - 25 * a)
+        hand(p, side, lerp_curl(RELAXED, OPEN, a))
+    p["Spine"] = X(14 * a)
+    p["Chest"] = X(4 * a)
+    p["Head"] = X(-12 * a)
+    return p, off
+
+
 CLIPS = [
     # (name, frames, pose function, loops)
     ("Idle", 60, idle, True),
     ("IdleLook", 150, idle_look, True),
     ("IdleArms", 90, idle_arms, True),
-    ("Walk", 30, lambda t: gait(t, 0.0), True),
-    ("Run", 20, lambda t: gait(t, 1.0), True),
+    ("Walk", 30, locomotion("Walk"), True),
+    ("Jog", 30, locomotion("Jog"), True),
+    ("Run", 30, locomotion("Run"), True),
     ("Jump", 30, jump, True),
     ("Fall", 30, fall, True),
     ("Sit", 60, sit, True),
     ("SitBench", 90, sit_bench, True),
+    ("SitDown", 33, sit_down, False),
+    ("StandUp", 30, stand_up, False),
+    ("Land", 12, land, False),
     ("EnterCar", 21, enter_car, False),
     ("ExitCar", 21, exit_car, False),
     ("Talk", 120, talk, True),
