@@ -36,6 +36,7 @@ var resident: Resident  # the character you create, and their home (creator/)
 var tow: TowService  # tow trucks (vehicles/)
 var yards: SalvageYards  # salvage yards and their parked tow trucks (vehicles/)
 var shop: GunShop  # Harbor Arms & Supply: what you buy there (shop/)
+var bench_bus: BenchBus  # the hidden park-bench bus ride (missions/)
 var weather: Weather  # clear, cloudy, rain and fog on a calendar (weather/)
 var rain_fx: RainFX  # rain and splashes around the street camera
 var dresser: StreetDresser  # trees, benches, signs, shop fronts near the street camera (art/dresser/)
@@ -272,6 +273,10 @@ func _start(demo: bool, save := {}) -> void:
 	shop.name = "GunShop"
 	add_child(shop)
 	shop.setup(city, street, interiors)  # registers "shop"
+	bench_bus = BenchBus.new()  # sit on a park bench and a bus may pick you up
+	bench_bus.name = "BenchBus"
+	add_child(bench_bus)
+	bench_bus.setup(city, street, missions)
 	weather = Weather.new()
 	weather.name = "Weather"
 	add_child(weather)
