@@ -499,9 +499,45 @@ func gawk(pos: Vector3, radius: float) -> int:
 	return n
 
 
+## Crowd clothes come in SHAPES cuts (top, bottom, hair, face, hat, shoes), each in any
+## colours. A close-up person's rigged model is built once per cut and kept (HeroLook keeps
+## BUILT_MAX of them), so with fewer cuts than that nobody new is built mid-street: on
+## Fedge's laptop each build was a 28 ms hitch (0.4.4 benchmark, "close-up people").
+const SHAPES := 18
+static var _shapes := {}      # cut key -> true
+
+
+static func _cut(seed: int) -> String:
+	var l := CharacterModel.look_for_seed(seed)
+	return "%s|%s|%s|%s|%s|%s" % [l.top, l.bottom, l.shoes, l.hat, l.hair, l.face]
+
+
+## A crowd outfit seed for `seed`: one of SEEDS seeds whose cut is a crowd cut (their
+## colours are as varied as any). The list is made once, at load (crowd.prewarm_heroes).
+const SEEDS := 600
+static var _seeds := PackedInt32Array()
+
+
+static func common_outfit(seed: int) -> int:
+	if _seeds.is_empty():
+		var s := 1
+		while _shapes.size() < SHAPES and s < 5000:
+			_shapes[_cut(s * 7919)] = true
+			s += 1
+		var t := 12345
+		for i in 200000:
+			t = (t * 1103515245 + 12345) % 100003
+			if _shapes.has(_cut(t)):
+				_seeds.append(t)
+				if _seeds.size() >= SEEDS:
+					break
+	return _seeds[posmod(seed, _seeds.size())]
+
+
 ## Pick the same colours CharacterModel._dress() would for this seed, so a person
 ## keeps their clothes when they switch between the cheap and the full model.
 func _set_outfit(p: Ped, outfit: int) -> void:
+	outfit = common_outfit(outfit)
 	var r := RandomNumberGenerator.new()
 	r.seed = outfit
 	var skin := r.randi() % CharacterModel.SKIN.size()
@@ -1086,7 +1122,7 @@ func prewarm_heroes(n: int) -> void:
 		return
 	while _pool.size() + _hero_count < n:
 		var m := CharacterModel.new()
-		m.seed_value = randi()
+		m.seed_value = common_outfit(randi() % 100000)
 		add_child(m)
 		m.visible = false
 		m.tree.active = false

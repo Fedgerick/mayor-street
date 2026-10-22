@@ -43,6 +43,7 @@ var light: DirectionalLight3D
 var world_env: WorldEnvironment
 var vignette: ColorRect
 var quality := 1
+var street_view := false   # street level: Med draws one shadow map, not two splits
 # Street level turns both up: down in a street canyon most of the view is shade, lit by
 # light bounced off the sunlit walls across the street.
 var exposure_scale := 1.0
@@ -249,6 +250,19 @@ static func _v3(c: Color) -> Vector3:
 	return Vector3(c.r, c.g, c.b)
 
 
+func set_street_view(on: bool) -> void:
+	street_view = on
+	_apply_shadow_mode()
+
+
+func _apply_shadow_mode() -> void:
+	# At street level the shadows only reach ~140 m, where one 4096 map is sharp enough and
+	# the second split cost Fedge's laptop 1.6 ms of GPU a frame (0.4.4 benchmark).
+	var one := quality == 0 or (quality == 1 and street_view)
+	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL if one else (
+		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if quality == 1 else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS)
+
+
 func set_view_distance(dist: float) -> void:
 	# High over the island the shadow maps would hold every building; Low and Med stop sooner.
 	light.directional_shadow_max_distance = clampf(dist * 2.4, 140.0, [450.0, 800.0, 1300.0][clampi(quality, 0, 2)])
@@ -304,8 +318,7 @@ func apply_quality(level: int) -> void:
 	# The city reflected in the sea and in glass towers.
 	env.ssr_enabled = level >= 2
 	env.glow_enabled = level >= 1
-	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL if level == 0 else (
-		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if level == 1 else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS)
+	_apply_shadow_mode()
 	# Soft contact-hardening shadows only on High.
 	light.light_angular_distance = 0.5 if level >= 2 else 0.0
 	RenderingServer.directional_shadow_atlas_set_size(2048 if level == 0 else 4096, true)

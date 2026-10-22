@@ -49,6 +49,7 @@ var _cooldown := {}            # data object -> seconds before it can be hit aga
 var _player_hit_cd := 0.0
 var _wrecks: Array[Node3D] = []
 var _fixtures := {}            # fixture key -> static body RID (benches, shelters, signal poles)
+var _pending: Array = []      # [key, kind, flat xform] still to be made
 var _fixture_shapes := {}      # shared shape resources, kept alive while bodies use them
 var _fixture_key := ""
 var _fixture_timer := 0.0
@@ -60,6 +61,7 @@ var _fixture_at := Vector3.INF  # flat point the fixtures were gathered round (I
 # hundreds of CollisionShape3D children still cost 66-86 ms on the laptop (msp 0.4.1).
 const FIXTURE_RADIUS := 140.0
 const FIXTURE_MOVE := 50.0  # rebuild after the player has gone this far
+const FIXTURE_BUDGET_MS := 0.8  # new fixture bodies are made a few at a time (driving hitch)
 
 
 func setup(street_mode: Node) -> void:
@@ -106,6 +108,8 @@ func _physics_process(dt: float) -> void:
 	if _fixture_timer <= 0.0:
 		_fixture_timer = 1.0
 		_check_fixtures()
+	if not _pending.is_empty():
+		_add_pending(FIXTURE_BUDGET_MS)
 	if street == null or traffic == null or not street.active:
 		_idle()
 		return
@@ -195,14 +199,28 @@ func rebuild_fixtures(at := Vector3.INF) -> void:
 		if not want.has(k):
 			PhysicsServer3D.free_rid(_fixtures[k])
 			_fixtures.erase(k)
+	_pending.clear()
+	for k in want:
+		if not _fixtures.has(k):
+			_pending.append([k, want[k][0], want[k][1]])
+	if not at.is_finite():
+		_add_pending(INF)   # the whole city at once (tests)
+
+
+func _add_pending(budget_ms: float) -> void:
+	## Make queued fixture bodies until the budget is spent; the rest wait for the next
+	## physics frame. Nearest first would be nicer, but the queue drains in a few frames.
 	if not is_inside_tree():
 		return
 	var space := get_world_3d().space
-	for k in want:
+	var t0 := Time.get_ticks_usec()
+	while not _pending.is_empty():
+		var job: Array = _pending.pop_back()
+		var k: Vector4i = job[0]
 		if _fixtures.has(k):
 			continue
-		var kind: int = want[k][0]
-		var xf: Transform3D = want[k][1]
+		var kind: int = job[1]
+		var xf: Transform3D = job[2]
 		var body := PhysicsServer3D.body_create()
 		PhysicsServer3D.body_set_mode(body, PhysicsServer3D.BODY_MODE_STATIC)
 		PhysicsServer3D.body_set_collision_layer(body, 1)
@@ -218,6 +236,8 @@ func rebuild_fixtures(at := Vector3.INF) -> void:
 				_add_shape(body, "pole", Transform3D(Basis.IDENTITY, xf.origin + Vector3(0, 1.8, 0)))
 		PhysicsServer3D.body_set_space(body, space)
 		_fixtures[k] = body
+		if (Time.get_ticks_usec() - t0) * 0.001 > budget_ms:
+			break
 
 
 ## How many fixture bodies stand now (for tests).
@@ -235,6 +255,7 @@ func _add_shape(body: RID, shape: String, flat_xf: Transform3D) -> void:
 
 
 func _clear_fixtures() -> void:
+	_pending.clear()
 	for k in _fixtures:
 		PhysicsServer3D.free_rid(_fixtures[k])
 	_fixtures.clear()

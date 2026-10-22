@@ -498,6 +498,7 @@ func _update_detail() -> void:
 
 func _on_street_entered() -> void:
 	day_night.set_view_distance(30.0)
+	day_night.set_street_view(true)
 	_set_view_detail(true)
 	_hero_detail()
 	day_night.exposure_scale = 1.25
@@ -510,6 +511,7 @@ func _on_street_exited() -> void:
 	cam.set_process(true)
 	cam.set_process_unhandled_input(true)
 	day_night.set_view_distance(cam.dist)
+	day_night.set_street_view(false)
 	_set_view_detail(false)
 	day_night.exposure_scale = 1.0
 	day_night.ambient_scale = 1.0

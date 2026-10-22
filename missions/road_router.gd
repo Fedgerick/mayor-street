@@ -8,15 +8,32 @@ extends RefCounted
 var city: City
 var _field_from := Vector2i(-1, -1)
 var _field := PackedInt32Array()  # parent index per cell for the last BFS, -1 unvisited
+var _dist := {}      # from cell -> reachable() field, until the roads change
+var _access := {}    # building id -> access_cell(), until the roads change
+
+const DIST_CACHE := 48   # distance fields kept (msp: 6,912 cells each, ~28 KB)
 
 
 func _init(c: City) -> void:
 	city = c
-	c.cells_changed.connect(func(_r): _field_from = Vector2i(-1, -1))
+	c.cells_changed.connect(func(_r) -> void:
+		_field_from = Vector2i(-1, -1)
+		_dist.clear()
+		_access.clear())
 
 
 func access_cell(b: Dictionary) -> Vector2i:
 	## The road tile a building opens onto: the nearest road cell touching its footprint.
+	var key: int = b.get("id", -1)
+	if key >= 0 and _access.has(key):
+		return _access[key]
+	var cell := _access_cell(b)
+	if key >= 0:
+		_access[key] = cell
+	return cell
+
+
+func _access_cell(b: Dictionary) -> Vector2i:
 	var best := Vector2i(-1, -1)
 	var best_d := 1 << 30
 	var center := Vector2(b.x + b.size * 0.5, b.y + b.size * 0.5)
@@ -92,27 +109,76 @@ func route(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 
 
 func reachable(from: Vector2i) -> PackedInt32Array:
-	## Road distance in tiles from `from` to every cell, -1 where unreachable.
+	## Road distance in tiles from `from` to every cell, -1 where unreachable. Cached until
+	## the roads change: mission offers ask for the same few fields again and again.
+	## Callers only read the field.
+	if _dist.has(from):
+		return _dist[from]
+	if _dist.size() >= DIST_CACHE:
+		_dist.erase(_dist.keys()[0])
+	var f := _reachable(from)
+	_dist[from] = f
+	return f
+
+
+func _reachable(from: Vector2i) -> PackedInt32Array:
+	# Plain locals and the road array itself: this runs for every mission offer.
+	var w := City.W
+	var h := City.H
+	var wrap := Planet.on
+	var road := city.road
 	var dist := PackedInt32Array()
-	dist.resize(City.W * City.H)
+	dist.resize(w * h)
 	dist.fill(-1)
 	if not city.is_road(from.x, from.y):
 		return dist
 	var start := city.idx(from.x, from.y)
 	dist[start] = 0
-	var queue := PackedInt32Array([start])
+	var queue := PackedInt32Array()
+	queue.resize(w * h)
+	queue[0] = start
+	var tail := 1
 	var head := 0
-	while head < queue.size():
+	while head < tail:
 		var i := queue[head]
 		head += 1
-		var x := i % City.W
-		var y := i / City.W
-		for d: Vector2i in City.DIRS:
-			if city.is_road(x + d.x, y + d.y):
-				var j := city.idx(x + d.x, y + d.y)
-				if dist[j] == -1:
-					dist[j] = dist[i] + 1
-					queue.append(j)
+		var x := i % w
+		var y := i / w
+		var nd := dist[i] + 1
+		var j := 0
+		# E, W (wrapping round the planet), S, N.
+		if x + 1 < w:
+			j = i + 1
+		elif wrap:
+			j = i + 1 - w
+		else:
+			j = -1
+		if j >= 0 and road[j] == 1 and dist[j] == -1:
+			dist[j] = nd
+			queue[tail] = j
+			tail += 1
+		if x > 0:
+			j = i - 1
+		elif wrap:
+			j = i - 1 + w
+		else:
+			j = -1
+		if j >= 0 and road[j] == 1 and dist[j] == -1:
+			dist[j] = nd
+			queue[tail] = j
+			tail += 1
+		if y + 1 < h:
+			j = i + w
+			if road[j] == 1 and dist[j] == -1:
+				dist[j] = nd
+				queue[tail] = j
+				tail += 1
+		if y > 0:
+			j = i - w
+			if road[j] == 1 and dist[j] == -1:
+				dist[j] = nd
+				queue[tail] = j
+				tail += 1
 	return dist
 
 
