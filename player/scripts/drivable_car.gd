@@ -111,6 +111,7 @@ var _seat := Vector3.ZERO        # driver's hip, body space (from the car kit's 
 var _dmg_mesh := 0
 var damage_stage := 0            # 0 clean, 1 dented, 2 smashed (smoking), 3 burnt out
 static var _spec_cache := {}
+static var _brake_mat: StandardMaterial3D   # shared by the box cars' brake lights
 
 
 func _ready() -> void:
@@ -222,25 +223,24 @@ func _build_visual() -> void:
 	# Brake lights and headlight beams (only lit while driven).
 	var hl := _aabb.size.z * 0.5
 	var hw := _aabb.size.x * 0.5
-	var bmat := StandardMaterial3D.new()
-	bmat.albedo_color = Color(1, 0.1, 0.08)
-	bmat.emission_enabled = true
-	bmat.emission = Color(1, 0.08, 0.05)
-	bmat.emission_energy_multiplier = 4.0
-	for s in [-1, 1]:
-		var b := MeshInstance3D.new()
-		var q := BoxMesh.new()
-		q.size = Vector3(0.38, 0.18, 0.04)
-		b.mesh = q
-		b.material_override = bmat
-		b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		b.position = Vector3(s * (hw - 0.3), (0.75 if model != "car_truck" else 0.95) - 0.45, -hl - 0.04)
-		b.visible = false
-		_tilt.add_child(b)
-		if not _kit_shader:   # the kit shader lights its own tail lamps
+	if not _kit_shader:   # the kit shader lights its own tail lamps: no meshes to make and free
+		if _brake_mat == null:
+			_brake_mat = StandardMaterial3D.new()
+			_brake_mat.albedo_color = Color(1, 0.1, 0.08)
+			_brake_mat.emission_enabled = true
+			_brake_mat.emission = Color(1, 0.08, 0.05)
+			_brake_mat.emission_energy_multiplier = 4.0
+		for s in [-1, 1]:
+			var b := MeshInstance3D.new()
+			var q := BoxMesh.new()
+			q.size = Vector3(0.38, 0.18, 0.04)
+			b.mesh = q
+			b.material_override = _brake_mat
+			b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			b.position = Vector3(s * (hw - 0.3), (0.75 if model != "car_truck" else 0.95) - 0.45, -hl - 0.04)
+			b.visible = false
+			_tilt.add_child(b)
 			_brake_lights.append(b)
-		else:
-			b.queue_free()
 	var spot := SpotLight3D.new()
 	spot.name = "Headlights"
 	spot.position = Vector3(0, 0.8, hl + 0.1)

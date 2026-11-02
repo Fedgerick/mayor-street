@@ -55,7 +55,7 @@ func _run() -> void:
 	for nm in counts:
 		draws += (d._mmis[nm].multimesh.mesh as Mesh).get_surface_count()
 	print("props: ", counts)
-	print("decals: ", d._decal_mmi.multimesh.instance_count, ", colliders: ", d._body.get_child_count())
+	print("decals: ", d._decal_mmi.multimesh.instance_count, ", colliders: ", d._body.get_children().filter(func(c): return not c.disabled).size())
 	print("dressed %d props, %dk triangles, about %d draw calls (+ shadows); first build %.1f ms, rebuild %.1f ms" % [
 		d.prop_count, tris / 1000, draws + 1, first, again])
 	check(d.prop_count > 300, "the street around downtown gets dressed")

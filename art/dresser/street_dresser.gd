@@ -168,22 +168,61 @@ func _process(_delta: float) -> void:
 	fwd.y = 0.0
 	var at := eye + (fwd.normalized() * 25.0 if fwd.length() > 0.01 else Vector3.ZERO)
 	at.y = 0.0
+	if _building:
+		return
 	if _dirty or Planet.fdist(at, center) > rebuild_distance:
-		rebuild(at)
+		if prop_count == 0:
+			rebuild(at)          # nothing dressed yet: do it now, not over several frames
+		else:
+			_rebuild_spread(at)
 
 
 func rebuild(at: Vector3) -> void:
-	## Re-dress around a point. Called on its own as the camera moves; tests call it directly.
+	## Re-dress around a point, all at once. Tests call it directly; play uses
+	## _rebuild_spread, which does the same over a few frames.
 	## Everything here is flat map metres; _fill and _build_collision put it on the ball.
+	var g := _start(at)
+	_gather_rows(g, g.y0, g.y1)
+	_apply(g)
+
+
+const ROWS_PER_FRAME := 8   # gathering ~35 rows of cells cost 6-8 ms in one frame (0.4.6 benchmark: 29 ms on the laptop)
+var _building := false
+
+
+func _rebuild_spread(at: Vector3) -> void:
+	_building = true
+	center = at          # so _process doesn't ask again while this runs
+	_dirty = false
+	var g := _start(at)
+	var y := int(g.y0)
+	while y <= int(g.y1):
+		_gather_rows(g, y, mini(y + ROWS_PER_FRAME - 1, g.y1))
+		y += ROWS_PER_FRAME
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return
+	_apply(g)
+	_building = false
+
+
+func _start(at: Vector3) -> Dictionary:
 	center = at
 	_dirty = false
-	var groups := {}
-	var decals: Array = []
 	var cr := Vector2i(floori(at.x / City.TILE), floori(at.z / City.TILE))
 	var reach := int(ceil(200.0 / City.TILE))
-	var colliders: Array = []
-	prop_count = 0
-	for y in range(cr.y - reach, cr.y + reach + 1):
+	return {"at": at, "cr": cr, "reach": reach, "y0": cr.y - reach, "y1": cr.y + reach,
+		"groups": {}, "decals": [], "colliders": []}
+
+
+func _gather_rows(g: Dictionary, ya: int, yb: int) -> void:
+	var at: Vector3 = g.at
+	var cr: Vector2i = g.cr
+	var reach: int = g.reach
+	var groups: Dictionary = g.groups
+	var decals: Array = g.decals
+	var colliders: Array = g.colliders
+	for y in range(ya, yb + 1):
 		for xx in range(cr.x - reach, cr.x + reach + 1):
 			var x := posmod(xx, City.W) if Planet.on else xx  # msp: wrap across the seam
 			if not city.inside(x, y):
@@ -209,15 +248,21 @@ func rebuild(at: Vector3) -> void:
 					var q: Vector3 = dd[1].origin
 					if Planet.fdist(at, q) < DECAL_RADIUS:
 						decals.append(dd)
+
+
+func _apply(g: Dictionary) -> void:
+	var groups: Dictionary = g.groups
+	center = g.at
+	prop_count = 0
 	for nm in _mmis:
 		if not groups.has(nm):
 			_mmis[nm].multimesh.instance_count = 0
 	for nm in groups:
 		_fill(nm, groups[nm])
 		prop_count += groups[nm].size()
-	_fill_decals(decals)
-	_build_collision(colliders)
-	dressed.emit(at, prop_count)
+	_fill_decals(g.decals)
+	_build_collision(g.colliders)
+	dressed.emit(g.at, prop_count)
 
 
 func _fill(nm: String, items: Array) -> void:
@@ -239,12 +284,15 @@ func _fill(nm: String, items: Array) -> void:
 		add_child(mmi)
 		_mmis[nm] = mmi
 	var m := mmi.multimesh
+	var buf := PackedFloat32Array()
+	buf.resize(items.size() * 20)
+	var o := 0
+	for it in items:
+		_pack(buf, o, Planet.xf_rigid(it[1]), it[2], it[3])
+		o += 20
 	m.instance_count = items.size()
-	for k in items.size():
-		var it: Array = items[k]
-		m.set_instance_transform(k, Planet.xf_rigid(it[1]))
-		m.set_instance_color(k, it[2])
-		m.set_instance_custom_data(k, it[3])
+	if not items.is_empty():
+		m.buffer = buf   # one upload, not three calls per prop
 	# Bounds for culling: the whole dressed area.
 	mmi.custom_aabb = _bounds(210.0, 40.0)
 
@@ -269,13 +317,26 @@ func _fill_decals(items: Array) -> void:
 		_decal_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_decal_mmi)
 	var m := _decal_mmi.multimesh
+	var buf := PackedFloat32Array()
+	buf.resize(items.size() * 20)
+	var o := 0
+	for d in items:
+		_pack(buf, o, Planet.xf_rigid(d[1]), d[2], Color(float(d[0]), d[3], 0, 0))
+		o += 20
 	m.instance_count = items.size()
-	for k in items.size():
-		var d: Array = items[k]
-		m.set_instance_transform(k, Planet.xf_rigid(d[1]))
-		m.set_instance_color(k, d[2])
-		m.set_instance_custom_data(k, Color(float(d[0]), d[3], 0, 0))
+	if not items.is_empty():
+		m.buffer = buf
 	_decal_mmi.custom_aabb = _bounds(80.0, 30.0)
+
+
+static func _pack(buf: PackedFloat32Array, o: int, xf: Transform3D, col: Color, custom: Color) -> void:
+	## One MultiMesh instance (TRANSFORM_3D + colour + custom data) in buffer layout.
+	var b := xf.basis
+	buf[o] = b.x.x; buf[o + 1] = b.y.x; buf[o + 2] = b.z.x; buf[o + 3] = xf.origin.x
+	buf[o + 4] = b.x.y; buf[o + 5] = b.y.y; buf[o + 6] = b.z.y; buf[o + 7] = xf.origin.y
+	buf[o + 8] = b.x.z; buf[o + 9] = b.y.z; buf[o + 10] = b.z.z; buf[o + 11] = xf.origin.z
+	buf[o + 12] = col.r; buf[o + 13] = col.g; buf[o + 14] = col.b; buf[o + 15] = col.a
+	buf[o + 16] = custom.r; buf[o + 17] = custom.g; buf[o + 18] = custom.b; buf[o + 19] = custom.a
 
 
 func _bounds(half: float, tall: float) -> AABB:
@@ -318,20 +379,32 @@ func _make_shapes() -> void:
 
 
 func _build_collision(colliders: Array) -> void:
-	if _body:
-		_body.queue_free()
-	_body = StaticBody3D.new()
-	_body.name = "DressingCollision"
-	_body.collision_layer = 1
-	_body.collision_mask = 0
+	## One body kept for good; its shape nodes are reused (moved, re-shaped) and the
+	## spare ones switched off, rather than a new body of ~160 nodes per rebuild.
+	if _body == null:
+		_body = StaticBody3D.new()
+		_body.name = "DressingCollision"
+		_body.collision_layer = 1
+		_body.collision_mask = 0
+		add_child(_body)
+	var kids := _body.get_children()
+	var i := 0
 	for c in colliders:
 		var s: Array = _shapes[c[0]]
-		var cs := CollisionShape3D.new()
-		cs.shape = s[0]
+		var cs: CollisionShape3D
+		if i < kids.size():
+			cs = kids[i]
+		else:
+			cs = CollisionShape3D.new()
+			_body.add_child(cs)
+		i += 1
 		var xf: Transform3D = Planet.xf_rigid(c[1])
+		if cs.shape != s[0]:
+			cs.shape = s[0]
 		cs.transform = Transform3D(xf.basis.orthonormalized(), xf * s[1])
-		_body.add_child(cs)
-	add_child(_body)
+		cs.disabled = false
+	for k in range(i, kids.size()):
+		(kids[k] as CollisionShape3D).disabled = true
 
 
 # ------------------------------------------------------------- placement ---
