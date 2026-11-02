@@ -301,7 +301,7 @@ func _carjack(tc: Object) -> void:
 	goodness_action.emit(&"steal_car")
 	await get_tree().physics_frame
 	# Step to the door facing the car, then the haul-out.
-	var door := c.exit_point() - Planet.up(c.global_position) * 0.2
+	var door := on_ground(c.exit_point() - Planet.up(c.global_position) * 0.2)
 	var start := player.global_position
 	var side := Planet.to_local(c.global_position, -c.global_basis.x)
 	var face := atan2(-side.x, -side.z)
@@ -343,6 +343,8 @@ func _enter_car(c: DrivableCar) -> void:
 		return
 	switching = true
 	car = c
+	if c.global_basis.y.dot(Planet.up(c.global_position)) < 0.5:
+		c.reset_upright()   # on its side or roof: the door (and so the player) would be underground
 	if c.get_meta("parked", false) and not c.get_meta("player_owned", false):
 		var p := _progress()
 		if p and int(p.counts.get("lock_picks", 0)) > 0:
@@ -360,7 +362,7 @@ func _enter_car(c: DrivableCar) -> void:
 	vehicle_changed.emit(c)
 	player.set_puppet(true)
 	player.rig.spring.add_excluded_object(c.get_rid())   # don't let the car squash the camera
-	var door := c.exit_point() - Planet.up(c.global_position) * 0.2
+	var door := on_ground(c.exit_point() - Planet.up(c.global_position) * 0.2)
 	var seat := c.seat_point()
 	var yaw := c.heading_yaw()
 	# A quick turn-and-step to the door if we're not already there.
@@ -417,7 +419,8 @@ func _leave_car() -> void:
 	q.exclude = [c.get_rid()]
 	var door_side := true
 	var up := Planet.up(c.global_position)
-	for cand in [p, p - c.global_basis.x * (c._aabb.size.x + 1.4), c.global_position + up * (c._aabb.size.y + 1.0)]:
+	for cand: Vector3 in [p, p - c.global_basis.x * (c._aabb.size.x + 1.4), c.global_position + up * (c._aabb.size.y + 1.0)]:
+		cand = on_ground(cand)
 		q.transform = Transform3D(Planet.basis(cand), cand + up * 0.9)
 		if space.intersect_shape(q, 1).is_empty():
 			p = cand
@@ -451,6 +454,86 @@ func _leave_car() -> void:
 	player.rig.spring.remove_excluded_object(c.get_rid())
 	player.set_controls(active or busy)
 	switching = false
+
+
+# ------------------------------------------------------------- under the map ---
+# msp's ground is a one-sided trimesh: a car shoved through it (a hard landing, a solver
+# push-out) falls into the planet, too fast to get out of (Fedge, msp 0.4.5). Anything
+# that ends up well below the surface is put back on the nearest road.
+
+const UNDER_DEPTH := 3.0      # metres below the ground before it counts as fallen through
+var _rescue_t := 0.0
+var rescues := 0              # times the player was put back (for tests)
+
+
+func depth_below_ground(p: Vector3) -> float:
+	## How far a world point is under the ground (negative above it). msp only.
+	if not Planet.on or city == null:
+		return -INF
+	var f := Planet.flat(p)
+	return Planet.R + city.terrain_height(f.x, f.z) - p.length()
+
+
+## `p` lifted onto the ground if it is under it. A one-sided ground lets a player put
+## even a little below it fall straight through (msp: a door point under a tilted car).
+func on_ground(p: Vector3) -> Vector3:
+	if not Planet.on:
+		return Vector3(p.x, maxf(p.y, 0.0), p.z)
+	var d := depth_below_ground(p)
+	return p + Planet.up(p) * (d + 0.05) if d > -0.05 else p
+
+
+func _rescue_if_under() -> void:
+	if switching or not Planet.on:
+		return
+	if car != null and is_instance_valid(car):
+		if depth_below_ground(car.global_position) > UNDER_DEPTH:
+			var at := _road_point_near(Planet.flat(car.global_position))
+			var fw := car.forward()
+			var up := Planet.up(at)
+			fw = fw - up * fw.dot(up)
+			if fw.length() < 0.1:
+				fw = Planet.basis(at).z
+			fw = fw.normalized()
+			car.global_transform = Transform3D(Basis(up.cross(fw), up, fw), at)   # reset_upright lifts it 1 m
+			car.linear_velocity = Vector3.ZERO
+			car.angular_velocity = Vector3.ZERO
+			car.reset_upright()
+			rescues += 1
+			hud.note("Back on the road")
+	elif player != null and not player.in_vehicle and seating.riding == null and not seating.busy:
+		if depth_below_ground(player.global_position) > UNDER_DEPTH:
+			player.place(sidewalk_spawn(_road_point_near(Planet.flat(player.global_position))), player.rig.yaw)
+			player.velocity = Vector3.ZERO
+			rescues += 1
+			hud.note("Back on the street")
+	# Cars nobody is in that fell through are only in the way: let them go.
+	for v in get_tree().get_nodes_in_group("vehicles"):
+		if v != car and v is DrivableCar and v.driver == null and depth_below_ground(v.global_position) > 20.0:
+			v.queue_free()
+
+
+func _road_point_near(flat: Vector3) -> Vector3:
+	## World point on the surface at the nearest road cell's centre (or straight above
+	## `flat` when there's no road near).
+	var o := city.flat_to_cell(flat)
+	for r in 8:
+		var best := Vector2i(-1, -1)
+		var best_d := INF
+		for y in range(o.y - r, o.y + r + 1):
+			for x in range(o.x - r, o.x + r + 1):
+				if maxi(absi(x - o.x), absi(y - o.y)) != r or not city.is_road(x, y):
+					continue
+				var d := Planet.fdist(city.cell_center(x, y), flat)
+				if d < best_d:
+					best_d = d
+					best = Vector2i(posmod(x, City.W), y)
+		if best.x >= 0:
+			var c := city.cell_center(best.x, best.y)
+			c.y = city.terrain_height(c.x, c.z)
+			return Planet.place(c)
+	var g := Vector3(flat.x, city.terrain_height(flat.x, flat.z), flat.z)
+	return Planet.place(g)
 
 
 func spawn_car(model: String, pos: Vector3, yaw: float, color: Color) -> DrivableCar:
@@ -598,6 +681,10 @@ func _process(delta: float) -> void:
 		heat.report_seen(Vector3.ZERO, suspect_position())
 	if not active:
 		return
+	_rescue_t -= delta
+	if _rescue_t <= 0.0:
+		_rescue_t = 0.25
+		_rescue_if_under()
 	if down:
 		_hint.text = ""
 		_speedo.text = ""
@@ -1035,7 +1122,7 @@ func _take_cash(fee: Array, reason: String) -> int:
 
 func _eject(c: DrivableCar) -> void:
 	## Out of the car at once (blown up, or the police drag you out).
-	var p := c.exit_point()
+	var p := on_ground(c.exit_point())
 	car = null
 	c.set_driver(null)
 	player.set_in_vehicle(false)
