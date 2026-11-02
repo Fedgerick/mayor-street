@@ -161,6 +161,10 @@ func check_milestones() -> void:
 	while t + 1 < Catalog.TIERS.size() and Catalog.goal_met(t + 1, city.population, income):
 		t += 1
 	reach_tier(t)
+	var pops := Catalog.pop_unlocks()
+	for id in pops:
+		if city.population >= int(pops[id]) and not unlocks.has(id):
+			unlock(id, "pop:%d" % pops[id])
 
 
 # --------------------------------------------------------------------- stats ---

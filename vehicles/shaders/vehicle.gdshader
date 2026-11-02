@@ -33,6 +33,7 @@ const int P_BURNT = 14;
 const int P_GLASS_OPAQUE = 15;
 const int P_SIGN = 16;
 const int P_REVERSE = 17;
+const int P_BEACON = 18;
 
 const vec3 PALETTE[16] = vec3[16](
 	vec3(0.025, 0.025, 0.028),  // 0 black
@@ -201,6 +202,15 @@ void fragment() {
 		alb = PALETTE[pal];
 		r = 0.4;
 		emit = PALETTE[pal] * (0.15 + lit_k * 1.6);
+	} else if (part == P_BEACON) {
+		// Amber roof beacon: slow flash while the siren flag is set, dim otherwise.
+		alb = vec3(0.8, 0.4, 0.04);
+		r = 0.1;
+		float on = 0.0;
+		if ((flags & 1) != 0) {
+			on = step(fract(TIME * 1.8 + seed), 0.5);
+		}
+		emit = vec3(1.0, 0.45, 0.03) * (0.1 + lit_k * 0.3 + on * 9.0);
 	} else if (part == P_REVERSE) {
 		alb = vec3(0.8);
 		r = 0.1;

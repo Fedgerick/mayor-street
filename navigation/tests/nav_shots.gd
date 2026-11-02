@@ -50,8 +50,8 @@ func _run() -> void:
 	var start := gps.nearest_road(city.world_to_cell(me))
 	var goal := start
 	var best := 0
-	for y in City.SIZE:
-		for x in City.SIZE:
+	for y in City.H:
+		for x in City.W:
 			if city.is_road(x, y):
 				var d := absi(x - start.x) + absi(y - start.y)
 				if d > best and d < 16 and absi(x - start.x) > 4 and absi(y - start.y) > 4:
@@ -61,7 +61,7 @@ func _run() -> void:
 	await _frames(30)
 	await _shot("minimap_foot")
 	# Far target: pinned to the rim.
-	nav.mark("mission:demo", city.cell_center(City.SIZE - start.x, City.SIZE - start.y), {"color": Color(0.95, 0.3, 0.25)})
+	nav.mark("mission:demo", city.cell_center(City.W - start.x, City.H - start.y), {"color": Color(0.95, 0.3, 0.25)})
 	await _frames(10)
 	await _shot("minimap_far")
 	nav.open_map()

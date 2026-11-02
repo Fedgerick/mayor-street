@@ -21,15 +21,14 @@ const POWER_LINE := Color(0.62, 0.55, 0.28)
 
 
 static func paint(city: City) -> Image:
-	var n := City.SIZE * PX
-	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
-	paint_rect(img, city, Rect2i(0, 0, City.SIZE, City.SIZE))
+	var img := Image.create(City.W * PX, City.H * PX, false, Image.FORMAT_RGBA8)
+	paint_rect(img, city, Rect2i(0, 0, City.W, City.H))
 	return img
 
 
 ## Repaints the tiles in rect (grid cells) after the city changed there.
 static func paint_rect(img: Image, city: City, rect: Rect2i) -> void:
-	rect = rect.intersection(Rect2i(0, 0, City.SIZE, City.SIZE))
+	rect = rect.intersection(Rect2i(0, 0, City.W, City.H))
 	if rect.size.x <= 0 or rect.size.y <= 0:
 		return
 	var ids := {}

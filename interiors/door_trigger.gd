@@ -33,10 +33,11 @@ func _physics_process(_delta: float) -> void:
 			# toward it, or pressed up against it (walls zero the velocity there).
 			var inward := -global_basis.z
 			var yaw := p.facing_yaw()
-			var facing := Vector3(-sin(yaw), 0.0, -cos(yaw))
+			var facing := Planet.dir(p.global_position, Vector3(-sin(yaw), 0.0, -cos(yaw)))
 			if facing.dot(inward) < 0.6:
 				return
-			var v := Vector3(p.velocity.x, 0, p.velocity.z)
+			var up := Planet.up(p.global_position)
+			var v := p.velocity - up * p.velocity.dot(up)
 			var depth := to_local(p.global_position).z
 			if (v.length() > 0.8 and v.normalized().dot(inward) > 0.55) or depth < 0.7:
 				entered_by_player.emit(self)

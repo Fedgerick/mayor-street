@@ -107,7 +107,7 @@ func refresh_stations() -> void:
 		for st in sv.police_stations():
 			var p = st.get("road", st.get("center"))
 			if p is Vector3:
-				stations.append(city.world_to_cell(p))
+				stations.append(city.flat_to_cell(p))
 			elif st.get("cell") is Vector2i:
 				stations.append(st.cell)
 		if not stations.is_empty():
@@ -144,7 +144,7 @@ func stars() -> int:
 
 
 func suspect_pos() -> Vector3:
-	return suspect.suspect_position() if suspect else Vector3.ZERO
+	return Planet.flat(suspect.suspect_position()) if suspect else Vector3.ZERO  # world -> flat map
 
 
 ## Positions and headings of cars running sirens, for traffic to yield to.
@@ -219,7 +219,7 @@ func has_line_of_sight(a: Vector3, b: Vector3) -> bool:
 	var steps := int(dist / (City.TILE * 0.4)) + 1
 	for k in range(1, steps):
 		var t := float(k) / steps
-		var cell := city.world_to_cell(a.lerp(b, t))
+		var cell := city.flat_to_cell(a.lerp(b, t))
 		if not city.inside(cell.x, cell.y):
 			continue
 		if city.bld[city.idx(cell.x, cell.y)] >= 0:
@@ -261,7 +261,7 @@ func _spawn_cell() -> int:
 		var ang := rng.randf() * TAU
 		var r := rng.randf_range(150.0, 260.0)
 		var p := sp + Vector3(cos(ang), 0, sin(ang)) * r
-		var c := city.world_to_cell(p)
+		var c := city.flat_to_cell(p)
 		if not city.inside(c.x, c.y):
 			continue
 		var i := city.idx(c.x, c.y)
@@ -282,6 +282,7 @@ func _nearest_road(cell: Vector2i) -> int:
 
 
 func _visible(p: Vector3) -> bool:
+	p = Planet.place(p)
 	return camera != null and camera.is_inside_tree() and camera.is_position_in_frustum(p) \
 		and camera.global_position.distance_to(p) < 160.0
 
@@ -308,7 +309,7 @@ func _update_route(dt: float) -> void:
 		return
 	_route_timer = 0.5
 	var target_pos := suspect_pos() if seen or last_seen == Vector3.ZERO else last_seen
-	var tc := city.world_to_cell(target_pos)
+	var tc := city.flat_to_cell(target_pos)
 	var t := -1
 	if city.inside(tc.x, tc.y):
 		t = _nearest_road(tc)
@@ -511,13 +512,12 @@ func _run(o: Officer, dt: float) -> void:
 			o.speed = 0.0
 			officer_fired.emit(o.pos)
 			if rng.randf() < 0.45 - dist * 0.012:
-				suspect.damage_player(3.0 + _stars, o.pos)
+				suspect.damage_player(3.0 + _stars, Planet.place(o.pos))
 			if crowd:
 				crowd.panic(o.pos, 25.0, 8.0)
 	if o.model:
-		o.model.global_position = o.pos
-		if o.fwd.length_squared() > 0.01:
-			o.model.global_basis = Basis.looking_at(o.fwd, Vector3.UP)
+		var ob := Basis.looking_at(o.fwd, Vector3.UP) if o.fwd.length_squared() > 0.01 else Basis.IDENTITY
+		o.model.global_transform = Planet.xf_rigid(Transform3D(ob, o.pos))
 		o.model.animate(dt, o.speed, true, 0.0, 0.0)
 
 
@@ -525,7 +525,7 @@ func _run(o: Officer, dt: float) -> void:
 func _walk(p: Vector3, step: Vector3) -> Vector3:
 	for cand in [step, Vector3(step.x, 0, 0), Vector3(0, 0, step.z)]:
 		var q: Vector3 = p + cand
-		var c := city.world_to_cell(q)
+		var c := city.flat_to_cell(q)
 		if not city.inside(c.x, c.y) or city.bld[city.idx(c.x, c.y)] < 0:
 			q.y = 0.17 if not net.is_road(city.idx(c.x, c.y)) or _on_sidewalk(q) else 0.06
 			return q
@@ -533,7 +533,7 @@ func _walk(p: Vector3, step: Vector3) -> Vector3:
 
 
 func _on_sidewalk(q: Vector3) -> bool:
-	var c := city.world_to_cell(q)
+	var c := city.flat_to_cell(q)
 	var ctr := city.cell_center(c.x, c.y)
 	return absf(q.x - ctr.x) > 3.75 and absf(q.z - ctr.z) > 3.75
 
@@ -599,7 +599,7 @@ func render() -> void:
 	var eye := Vector3.ZERO
 	var has_eye := camera != null and camera.is_inside_tree()
 	if has_eye:
-		eye = camera.global_position
+		eye = Planet.flat(camera.global_position)
 	_draw.begin()
 	for c in cars:
 		var cu := VehicleKit.custom(c.siren, c.v < 0.5, c.parked and not c.officers.is_empty(), false, c.wheel, 0.0, c.seed)

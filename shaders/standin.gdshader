@@ -8,9 +8,11 @@ render_mode cull_back;
 
 varying vec3 wcol;
 varying flat float seed;
+varying vec3 wpos;
 
 void vertex() {
 	wcol = COLOR.rgb;
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	seed = UV2.x;
 }
 
@@ -27,11 +29,11 @@ void fragment() {
 		vec2 f = fract(cell);
 		glass = step(0.0, cell.y) * step(0.18, f.x) * step(f.x, 0.82) * step(0.22, f.y) * step(f.y, 0.8);
 		float rid = floor(cell.y) * 37.0 + floor(cell.x) + seed * 1000.0;
-		lit = glass * step(hash12(vec2(rid, 9.1)), window_lit);
+		lit = glass * step(hash12(vec2(rid, 9.1)), window_lit_at(wpos));
 		alb = mix(alb, vec3(0.16, 0.2, 0.25), glass * 0.8);
 	}
 	ALBEDO = alb;
 	ROUGHNESS = mix(0.85, 0.2, glass);
 	SPECULAR = mix(0.3, 0.6, glass);
-	EMISSION = lit * night * vec3(1.0, 0.78, 0.5) * 1.6;
+	EMISSION = lit * night_at(wpos) * vec3(1.0, 0.78, 0.5) * 1.6;
 }

@@ -1,6 +1,6 @@
 # vehicles/: the round-3 car kit
 
-Twelve vehicles built by a Blender script, with see-through glass and a driver, real
+Thirteen vehicles built by a Blender script, with see-through glass and a driver, real
 wheels, working lights and sirens, three damage stages and three LODs. Owned by the Cars
 thread.
 
@@ -18,6 +18,7 @@ thread.
 | car_firetruck | crew cab, lockers, ladder | fixed | yes | 7.7k / 1.7k / 426 |
 | car_garbage | green garbage truck | fixed | | 7.1k / 1.6k / 346 |
 | car_bus | 11.5 m city bus with passengers | fixed | | 7.9k / 1.5k / 368 |
+| car_tow | flatbed tow truck, amber beacons flash with the siren flag | fixed | beacon | 6.4k / 1.4k / 342 |
 
 Each car is **two draw calls** at LOD0 (body + glass) and **one** at LOD1 and LOD2: every
 part's look is packed in the UVs and drawn by `shaders/vehicle.gdshader`.
@@ -28,6 +29,7 @@ part's look is packed in the UVs and drawn by `shaders/vehicle.gdshader`.
 - `assets/<model>.glb`, `<model>_lod1.glb`, `<model>_lod2.glb`, `<model>_dmg1..3.glb`, `assets/specs.json`.
 - `vehicle_kit.gd` (class `VehicleKit`): loading, materials, specs, custom data, `install(kit)`.
 - `shaders/vehicle.gdshader`, `shaders/vehicle_glass.gdshader`.
+- `tow_service.gd` (class `TowService`): the tow trucks, see below. `tests/test_tow.gd` tests it.
 - `tests/test_vehicles.gd`: `godot --headless --path . -s res://vehicles/tests/test_vehicles.gd`.
 - `tools/preview.gd`: look-dev shots (`--shots=DIR --only=gallery,closeup,damage,lods,night,police,service,lineup,old`).
 
@@ -84,3 +86,30 @@ brake, lights automatic.
 - **Missions (missions/)**: `CAR_NAMES` can add "sports car", "pickup", "taxi",
   "police cruiser", "ambulance", "fire engine", "garbage truck", "bus". `car_truck` is a
   box delivery truck (the new pickup is `car_pickup`).
+
+## Tow trucks (TowService)
+
+`vehicles/tow_service.gd` sends a `car_tow` flatbed for cars that are stuck or broken. Every
+second it looks at the physics cars (group `vehicles`) within 150 m of the player. A car with
+no driver that has been burnt out for 8 s, upside down for 6 s, or smashed (damage stage 2)
+for 20 s gets one. The truck appears on a road 6 to 10 cells away (farthest from the player),
+drives along the city's roads with its beacons flashing, parks beside the car, winches it up
+on to the deck (the car is frozen and moved by the service), and drives off; once it is 160 m
+away (or a minute later) truck and car are removed. One truck at a time, 8 s apart. Cars
+longer than 5.8 m (bus, fire truck), the car the player is driving, and cars more than 20 m
+from any road are left alone. Getting into a car while a truck is coming or loading cancels
+the pickup. The truck is one MultiMesh instance with LODs, plus a kinematic box on layer 16
+(the AI-car layer) so the player and their car can't pass through it.
+
+Wiring (City sandbox, `scripts/main.gd`, after `street` and `life` exist):
+
+```gdscript
+var tow := TowService.new()
+tow.setup(city, street)
+add_child(tow)
+```
+
+`street` needs `car`, `active` and `focus_point()` (StreetMode has them). API: `request(car)`
+sends a truck now (missions), `enabled`, `busy()`, signal `towed(model)`, counters `sent`
+and `towed_count`. Hooks left for other threads: a siren or engine loop on the truck, and a
+fee or cash line for the towed car's owner.

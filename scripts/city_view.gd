@@ -4,6 +4,12 @@ extends Node3D
 ## and trees. Also owns the data textures the shaders read (zones, traffic, lamps).
 
 const CHUNK := 4  # draw cells (PERFORMANCE.md): small so shadow and view culling skip most of the city
+# msp: the planet has over twice the island's cells, and every (chunk, model) pair is its
+# own MultiMesh buffer. At 4 cells that was ~3,600 buffers, past what some Windows drivers
+# allow (Fedge's AMD laptop failed buffer creation, then lost the device). Bigger chunks
+# there; horizon culling (cull()) still skips the far side of the ball.
+const PLANET_CHUNK := 8
+var _chunk := CHUNK  # set in setup: PLANET_CHUNK on msp
 const TERRAIN_MARGIN := 640.0
 const TERRAIN_STEP := 6.0
 const GROW_TIME := 1.4
@@ -35,6 +41,8 @@ var preview_img: Image
 var preview_tex: ImageTexture
 var lamp_positions := {}  # Vector2i chunk -> Array[Vector3] (lamp heads, used by real lights)
 var _map_dirty := false
+var _detail_dirty := {}   # chunks dirty only because they switch detail (the map is unchanged)
+const REBUILD_MS := 3.0
 var services: Object = null  # CityServices: buildings without power go dark at night
 var _tops := {}  # mesh name -> its highest vertex
 var _beacon_mesh: SphereMesh
@@ -42,33 +50,54 @@ var _beacon_mesh: SphereMesh
 # boxes (PERFORMANCE.md): main sets it per view and graphics level. 0 keeps full detail.
 var detail_distance := 0.0
 var _standin_mat: ShaderMaterial
+## msp only: the sphere terrain's collision, and chunks behind the horizon are hidden.
+var terrain_body: StaticBody3D
+const TALLEST := 90.0  # metres: a chunk stays drawn while anything this tall could peek over the horizon
+var _cull_t := 0.0
+## msp: only chunks near the camera hold their full-detail MultiMeshes; the rest keep roads,
+## beacons and the box stand-in. Every MultiMesh is GPU buffers whether it is drawn or not,
+## and a whole planet of them is past what Fedge's AMD driver hands out.
+var _full := {}       # Vector2i -> true while the chunk is built in full detail
+var _want_full := {}  # Vector2i -> what cull() last decided
+const FULL_IN := 60.0    # metres past detail_distance where a chunk gets full detail
+const FULL_OUT := 160.0  # ... and where it drops back to the stand-in (hysteresis)
+## msp: full-detail chunks further than this from the camera stop casting sun shadows. The
+## street's shadow maps reach 140 m, and the ball tips far buildings away from the sun's
+## view anyway; on Fedge's laptop shadows cost 5.8 ms of GPU, most of it far casters.
+var shadow_reach := 0.0  # 0: every chunk casts
+var _shadowed := {}      # Vector2i -> whether its MultiMeshes cast shadows now
 
 
 func setup(c: City) -> void:
 	city = c
+	_chunk = PLANET_CHUNK if Planet.on else CHUNK
 	city.cells_changed.connect(_on_cells_changed)
 	city.building_added.connect(_on_building_added)
 	city.building_removed.connect(_on_building_removed)
 	city.day_passed.connect(func(): _map_dirty = true)
 	_build_road_table()
 	_make_textures()
-	_build_terrain()
-	_build_water()
-	for cy in ceili(float(City.SIZE) / CHUNK):
-		for cx in ceili(float(City.SIZE) / CHUNK):
+	if Planet.on:
+		terrain_body = PlanetGround.build(self, City.H, city.terrain_height, city.landness, city.ice)
+	else:
+		_build_terrain()
+		_build_water()
+	for cy in ceili(float(City.H) / _chunk):
+		for cx in ceili(float(City.W) / _chunk):
 			dirty[Vector2i(cx, cy)] = true
+	_detail_dirty.clear()
 	refresh_map()
 
 
 # ---------------------------------------------------------------- textures ---
 
 func _make_textures() -> void:
-	var n := City.SIZE
-	city_img = Image.create_empty(n, n, false, Image.FORMAT_RGBA8)
+	var n := City.W
+	city_img = Image.create_empty(City.W, City.H, false, Image.FORMAT_RGBA8)
 	city_tex = ImageTexture.create_from_image(city_img)
-	lamp_img = Image.create_empty(n, n, false, Image.FORMAT_RGBA8)
+	lamp_img = Image.create_empty(City.W, City.H, false, Image.FORMAT_RGBA8)
 	lamp_tex = ImageTexture.create_from_image(lamp_img)
-	preview_img = Image.create_empty(n, n, false, Image.FORMAT_R8)
+	preview_img = Image.create_empty(City.W, City.H, false, Image.FORMAT_R8)
 	preview_tex = ImageTexture.create_from_image(preview_img)
 	RenderingServer.global_shader_parameter_set("city_map", city_tex)
 	RenderingServer.global_shader_parameter_set("lamp_map", lamp_tex)
@@ -78,11 +107,11 @@ func _make_textures() -> void:
 
 
 func refresh_map() -> void:
-	var n := City.SIZE
+	var n := City.W * City.H
 	var data := PackedByteArray()
-	data.resize(n * n * 4)
+	data.resize(n * 4)
 	var power_on: bool = services != null and services.power_in_play()
-	for i in n * n:
+	for i in n:
 		var bid := city.bld[i]
 		var built := 32 if bid >= 0 else 0
 		var dark := 16 if power_on and bid >= 0 and not city.buildings[bid].get("powered", true) else 0
@@ -90,7 +119,7 @@ func refresh_map() -> void:
 		data[i * 4 + 1] = city.zone[i] * 64 + built + dark
 		data[i * 4 + 2] = clampi(int(city.traffic[i] * 127.0), 0, 255)
 		data[i * 4 + 3] = clampi(int(city.land_value[i] * 255.0), 0, 255)
-	city_img.set_data(n, n, false, Image.FORMAT_RGBA8, data)
+	city_img.set_data(City.W, City.H, false, Image.FORMAT_RGBA8, data)
 	city_tex.update(city_img)
 	_map_dirty = false
 
@@ -103,7 +132,7 @@ func set_preview(cells: Array, color: Color) -> void:
 	preview_img.fill(Color(0, 0, 0))
 	for c in cells:
 		if city.inside(c.x, c.y):
-			preview_img.set_pixel(c.x, c.y, Color(1, 0, 0))
+			preview_img.set_pixel(posmod(c.x, City.W), c.y, Color(1, 0, 0))
 	preview_tex.update(preview_img)
 	RenderingServer.global_shader_parameter_set("preview_color", color)
 
@@ -111,7 +140,7 @@ func set_preview(cells: Array, color: Color) -> void:
 # ----------------------------------------------------------------- terrain ---
 
 func _build_terrain() -> void:
-	var size := City.SIZE * City.TILE
+	var size := City.W * City.TILE
 	var x0 := -TERRAIN_MARGIN
 	var steps := int((size + TERRAIN_MARGIN * 2.0) / TERRAIN_STEP) + 1
 	var hs := PackedFloat32Array()
@@ -207,7 +236,7 @@ func _build_water() -> void:
 	var mi := MeshInstance3D.new()
 	mi.name = "Sea"
 	mi.mesh = plane
-	mi.position = Vector3(City.SIZE * City.TILE * 0.5, -0.7, City.SIZE * City.TILE * 0.5)
+	mi.position = Vector3(City.W * City.TILE * 0.5, -0.7, City.H * City.TILE * 0.5)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 
@@ -241,11 +270,22 @@ func _on_cells_changed(r: Rect2i) -> void:
 
 
 func _mark_rect(r: Rect2i) -> void:
-	var a := Vector2i(maxi(r.position.x, 0) / CHUNK, maxi(r.position.y, 0) / CHUNK)
-	var b := Vector2i(mini(r.end.x, City.SIZE - 1) / CHUNK, mini(r.end.y, City.SIZE - 1) / CHUNK)
+	if Planet.on:
+		# x may run past either end of the map; wrap each chunk column round.
+		var across := ceili(float(City.W) / _chunk)
+		var y0 := maxi(r.position.y, 0) / _chunk
+		var y1 := mini(r.end.y, City.H - 1) / _chunk
+		for cy in range(y0, y1 + 1):
+			for cx in range(floori(float(r.position.x) / _chunk), floori(float(r.end.x) / _chunk) + 1):
+				dirty[Vector2i(posmod(cx, across), cy)] = true
+				_detail_dirty.erase(Vector2i(posmod(cx, across), cy))
+		return
+	var a := Vector2i(maxi(r.position.x, 0) / _chunk, maxi(r.position.y, 0) / _chunk)
+	var b := Vector2i(mini(r.end.x, City.W - 1) / _chunk, mini(r.end.y, City.H - 1) / _chunk)
 	for cy in range(a.y, b.y + 1):
 		for cx in range(a.x, b.x + 1):
 			dirty[Vector2i(cx, cy)] = true
+			_detail_dirty.erase(Vector2i(cx, cy))
 
 
 func _on_building_added(id: int, animate: bool) -> void:
@@ -280,7 +320,7 @@ func _set_grow(id: int, k: float) -> void:
 	var xf := _building_xform(b)
 	xf.basis = xf.basis.scaled(Vector3(1.0, maxf(e, 0.02), 1.0))
 	var mm: MultiMesh = growing[id].node.multimesh
-	mm.set_instance_transform(0, xf)
+	mm.set_instance_transform(0, Planet.xf(xf))
 	mm.set_instance_color(0, _wall_tint(b))
 	mm.set_instance_custom_data(0, _accent(b))
 
@@ -297,17 +337,70 @@ func _process(delta: float) -> void:
 				_mark_rect(Rect2i(b.x, b.y, b.size, b.size))
 		else:
 			_set_grow(id, g.t)
+	# A few chunks a frame, and no more than REBUILD_MS of them after the first: four
+	# full-detail chunks at once were a 40 ms hitch on Fedge's laptop.
 	var budget := 4
-	for key in dirty.keys():
-		if budget <= 0:
+	var order := dirty.keys()
+	if Planet.on and order.size() > 1:
+		# Chunks coming into full detail first: they are the ones next to the camera.
+		order.sort_custom(func(a, b): return _want_full.get(a, false) and not _want_full.get(b, false))
+	var t0 := Time.get_ticks_usec()
+	var lamps := false
+	for key in order:
+		if budget <= 0 or (budget < 4 and Time.get_ticks_usec() - t0 > REBUILD_MS * 1000.0):
 			break
 		_rebuild_chunk(key)
 		dirty.erase(key)
 		budget -= 1
-		_map_dirty = true
+		lamps = true
+		# Only a change in the city redraws the map (6 ms); a chunk swapping detail does not.
+		if not _detail_dirty.has(key):
+			_map_dirty = true
+		_detail_dirty.erase(key)
 	if _map_dirty:
 		refresh_map()
+	if lamps or _map_dirty:
 		lamp_tex.update(lamp_img)
+	if Planet.on:
+		_cull_t -= delta
+		if _cull_t <= 0.0:
+			_cull_t = 0.1
+			cull()
+
+
+## msp: hide the chunks behind the horizon; on a ball most of the city is out of sight.
+func cull() -> void:
+	if not Planet.on or not is_inside_tree():
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var eye := cam.global_position
+	var fe := Planet.flat(eye)
+	var reach := detail_distance if detail_distance > 0.0 else INF
+	var half := _chunk * City.TILE * 0.7
+	for key in chunks:
+		var node: Node3D = chunks[key]
+		var c := Vector3((key.x * _chunk + _chunk * 0.5) * City.TILE, 0.0, (key.y * _chunk + _chunk * 0.5) * City.TILE)
+		node.visible = Planet.above_horizon(eye, Planet.warp(c), TALLEST + half)
+		var d := Vector3(Planet.fdx(fe.x, c.x), fe.y, c.z - fe.z).length()
+		var was: bool = _want_full.get(key, false)
+		# Behind the horizon nothing of it shows, so it needs no detail either.
+		var want := node.visible and d < reach + half + (FULL_OUT if was else FULL_IN)
+		_want_full[key] = want
+		if want != _full.get(key, false) and not dirty.has(key):
+			dirty[key] = true
+			_detail_dirty[key] = true
+		var cast := shadow_reach <= 0.0 or d < shadow_reach + half
+		if _shadowed.get(key, true) != cast:
+			_set_shadows(node, cast)
+			_shadowed[key] = cast
+
+
+func _set_shadows(node: Node3D, cast: bool) -> void:
+	for c in node.get_children():
+		if c is MultiMeshInstance3D and c.has_meta(&"shadow"):
+			c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func rebuild_all() -> void:
@@ -363,10 +456,12 @@ func _rebuild_chunk(key: Vector2i) -> void:
 	var lamps: Array[Vector3] = []
 	var beacons: Array[Vector3] = []
 	var boxes := []  # [world AABB, wall colour, seed] of each building, for the stand-in
-	var x0 := key.x * CHUNK
-	var y0 := key.y * CHUNK
-	for y in range(y0, mini(y0 + CHUNK, City.SIZE)):
-		for x in range(x0, mini(x0 + CHUNK, City.SIZE)):
+	var full: bool = not Planet.on or _want_full.get(key, false)
+	_full[key] = full
+	var x0 := key.x * _chunk
+	var y0 := key.y * _chunk
+	for y in range(y0, mini(y0 + _chunk, City.H)):
+		for x in range(x0, mini(x0 + _chunk, City.W)):
 			var i := city.idx(x, y)
 			lamp_img.set_pixel(x, y, Color(0, 0, 0, 0))
 			var center := city.cell_center(x, y)
@@ -411,6 +506,8 @@ func _rebuild_chunk(key: Vector2i) -> void:
 						Kit.LEAF_TINTS[int(_cell_hash(x, y, 45) * 5.99)], Color(0, 0, 0, 0), true)
 	for nm in groups:
 		var g: Array = groups[nm]
+		if not full and not (nm as String).begins_with("road_"):
+			continue  # far away: the stand-in boxes draw it
 		var mesh := Kit.mesh(nm)
 		if mesh == null:
 			continue
@@ -421,12 +518,14 @@ func _rebuild_chunk(key: Vector2i) -> void:
 		mm.mesh = mesh
 		mm.instance_count = g[0].size()
 		for k in g[0].size():
-			mm.set_instance_transform(k, g[0][k])
+			mm.set_instance_transform(k, Planet.xf(g[0][k]))  # flat map -> the ball on msp
 			mm.set_instance_color(k, g[1][k])
 			mm.set_instance_custom_data(k, g[2][k])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g[3] else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g[3] and _shadowed.get(key, true) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if g[3]:
+			mmi.set_meta(&"shadow", true)
 		if not (nm as String).begins_with("road_"):
 			mmi.set_meta(&"detail", true)  # roads stay; the rest ends at detail_distance
 		node.add_child(mmi)
@@ -503,7 +602,7 @@ static func _standin_mesh(boxes: Array) -> ArrayMesh:
 				uv.append(Vector2(q[1], q[2]))
 				uv2.append(Vector2(sd, 0))
 				col.append(c)
-			idx.append_array([b, b + 2, b + 1, b, b + 3, b + 2])
+			idx.append_array([b, b + 1, b + 2, b, b + 2, b + 3])  # clockwise: Godot's front faces
 		var r := v.size()
 		for p in corners:
 			v.append(Vector3(p.x, hi.y, p.z))
@@ -511,7 +610,12 @@ static func _standin_mesh(boxes: Array) -> ArrayMesh:
 			uv.append(Vector2(0, -1))
 			uv2.append(Vector2(sd, 0))
 			col.append(c)
-		idx.append_array([r, r + 2, r + 1, r, r + 3, r + 2])
+		idx.append_array([r, r + 1, r + 2, r, r + 2, r + 3])
+	if Planet.on:
+		# Built on the flat map like everything else, then each corner put on the ball.
+		for k in v.size():
+			n[k] = Planet.frame(v[k]) * n[k]
+			v[k] = Planet.warp(v[k])
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = v
@@ -555,7 +659,7 @@ func _make_beacons(points: Array[Vector3]) -> MultiMeshInstance3D:
 	mm.mesh = _beacon_mesh
 	mm.instance_count = points.size()
 	for k in points.size():
-		mm.set_instance_transform(k, Transform3D(Basis.IDENTITY, points[k]))
+		mm.set_instance_transform(k, Transform3D(Basis.IDENTITY, Planet.place(points[k])))
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -611,7 +715,7 @@ func _add_road(groups: Dictionary, lamps: Array[Vector3], x: int, y: int, center
 	var base := center + basis * local
 	_push(groups, "street_lamp", Transform3D(lb, base), Color.WHITE, Color(0, 0, 0, 0), true)
 	var head := base + lb * Vector3(-1.4, 6.0, 0.0)
-	lamps.append(head)
-	var hc := city.world_to_cell(head)
+	lamps.append(Planet.place(head))
+	var hc := city.flat_to_cell(head)
 	if city.inside(hc.x, hc.y):
 		lamp_img.set_pixel(hc.x, hc.y, Color(head.x / City.TILE - hc.x, head.z / City.TILE - hc.y, 1.0, 1.0))

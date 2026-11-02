@@ -2,6 +2,8 @@ class_name StreetPlayer
 extends CharacterBody3D
 ## The on-foot character: camera-relative walk and sprint, jump with coyote time and
 ## input buffering, curb step-up, and a third-person boom (OrbitRig).
+## On msp (Planet.on) the body stands on the ball: its basis is the local frame under it,
+## and movement runs in that frame (y = away from the planet's centre).
 
 signal interact_requested
 signal damaged(amount: float, from_pos: Vector3)
@@ -44,6 +46,7 @@ var _since_floor := 0.0
 var _jump_buffer := 0.0
 var _facing := 0.0
 var _turn_rate := 0.0
+var _air_time := 0.0
 
 
 func _init() -> void:
@@ -86,6 +89,9 @@ func set_controls(on: bool) -> void:
 
 func place(pos: Vector3, face_yaw: float) -> void:
 	global_position = pos
+	if Planet.on:
+		global_basis = Planet.basis(pos)
+		up_direction = global_basis.y
 	velocity = Vector3.ZERO
 	_facing = face_yaw
 	visual.rotation.y = face_yaw
@@ -106,6 +112,8 @@ func set_puppet(on: bool) -> void:
 
 
 func face(yaw: float) -> void:
+	if Planet.on:  # stand up on the ball where StreetMode put us (no physics while a puppet)
+		global_basis = Planet.basis(global_position)
 	_facing = yaw
 	visual.rotation.y = yaw
 
@@ -132,8 +140,14 @@ func _physics_process(delta: float) -> void:
 	_since_hurt += delta
 	if not dead and health < REGEN_TO * heal_rate and _since_hurt > REGEN_DELAY / heal_rate:
 		health = minf(health + REGEN_RATE * heal_rate * delta, REGEN_TO * heal_rate)
+	# Everything below runs in the local frame; on the flat island that is the world.
+	var q := Planet.basis(global_position)
+	if Planet.on:
+		global_basis = q
+		up_direction = q.y
+	var lv := q.inverse() * velocity
 	var input := StreetInput.move_vector() if controls_enabled else Vector2.ZERO
-	var wish := rig.right_flat() * input.x + rig.forward_flat() * input.y
+	var wish := q.inverse() * (rig.right_flat() * input.x + rig.forward_flat() * input.y)
 	var sprinting := controls_enabled and Input.is_action_pressed("street_sprint") and not aiming
 	var target_speed := (sprint_speed if sprinting else walk_speed * (0.75 if aiming else 1.0)) * minf(input.length(), 1.0)
 
@@ -141,30 +155,32 @@ func _physics_process(delta: float) -> void:
 		_since_floor = 0.0
 	else:
 		_since_floor += delta
-		velocity.y -= _gravity * delta * (1.6 if velocity.y < 0.0 else 1.0)
+		lv.y -= _gravity * delta * (1.6 if lv.y < 0.0 else 1.0)
 
 	if controls_enabled and Input.is_action_just_pressed("street_jump"):
 		_jump_buffer = JUMP_BUFFER
 	else:
 		_jump_buffer = maxf(_jump_buffer - delta, 0.0)
 	if _jump_buffer > 0.0 and _since_floor < COYOTE:
-		velocity.y = jump_velocity
+		lv.y = jump_velocity
 		_jump_buffer = 0.0
 		_since_floor = COYOTE
 
-	var hv := Vector3(velocity.x, 0.0, velocity.z)
+	var hv := Vector3(lv.x, 0.0, lv.z)
 	var goal := wish.normalized() * target_speed if wish.length() > 0.01 else Vector3.ZERO
 	var accel := ground_accel if is_on_floor() else air_accel
 	hv = hv.lerp(goal, 1.0 - exp(-accel * delta))
-	velocity.x = hv.x
-	velocity.z = hv.z
+	lv.x = hv.x
+	lv.z = hv.z
+	velocity = q * lv
 
 	var was_floor := is_on_floor()
 	var before := global_position
 	move_and_slide()
 	if was_floor and goal != Vector3.ZERO and is_on_wall():
-		if _try_step(before, goal * delta):
-			velocity.y = 0.0
+		if _try_step(before, q * goal * delta):
+			velocity -= q.y * velocity.dot(q.y)
+	lv = q.inverse() * velocity
 
 	# Face the direction of travel.
 	var prev := _facing
@@ -174,20 +190,28 @@ func _physics_process(delta: float) -> void:
 		_facing = lerp_angle(_facing, atan2(-hv.x, -hv.z), 1.0 - exp(-turn_speed * delta))
 	_turn_rate = lerpf(_turn_rate, wrapf(_facing - prev, -PI, PI) / maxf(delta, 1e-4), 0.2)
 	visual.rotation.y = _facing
-	visual.animate(delta, hv.length(), is_on_floor(), velocity.y, _turn_rate)
+	# A real drop ends in a landing (knees give) unless we land running.
+	if is_on_floor():
+		if _air_time > 0.45 and hv.length() < 3.0:
+			visual.play_land()
+		_air_time = 0.0
+	else:
+		_air_time += delta
+	visual.animate(delta, hv.length(), is_on_floor(), lv.y, _turn_rate)
 
 
 func _try_step(from_pos: Vector3, motion: Vector3) -> bool:
 	## Climb a curb or stair: probe up, over the edge, and down; if there's flat ground
 	## up there, lift onto it and let the next move carry the player forward.
-	var dir := Vector3(motion.x, 0.0, motion.z).normalized()
+	var up := Planet.up(from_pos)
+	var dir := (motion - up * motion.dot(up)).normalized()
 	var reach := maxf(motion.length(), 0.34)
 	var params := PhysicsTestMotionParameters3D.new()
 	var res := PhysicsTestMotionResult3D.new()
 	var xf := global_transform
 	xf.origin = from_pos
 	params.from = xf
-	params.motion = Vector3.UP * step_height
+	params.motion = up * step_height
 	if PhysicsServer3D.body_test_motion(get_rid(), params, res):
 		return false
 	xf.origin += params.motion
@@ -197,15 +221,15 @@ func _try_step(from_pos: Vector3, motion: Vector3) -> bool:
 		return false
 	xf.origin += params.motion
 	params.from = xf
-	params.motion = Vector3.DOWN * step_height
+	params.motion = -up * step_height
 	if not PhysicsServer3D.body_test_motion(get_rid(), params, res):
 		return false
-	if res.get_collision_normal().y < 0.7:
+	if res.get_collision_normal().dot(up) < 0.7:
 		return false
-	var top := xf.origin.y + res.get_travel().y
-	if top <= from_pos.y + 0.02:
+	var rise := (xf.origin + res.get_travel() - from_pos).dot(up)  # height of the step top
+	if rise <= 0.02:
 		return false
-	global_position = Vector3(from_pos.x, top + 0.01, from_pos.z) + dir * motion.length()
+	global_position = from_pos + up * (rise + 0.01) + dir * motion.length()
 	return true
 
 

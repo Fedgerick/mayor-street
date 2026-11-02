@@ -25,7 +25,8 @@ func check(cond: bool, what: String) -> void:
 
 func _needs_landmark(t: Dictionary) -> bool:
 	for slot in t.slots:
-		if t.slots[slot].tag in ["casino", "stadium", "airfield", "radio_tower", "mansion", "vault", "park"]:
+		if t.slots[slot].tag in ["casino", "stadium", "airfield", "radio_tower", "mansion", "vault", "park",
+				"salvage_yard", "gun_shop"]:   # placed buildings only: shop/tests/test_salvage_shop.gd
 			return true
 	return false
 
@@ -46,7 +47,7 @@ func _initialize() -> void:
 	var dist := router.reachable(a)
 	for i in dist.size():
 		if dist[i] > dist[city.idx(far.x, far.y)]:
-			far = Vector2i(i % City.SIZE, i / City.SIZE)
+			far = Vector2i(i % City.W, i / City.W)
 	var path := router.route(a, far)
 	check(path.size() == dist[city.idx(far.x, far.y)] + 1, "route length matches BFS (%d tiles)" % path.size())
 	var all_road := true

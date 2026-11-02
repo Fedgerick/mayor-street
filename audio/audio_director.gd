@@ -387,7 +387,7 @@ func _on_building_added(id: int, animate: bool) -> void:
 	if b.is_empty():
 		return
 	_done_cool = 0.3
-	play_at("building_done", _city.building_center(b), -4.0, _rng.randf_range(0.9, 1.15), 60.0)
+	play_at("building_done", Planet.place(_city.building_center(b)), -4.0, _rng.randf_range(0.9, 1.15), 60.0)
 
 
 func _on_city_message(text: String) -> void:
@@ -474,10 +474,10 @@ func _process(delta: float) -> void:
 	_prev_active = active
 	var street_bound := active or (busy and _diving)
 
-	height = maxf(listener.y, 1.5)
+	height = maxf(Planet.flat(listener).y, 1.5)  # above the ground, on msp too
 	var focus := listener
 	if not street_bound and main and main.get("cam"):
-		focus = main.get("cam").focus
+		focus = Planet.place(main.get("cam").focus)
 	if _city:
 		night = _night(_city.time_of_day())
 
@@ -575,14 +575,14 @@ func _sample_area(focus: Vector3, listener: Vector3, street: bool) -> void:
 	var sea := 0
 	var land: PackedByteArray = _city.land
 	var bld: PackedInt32Array = _city.bld
-	var size: int = City.SIZE
+	var size: int = City.W
 	for y in range(c.y - r, c.y + r + 1):
 		for x in range(c.x - r, c.x + r + 1):
 			cells += 1
-			if x < 0 or y < 0 or x >= size or y >= size:
+			if not _city.inside(x, y):
 				sea += 1
 				continue
-			var i := y * size + x
+			var i: int = _city.idx(x, y)
 			if land[i] == 0:
 				sea += 1
 			elif bld[i] >= 0:
@@ -604,7 +604,7 @@ func _sample_area(focus: Vector3, listener: Vector3, street: bool) -> void:
 					peds_near += 1
 
 
-func _canyon(c: Vector2i, street: bool, land: PackedByteArray, bld: PackedInt32Array, size: int) -> float:
+func _canyon(c: Vector2i, street: bool, land: PackedByteArray, bld: PackedInt32Array, _size: int) -> float:
 	## How walled in the street listener is: tall buildings in the cells within about 36 m.
 	if not street:
 		return 0.0
@@ -613,9 +613,9 @@ func _canyon(c: Vector2i, street: bool, land: PackedByteArray, bld: PackedInt32A
 	for y in range(c.y - 3, c.y + 4):
 		for x in range(c.x - 3, c.x + 4):
 			cells += 1
-			if x < 0 or y < 0 or x >= size or y >= size:
+			if not _city.inside(x, y):
 				continue
-			var i := y * size + x
+			var i: int = _city.idx(x, y)
 			if land[i] != 0 and bld[i] >= 0:
 				var b: Dictionary = _city.buildings.get(bld[i], {})
 				var h := float(b.get("stage", 1)) * (2.0 if b.get("size", 1) == 2 else 1.0)
@@ -798,12 +798,12 @@ func _assign_traffic(listener: Vector3) -> void:
 		if traffic:
 			var r2 := TRAFFIC_RADIUS * TRAFFIC_RADIUS
 			for c in traffic.cars:
-				var d2: float = c.pos.distance_squared_to(listener)
+				var d2: float = Planet.place(c.pos).distance_squared_to(listener)
 				if d2 < r2:
 					cars.append([d2, c])
 					if c.stuck > 3.0 and _honk_cool <= 0.0 and d2 < 3600.0 and _rng.randf() < 0.03:
 						_honk_cool = 5.0
-						play_at("horn_distant", c.pos + Vector3.UP, -6.0, _rng.randf_range(0.85, 1.15), 10.0)
+						play_at("horn_distant", Planet.place(c.pos + Vector3.UP), -6.0, _rng.randf_range(0.85, 1.15), 10.0)
 	cars.sort_custom(func(a, b): return a[0] < b[0])
 	for i in _traffic.size():
 		var p := _traffic[i]
@@ -823,7 +823,7 @@ func _follow_traffic() -> void:
 		if c == null:
 			continue
 		var p := _traffic[i]
-		p.global_position = c.pos + Vector3.UP * 0.6
+		p.global_position = Planet.place(c.pos + Vector3.UP * 0.6)
 		var sp := clampf(c.v / 12.5, 0.0, 1.3)
 		p.pitch_scale = 0.65 + 0.6 * sp
 		p.volume_db = linear_to_db(0.3 + 0.7 * minf(sp, 1.0)) - 3.0
@@ -838,5 +838,6 @@ func _ambient_horns(delta: float, focus: Vector3) -> void:
 		return
 	var a := _rng.randf() * TAU
 	var dist := _rng.randf_range(60.0, 180.0)
-	var pos := Vector3(focus.x + cos(a) * dist, 1.0, focus.z + sin(a) * dist)
+	var f := Planet.flat(focus)
+	var pos := Planet.place(Vector3(f.x + cos(a) * dist, 1.0, f.z + sin(a) * dist))
 	play_at("horn_distant", pos, -8.0 + 6.0 * density, _rng.randf_range(0.85, 1.15), 30.0)

@@ -259,6 +259,7 @@ vec3 window_flat(vec2 uv, vec2 uv2, vec3 n, vec3 p_obj, float seed, out vec3 emi
 }
 
 void fragment() {
+	vec3 mpos = map_pos(wpos);  // flat map metres (planet/ unwraps the ball)
 	vec3 base_color = m_a.rgb;
 	float tint_amount = m_a.w;
 	float rough = m_b.x;
@@ -322,30 +323,30 @@ void fragment() {
 		alb *= mix(1.0, 0.85 + 0.25 * hash12(floor(uv) + seed), fade);
 		alb *= 0.9 + 0.15 * fbm(opos.xz * 0.4 + seed * 5.0);
 	} else if (pattern == 6 || pattern == 10) {
-		vec2 uv = (pattern == 10 ? wpos.xz : opos.xz) / (pattern == 10 ? 1.5 : 1.0);
+		vec2 uv = (pattern == 10 ? mpos.xz : opos.xz) / (pattern == 10 ? 1.5 : 1.0);
 		float fade = aa_fade(uv);
 		alb *= 1.0 - grid_line(uv, vec2(0.04)) * 0.22 * fade;
 		alb *= mix(1.0, 0.93 + 0.12 * hash12(floor(uv)), fade);
-		alb *= 0.9 + 0.14 * fbm(wpos.xz * 0.25);
+		alb *= 0.9 + 0.14 * fbm(mpos.xz * 0.25);
 		// Gum spots and stains.
-		alb *= 1.0 - smoothstep(0.62, 0.72, fbm(wpos.xz * 0.9 + 4.0)) * 0.12 * aa_fade(wpos.xz * 0.9);
+		alb *= 1.0 - smoothstep(0.62, 0.72, fbm(mpos.xz * 0.9 + 4.0)) * 0.12 * aa_fade(mpos.xz * 0.9);
 	} else if (pattern == 7) {
 		// Lawn: rich greens with mowing stripes.
-		float g = fbm(wpos.xz * 0.06);
+		float g = fbm(mpos.xz * 0.06);
 		alb = mix(vec3(0.1, 0.25, 0.045), vec3(0.2, 0.36, 0.07), g);
 		float stripe = step(0.5, fract(opos.x / 1.4));
 		alb *= mix(1.0, 0.88 + 0.2 * stripe, aa_fade(opos.xz / 1.4));
-		alb *= mix(1.0, 0.9 + 0.2 * vnoise(wpos.xz * 2.0), aa_fade(wpos.xz * 2.0));
-		alb = mix(alb, vec3(0.32, 0.3, 0.12), smoothstep(0.66, 0.8, fbm(wpos.xz * 0.15 + 9.0)) * 0.4);
+		alb *= mix(1.0, 0.9 + 0.2 * vnoise(mpos.xz * 2.0), aa_fade(mpos.xz * 2.0));
+		alb = mix(alb, vec3(0.32, 0.3, 0.12), smoothstep(0.66, 0.8, fbm(mpos.xz * 0.15 + 9.0)) * 0.4);
 	} else if (pattern == 8) {
-		alb *= 0.86 + 0.22 * fbm(wpos.xz * 0.4);
-		alb *= mix(1.0, 0.92 + 0.12 * vnoise(wpos.xz * 9.0), aa_fade(wpos.xz * 9.0));
-		float patch = smoothstep(0.62, 0.66, fbm(wpos.xz * 0.12 + 3.0));
+		alb *= 0.86 + 0.22 * fbm(mpos.xz * 0.4);
+		alb *= mix(1.0, 0.92 + 0.12 * vnoise(mpos.xz * 9.0), aa_fade(mpos.xz * 9.0));
+		float patch = smoothstep(0.62, 0.66, fbm(mpos.xz * 0.12 + 3.0));
 		alb *= 1.0 - patch * 0.16;
 		// Faint cracks in a few worn stretches.
-		float worn = smoothstep(0.58, 0.7, fbm(wpos.xz * 0.04 + 7.0));
-		float crack = 1.0 - smoothstep(0.0, 0.012, abs(fbm(wpos.xz * 0.7 + 11.0) - 0.5));
-		alb *= 1.0 - crack * worn * 0.2 * aa_fade(wpos.xz * 5.6);
+		float worn = smoothstep(0.58, 0.7, fbm(mpos.xz * 0.04 + 7.0));
+		float crack = 1.0 - smoothstep(0.0, 0.012, abs(fbm(mpos.xz * 0.7 + 11.0) - 0.5));
+		alb *= 1.0 - crack * worn * 0.2 * aa_fade(mpos.xz * 5.6);
 		r = mix(r, 0.6, patch * 0.5);
 	} else if (pattern == 9) {
 		float s = step(0.5, fract((opos.x + opos.z) / 0.9));
@@ -401,7 +402,7 @@ void fragment() {
 	}
 
 	// Map overlays.
-	ivec2 cell = cell_of(ground_level ? wpos : origin + (wpos - origin) * vec3(0.98, 0.0, 0.98));
+	ivec2 cell = ground_level ? cell_of(wpos) : ivec2(floor((map_pos(origin).xz + (mpos.xz - map_pos(origin).xz) * 0.98) / tile_size));
 	if (overlay_mode > 0) {
 		vec4 cm = city_at(cell);
 		float lum = dot(alb, vec3(0.3, 0.59, 0.11));
@@ -421,13 +422,13 @@ void fragment() {
 	// walls darken a little. The sky's reflection in the gloss is the wet sheen.
 	float wet_k = 0.0;
 	if (weather_wet > 0.001 && kind == 0) {
-		float up = smoothstep(0.5, 0.9, wnrm.y) * (pattern == 7 ? 0.25 : 1.0);
+		float up = smoothstep(0.5, 0.9, dot(wnrm, up_at(wpos))) * (pattern == 7 ? 0.25 : 1.0);
 		wet_k = weather_wet * mix(0.3, 1.0, up);
 		alb *= 1.0 - wet_k * (pattern == 0 || pattern == 4 ? 0.2 : 0.36);
 		r = mix(r, 0.14, weather_wet * up);
 		sp = mix(sp, 0.6, weather_wet * up);
 		if (pattern == 8 || pattern == 6 || pattern == 10) {
-			float puddle = smoothstep(0.56, 0.62, fbm(wpos.xz * 0.11 + 21.0))
+			float puddle = smoothstep(0.56, 0.62, fbm(mpos.xz * 0.11 + 21.0))
 				* smoothstep(0.35, 0.9, weather_wet) * up;
 			alb *= 1.0 - puddle * 0.4;
 			r = mix(r, 0.03, puddle);

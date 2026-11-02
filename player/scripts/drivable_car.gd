@@ -111,6 +111,7 @@ var _seat := Vector3.ZERO        # driver's hip, body space (from the car kit's 
 var _dmg_mesh := 0
 var damage_stage := 0            # 0 clean, 1 dented, 2 smashed (smoking), 3 burnt out
 static var _spec_cache := {}
+static var _brake_mat: StandardMaterial3D   # shared by the box cars' brake lights
 
 
 func _ready() -> void:
@@ -222,25 +223,24 @@ func _build_visual() -> void:
 	# Brake lights and headlight beams (only lit while driven).
 	var hl := _aabb.size.z * 0.5
 	var hw := _aabb.size.x * 0.5
-	var bmat := StandardMaterial3D.new()
-	bmat.albedo_color = Color(1, 0.1, 0.08)
-	bmat.emission_enabled = true
-	bmat.emission = Color(1, 0.08, 0.05)
-	bmat.emission_energy_multiplier = 4.0
-	for s in [-1, 1]:
-		var b := MeshInstance3D.new()
-		var q := BoxMesh.new()
-		q.size = Vector3(0.38, 0.18, 0.04)
-		b.mesh = q
-		b.material_override = bmat
-		b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		b.position = Vector3(s * (hw - 0.3), (0.75 if model != "car_truck" else 0.95) - 0.45, -hl - 0.04)
-		b.visible = false
-		_tilt.add_child(b)
-		if not _kit_shader:   # the kit shader lights its own tail lamps
+	if not _kit_shader:   # the kit shader lights its own tail lamps: no meshes to make and free
+		if _brake_mat == null:
+			_brake_mat = StandardMaterial3D.new()
+			_brake_mat.albedo_color = Color(1, 0.1, 0.08)
+			_brake_mat.emission_enabled = true
+			_brake_mat.emission = Color(1, 0.08, 0.05)
+			_brake_mat.emission_energy_multiplier = 4.0
+		for s in [-1, 1]:
+			var b := MeshInstance3D.new()
+			var q := BoxMesh.new()
+			q.size = Vector3(0.38, 0.18, 0.04)
+			b.mesh = q
+			b.material_override = _brake_mat
+			b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			b.position = Vector3(s * (hw - 0.3), (0.75 if model != "car_truck" else 0.95) - 0.45, -hl - 0.04)
+			b.visible = false
+			_tilt.add_child(b)
 			_brake_lights.append(b)
-		else:
-			b.queue_free()
 	var spot := SpotLight3D.new()
 	spot.name = "Headlights"
 	spot.position = Vector3(0, 0.8, hl + 0.1)
@@ -326,7 +326,8 @@ func speed() -> float:
 
 
 func heading_yaw() -> float:
-	var f := forward()
+	## In the local frame (on msp, the frame standing on the ball under the car).
+	var f := Planet.to_local(global_position, forward())
 	return atan2(-f.x, -f.z)
 
 
@@ -354,7 +355,7 @@ func seat_point() -> Vector3:
 func exit_point() -> Vector3:
 	## Beside the driver's door (left side), on the ground.
 	var left := global_basis.x
-	return global_position + left * (_aabb.size.x * 0.5 + 0.7) + forward() * (_seat.z + 0.15) + Vector3.UP * 0.2
+	return global_position + left * (_aabb.size.x * 0.5 + 0.7) + forward() * (_seat.z + 0.15) + _up() * 0.2
 
 
 func take_hit(amount: float, _from_pos := Vector3.ZERO, _dir := Vector3.ZERO) -> void:
@@ -398,7 +399,7 @@ func explode() -> void:
 	for w in _wheels:
 		w.engine_force = 0.0
 		w.brake = brake_force
-	apply_central_impulse(Vector3.UP * mass * 4.5)
+	apply_central_impulse(_up() * mass * 4.5)
 	apply_torque_impulse(Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * mass * 1.2)
 	exploded.emit(self)
 
@@ -425,9 +426,11 @@ func _steady_body(delta: float) -> void:
 	if wrecked:
 		return
 	var v := linear_velocity
-	var vy_cap := maxf(_last_vel.y, 0.0) + MAX_KICK_UP
-	if v.y > vy_cap:
-		v.y = vy_cap
+	var upv := _up()
+	var vy := v.dot(upv)
+	var vy_cap := maxf(_last_vel.dot(upv), 0.0) + MAX_KICK_UP
+	if vy > vy_cap:
+		v -= upv * (vy - vy_cap)
 		linear_velocity = v
 	var grounded := false
 	for wh in _wheels:
@@ -442,9 +445,9 @@ func _steady_body(delta: float) -> void:
 		apply_torque(-(global_basis * damp))
 		# Past ~25 degrees of lean, push back toward flat.
 		var up := global_basis.y
-		var lean := acos(clampf(up.dot(Vector3.UP), -1.0, 1.0))
+		var lean := acos(clampf(up.dot(upv), -1.0, 1.0))
 		if lean > 0.44 and lean < 1.9:
-			var axis := up.cross(Vector3.UP)
+			var axis := up.cross(upv)
 			if axis.length() > 0.001:
 				apply_torque(axis.normalized() * (lean - 0.44) * RIGHTING * (mass / 1000.0))
 	if angular_velocity.length() > MAX_SPIN:
@@ -516,8 +519,8 @@ func _physics_process(delta: float) -> void:
 		b.visible = _braking
 
 	# Downforce keeps it planted; anti-flip assist while on the ground.
-	apply_central_force(Vector3.DOWN * mass * 0.004 * v * v)
-	if global_basis.y.y < 0.3:
+	apply_central_force(-_up() * mass * 0.004 * v * v)
+	if global_basis.y.dot(_up()) < 0.3:
 		_upside_down += delta
 		if _upside_down > 2.5 and driver != null:
 			reset_upright()
@@ -569,7 +572,28 @@ func body_tilt() -> Vector2:
 	return Vector2(_roll.x, _pitch.x)
 
 
+## Which way is up where the car is: +Y on the flat island, away from the ball's centre
+## on msp (where a point-gravity area pulls toward the centre).
+func _up() -> Vector3:
+	return Planet.up(global_position)
+
+
 func reset_upright() -> void:
+	if Planet.on:
+		var up := _up()
+		var fw := forward()
+		fw = (fw - up * fw.dot(up)).normalized()
+		if fw.length() < 0.1:
+			fw = Planet.basis(global_position).x
+		var pf := Planet.unwarp(global_position)
+		pf.y = maxf(pf.y, 0.0) + 1.0
+		global_transform = Transform3D(Basis(up.cross(fw), up, fw), Planet.warp(pf))
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		_last_vel = Vector3.ZERO
+		_accel = Vector3.ZERO
+		_upside_down = 0.0
+		return
 	var f := forward()
 	var yaw := atan2(f.x, f.z)
 	var p := global_position
