@@ -31,6 +31,7 @@ namespace MSP
         public City city;
         public CityView view;
         public Hud hud;
+        public CityServices services;  // power, parks, garbage, police, fire
         Tool tool = Tool.INSPECT;
         string buildKind = "";
         bool dragging;
@@ -66,6 +67,10 @@ namespace MSP
             view = new GameObject("CityView").AddComponent<CityView>();
             view.transform.SetParent(transform);
             view.Setup(city);
+            services = new CityServices(city);  // sets city.growthCheck and adjusts land value itself
+            view.services = services;
+            services.CoverageChanged += view.MarkMapDirty;  // power changes light or darken windows
+            if (demo) services.BuildDemoServices();  // plants, depots, police, fire and parks for the demo
             if (Args.Has("hour")) city.minutes = city.GameDay() * 1440.0 + Args.GetF("hour", 10.5f) * 60.0;
             var camGo = new GameObject("MayorCamera");
             camGo.transform.SetParent(transform);
@@ -129,6 +134,7 @@ namespace MSP
             if (Input.GetKeyDown(KeyCode.RightBracket)) city.minutes += 60.0;
             int hourBefore = (int)(city.minutes / 60.0);
             city.Advance(Time.deltaTime, SPEED_VALUES[speedIndex]);
+            services.Update();
             if ((int)(city.minutes / 60.0) != hourBefore) view.MarkMapDirty();
         }
 
@@ -247,8 +253,11 @@ namespace MSP
             {
                 case Tool.ROAD: city.PlaceRoad(city.RoadPath(a, b)); break;
                 case Tool.RES: case Tool.COM: case Tool.IND: city.PlaceZone(city.RectCells(a, b), ZoneForTool()); break;
-                case Tool.BULLDOZE: city.Bulldoze(city.RectCells(a, b)); break;
-                case Tool.BUILD: hud.ShowToast("Power lines come with city services"); break;
+                case Tool.BULLDOZE:
+                    city.Bulldoze(city.RectCells(a, b));
+                    services.BulldozeLines(city.RectCells(a, b));
+                    break;
+                case Tool.BUILD: services.PlaceLine(city.RoadPath(a, b)); break;  // power lines, drawn like roads
             }
         }
 
@@ -310,7 +319,11 @@ namespace MSP
                     var d = BuildDef();
                     if (d == null) break;
                     string text = d.name;
-                    if (d.placement == "line") text += "\nComes with city services";
+                    if (d.placement == "line")
+                    {
+                        cost = services.LineCost(city.RoadPath(a, hover));
+                        if (cost > 0) text += "\n$" + cost;
+                    }
                     else
                     {
                         string why = city.CanPlaceSpecial(buildKind, BuildCell(hover));

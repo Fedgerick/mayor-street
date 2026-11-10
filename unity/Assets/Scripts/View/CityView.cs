@@ -32,7 +32,7 @@ namespace MSP
 
         public City city;
         int _chunk = CHUNK;
-        public object services;  // CityServices once ported: unpowered buildings go dark at night
+        public CityServices services;  // buildings without power go dark at night
 
         /// <summary>Past this, buildings, trees and props give way to box stand-ins (0: never).</summary>
         public float detailDistance;
@@ -133,12 +133,12 @@ namespace MSP
         public void RefreshMap()
         {
             int n = City.W * City.H;
+            bool powerOn = services != null && services.PowerInPlay();
             for (int i = 0; i < n; i++)
             {
                 int bid = city.bld[i];
                 int built = bid >= 0 ? 32 : 0;
-                int dark = 0;
-                if (bid >= 0 && city.buildings[bid].Get("powered", true) == false && services != null) dark = 16;
+                int dark = powerOn && bid >= 0 && !city.buildings[bid].powered ? 16 : 0;
                 _cityPx[i] = new Color32(
                     (byte)(city.road[i] == 1 ? 255 : 0),
                     (byte)(city.zone[i] * 64 + built + dark),

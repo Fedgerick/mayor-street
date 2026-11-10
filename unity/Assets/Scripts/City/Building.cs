@@ -11,6 +11,8 @@ namespace MSP
         public long variant;
         public double seed, born;
         public bool connected = true;
+        /// <summary>Set by CityServices' power grid (msp's "powered" key).</summary>
+        public bool powered = true;
         /// <summary>Catalog id for catalog buildings, null for zone buildings.</summary>
         public string kind;
         public string name;

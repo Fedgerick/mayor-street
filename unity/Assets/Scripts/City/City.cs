@@ -238,6 +238,9 @@ namespace MSP
         public Vector2Int FlatToCell(Vector3 p) =>
             new Vector2Int(Planet.on ? G.Posmod(Mathf.FloorToInt(p.x / TILE), W) : Mathf.FloorToInt(p.x / TILE), Mathf.FloorToInt(p.z / TILE));
 
+        /// <summary>Posts a message to the HUD (for services and other systems).</summary>
+        public void Say(string text) => Message?.Invoke(text);
+
         public int GameDay() => (int)(minutes / 1440.0);
 
         /// <summary>Hours, 0..24.</summary>
@@ -1005,7 +1008,7 @@ namespace MSP
         }
 
         /// <summary>Separable box blur over a (2r+1)^2 window; wraps east to west on a planet.</summary>
-        float[] Blur(float[] src, int r)
+        public float[] Blur(float[] src, int r)
         {
             var tmp = new float[src.Length];
             var o = new float[src.Length];
