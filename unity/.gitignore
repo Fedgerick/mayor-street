@@ -1,0 +1,12 @@
+/Library/
+/Temp/
+/Obj/
+/Logs/
+/UserSettings/
+/Build/
+/Builds/
+*.csproj
+*.sln
+.vs/
+/Assets/Resources/Kit/
+/Assets/Resources/Kit.meta
