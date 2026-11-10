@@ -420,7 +420,7 @@ func _drive(c: CopCar, dt: float) -> void:
 
 func _cop_speed(c: CopCar) -> float:
 	var m := c.din * 4 + c.dout
-	var top := 15.0 + _stars * 2.2
+	var top := 18.0 + _stars * 3.2   # 21 to 34 m/s: the player's cars now reach their real top speeds
 	if c.dout == RoadNet.opp(c.din):
 		return 4.0
 	if net.is_turn(m):

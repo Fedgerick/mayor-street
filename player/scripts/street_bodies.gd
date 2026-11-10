@@ -528,6 +528,35 @@ func _player_hits() -> void:
 		street.player.hurt(c.v * c.v * 0.5, Planet.place(xf.origin))
 		street.player.velocity += Planet.dir(pw, fwd * c.v * 0.9 + Vector3.UP * minf(2.0 + c.v * 0.3, 6.0))
 		return
+	# Real cars too (a knocked-out or shoved car, one left rolling): the person is hurt and
+	# thrown, and doesn't stop a tonne and a half dead like a bollard.
+	for n in get_tree().get_nodes_in_group("vehicles"):
+		var car := n as DrivableCar
+		if car == null or car == street.car:
+			continue
+		var to := pw - car.global_position
+		if to.length() > 9.0:
+			continue
+		var vel := car.linear_velocity
+		var sp := vel.length()
+		if sp < HIT_PLAYER_SPEED or vel.dot(to) <= 0.0:
+			continue
+		var local := car.global_basis.inverse() * to
+		if absf(local.x) > car._aabb.size.x * 0.5 + 0.45 or absf(local.z) > car._aabb.size.z * 0.5 + 0.45 + sp / 60.0 or local.y > car._aabb.size.y:
+			continue
+		_player_hit_cd = 1.2
+		street.player.hurt(sp * sp * 0.5, car.global_position)
+		var up := Planet.up(pw)
+		street.player.velocity += vel * 0.9 + up * minf(2.0 + sp * 0.3, 6.0)
+		# The car carries on through: it ignores the person until they have been thrown clear.
+		var who: StreetPlayer = street.player
+		car.add_collision_exception_with(who)
+		who.add_collision_exception_with(car)
+		get_tree().create_timer(0.8).timeout.connect(func():
+			if is_instance_valid(car) and is_instance_valid(who):
+				car.remove_collision_exception_with(who)
+				who.remove_collision_exception_with(car))
+		return
 
 
 func _tidy_wrecks(focus: Vector3) -> void:
