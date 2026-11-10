@@ -16,8 +16,9 @@ namespace MSP
         public const int PLANET_COLS = 192;
         public const int PLANET_ROWS = 36;
 
-        OrbitCamera cam;
-        Light sun;
+        MayorCamera cam;
+        DayNight dayNight;
+        PlanetSky planetSky;
         float hour = 10.5f;
 
         void Awake()
@@ -31,10 +32,18 @@ namespace MSP
         {
             hour = Args.GetF("hour", 10.5f);
             BuildWorld();
+            dayNight = new GameObject("DayNight").AddComponent<DayNight>();
+            dayNight.transform.SetParent(transform);
+            planetSky = new GameObject("PlanetSky").AddComponent<PlanetSky>();
+            planetSky.transform.SetParent(transform);
+            planetSky.Setup(dayNight);
             var camGo = new GameObject("MayorCamera");
             camGo.transform.SetParent(transform);
-            cam = camGo.AddComponent<OrbitCamera>();
-            float[] v = { 1182f, 204f, 230f, -35f, -30f };
+            cam = camGo.AddComponent<MayorCamera>();
+            cam.bounds = new Rect(0, -300, Planet.W * Planet.TILE, Planet.H * Planet.TILE + 500);
+            cam.Moved += dayNight.SetViewDistance;
+            dayNight.ApplyQuality(Args.GetI("quality", 1), cam.cam);
+            float[] v = { 1182f, 204f, 230f, -35f, 0f };
             if (Args.Has("view"))
             {
                 string[] parts = Args.Get("view").Split(',');
@@ -42,13 +51,24 @@ namespace MSP
                     float.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v[i]);
             }
             cam.SetView(new Vector3(v[0], 0f, v[1]), v[2], v[3] * Mathf.Deg2Rad, v[4] * Mathf.Deg2Rad);
+            if (Args.Has("screenshot")) cam.inputEnabled = false;
             if (Args.Has("screenshot"))
                 StartCoroutine(Screenshot(Args.Get("screenshot")));
         }
 
         void Update()
         {
-            UpdateSun();
+            // [ and ] step the clock an hour (milestone-0 testing until the City clock is ported)
+            if (Input.GetKeyDown(KeyCode.LeftBracket)) hour = G.Fposmod(hour - 1f, 24f);
+            if (Input.GetKeyDown(KeyCode.RightBracket)) hour = G.Fposmod(hour + 1f, 24f);
+        }
+
+        void LateUpdate()
+        {
+            // as main.gd _follow_planet_sky: the sky follows the mayor focus round the ball
+            Vector3 where = Planet.Warp(cam.focus);
+            dayNight.UpdateTime(PlanetSky.LocalHour(hour, where), 0);
+            planetSky.Follow(where, cam.Eye, hour);
         }
 
         void BuildWorld()
@@ -59,19 +79,10 @@ namespace MSP
             belt.transform.SetParent(world);
             belt.GetComponent<MeshFilter>().sharedMesh = Planet.BeltMesh(0f, 1);
             belt.GetComponent<MeshRenderer>().sharedMaterial = Mats.Make(new Color(0.36f, 0.5f, 0.24f));
-            AddSphere(world, "Sea", Planet.R - 0.6f, new Color(0.12f, 0.36f, 0.5f), 0.85f);
+            MeshUtil.Show(world, "Sea", MeshUtil.Sphere(Planet.R - 0.6f, 192, 96), Mats.Make(new Color(0.12f, 0.36f, 0.5f), 0.85f));
             AddCap(world, "IceCap", Planet.R + 0.2f, Planet.LatOf(new Vector3(0, 0, 0)), Mathf.PI * 0.5f, new Color(0.9f, 0.94f, 0.97f));
             PlaceSampleBuildings(world);
 
-            sun = new GameObject("Sun").AddComponent<Light>();
-            sun.transform.SetParent(transform);
-            sun.type = LightType.Directional;
-            sun.shadows = LightShadows.Soft;
-            sun.intensity = 1.2f;
-            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.55f, 0.65f, 0.8f);
-            RenderSettings.ambientEquatorColor = new Color(0.45f, 0.48f, 0.5f);
-            RenderSettings.ambientGroundColor = new Color(0.25f, 0.24f, 0.22f);
         }
 
         /// <summary>A row of msp's kit buildings along a street near the starter town, to check
@@ -110,17 +121,6 @@ namespace MSP
             }
         }
 
-        static void AddSphere(Transform parent, string name, float radius, Color c, float smooth)
-        {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            go.name = name;
-            Destroy(go.GetComponent<Collider>());
-            go.transform.SetParent(parent);
-            go.transform.localScale = Vector3.one * radius * 2f;
-            go.GetComponent<MeshRenderer>().sharedMaterial = Mats.Make(c, smooth);
-            // the default sphere is coarse; good enough for the milestone-0 sea seen from orbit
-        }
-
         /// <summary>The sphere between two latitudes (radians), as a mesh in Unity space.</summary>
         static void AddCap(Transform parent, string name, float radius, float lat0, float lat1, Color c)
         {
@@ -155,19 +155,6 @@ namespace MSP
             go.transform.SetParent(parent);
             go.GetComponent<MeshFilter>().sharedMesh = m;
             go.GetComponent<MeshRenderer>().sharedMaterial = Mats.Make(c, 0.3f);
-        }
-
-        /// <summary>Sun over the camera's spot at the clock's hour (msp turns the sky to the local
-        /// up so street level at noon looks like the flat game).</summary>
-        void UpdateSun()
-        {
-            if (sun == null || cam == null) return;
-            Vector3 focus = cam.focus;
-            var f = Planet.Frame(focus);
-            float a = (hour - 6f) / 12f * Mathf.PI; // 0 at sunrise, PI at sunset
-            Vector3 toSun = (f.x * -Mathf.Cos(a) + f.y * Mathf.Sin(a) + f.z * -0.35f).normalized;
-            sun.transform.rotation = Quaternion.LookRotation(G.U(-toSun));
-            sun.intensity = Mathf.Clamp01(Mathf.Sin(a) * 2f) * 1.2f;
         }
 
         IEnumerator Screenshot(string path)
