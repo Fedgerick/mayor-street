@@ -6,6 +6,9 @@ extends RefCounted
 ## the bad jobs can already be played end to end.
 ##
 ## Tests run without a StreetMode: set `fake_pos` / `fake_car_model` instead.
+##
+## Positions in and out of here are flat map metres (on msp, Planet.flat of the world;
+## the same thing on ms): missions/ works on the map like citylife/ does.
 
 signal wanted_changed(stars: int)
 signal wasted
@@ -82,10 +85,10 @@ func position() -> Vector3:
 	if street == null:
 		return fake_pos
 	if inside() != "" and not interiors.current_building.is_empty():
-		return interiors.door_transform(interiors.current_building).origin
+		return Planet.flat(interiors.door_transform(interiors.current_building).origin)
 	if street.car:
-		return street.car.global_position
-	return street.player.global_position
+		return Planet.flat(street.car.global_position)
+	return Planet.flat(street.player.global_position)
 
 
 func inside() -> String:
@@ -159,14 +162,14 @@ func tick(delta: float) -> void:
 
 func spawn_car(model: String, pos: Vector3, yaw: float, color: Color) -> Object:
 	if street and street.has_method("spawn_car"):
-		return street.spawn_car(model, pos, yaw, color)
+		return street.spawn_car(model, Planet.place(pos), yaw, color)
 	return null
 
 
 func damage_player(amount: float, from: Vector3) -> void:
 	## A mission enemy hurts the player (in a car, the car takes it).
 	if street and street.has_method("damage_player"):
-		street.damage_player(amount, from, "crew")
+		street.damage_player(amount, Planet.place(from), "crew")
 	else:
 		fake_damage += amount
 
@@ -185,5 +188,5 @@ func set_sanctioned(on: bool) -> void:
 func ground_point(p: Vector3) -> Vector3:
 	## A sidewalk spot near p, where StreetMode would put a pedestrian.
 	if street and street.has_method("sidewalk_spawn"):
-		return street.sidewalk_spawn(p)
+		return Planet.flat(street.sidewalk_spawn(Planet.place(p)))
 	return p

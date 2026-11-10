@@ -804,6 +804,189 @@
 			"pay": {"base": 500, "per_km": 0},
 			"time": {"base": 200},
 			"goodness": 8, "city_bonus": 150
+		},
+		{
+			"id": "tow_call",
+			"side": "good",
+			"giver": "radio",
+			"lean": 0,
+			"title": "Tow a {car} to {start}",
+			"brief": "Dispatch: a {car} broke down by {lot}. {start} has nobody free. Take one of their trucks.",
+			"slots": {"start": {"tag": "salvage_yard", "near_player_m": 1500}, "lot": {"tag": "home", "from": "start", "min_m": 200, "max_m": 1200}},
+			"car": ["car_sedan", "car_hatch", "car_pickup", "car_sports", "car_taxi"],
+			"steps": [
+				{"do": "vehicle", "at": "start", "model": "car_tow", "color": "#f29e1f", "text": "Take a tow truck from {start}"},
+				{"do": "tow", "at": "lot", "model": "{car}", "wreck": true, "text": "Stop the truck beside the broken-down {car} by {lot}"},
+				{"do": "goto", "at": "start", "car": "mission", "text": "Haul the {car} back to {start}"}
+			],
+			"route": ["start", "lot", "start"],
+			"flag_bonus": {"flag": "yard_friend", "mult": 1.5},
+			"pay": {"base": 250, "per_km": 170},
+			"time": {"base": 100, "per_km": 150},
+			"goodness": 3,
+			"city_bonus": 60
+		},
+		{
+			"id": "repo_job",
+			"side": "bad",
+			"giver": "payphone",
+			"lean": 0,
+			"title": "Repo a {car} for {start}",
+			"brief": "\"Guy by {lot} stopped paying on his {car}. Borrow a truck from {start}, hook it, and don't stop to chat.\"",
+			"slots": {"start": {"tag": "salvage_yard"}, "lot": {"tag": "home", "from": "start", "min_m": 300, "max_m": 1400}},
+			"car": ["car_sports", "car_pickup", "car_sedan"],
+			"steps": [
+				{"do": "vehicle", "at": "start", "model": "car_tow", "color": "#f29e1f", "text": "Take a tow truck from {start}"},
+				{"do": "tow", "at": "lot", "model": "{car}", "wreck": false, "steal": true, "text": "Stop beside the {car} by {lot} and hook it"},
+				{"do": "wanted", "stars": 1},
+				{"do": "goto", "at": "start", "car": "mission", "text": "Get the {car} back to {start}"}
+			],
+			"route": ["start", "lot", "start"],
+			"flag_bonus": {"flag": "yard_friend", "mult": 1.5},
+			"pay": {"base": 450, "per_km": 220},
+			"time": {"base": 90, "per_km": 140},
+			"goodness": -4,
+			"city_bonus": -20,
+			"crime": 1,
+			"max_wanted": 3
+		},
+		{
+			"id": "yard_guard",
+			"side": "good",
+			"giver": "radio",
+			"lean": 0,
+			"title": "Trouble at {start}",
+			"brief": "Dispatch: a crew is coming to strip {start} for parts. Hold the gate until the patrol cars get there.",
+			"slots": {"start": {"tag": "salvage_yard", "near_player_m": 1200}},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "text": "Get to {start} on foot"},
+				{"do": "defend", "at": "start", "seconds": 45, "waves": 3, "count": 3, "armed": "mixed", "radius": 18, "text": "Hold {start} until backup arrives ({secs} s)"}
+			],
+			"route": ["start"],
+			"pay": {"base": 450, "per_km": 0},
+			"time": {"base": 200},
+			"goodness": 7,
+			"city_bonus": 120
+		},
+		{
+			"id": "scrap_run",
+			"side": "bad",
+			"giver": "payphone",
+			"lean": 0,
+			"title": "Scrap a {car} at {start}",
+			"brief": "\"{start} pays cash for a {car}, no papers. One's parked by {lot}.\"",
+			"slots": {"start": {"tag": "salvage_yard"}, "lot": {"tag": "shop", "from": "start", "min_m": 300, "max_m": 1400}},
+			"car": ["car_van", "car_sedan", "car_hatch", "car_pickup"],
+			"steps": [
+				{"do": "vehicle", "at": "lot", "model": "{car}", "steal": true, "text": "Steal the {car} parked by {lot}"},
+				{"do": "goto", "at": "start", "car": "mission", "text": "Drive the {car} into {start}"}
+			],
+			"route": ["lot", "start"],
+			"pay": {"base": 220, "per_km": 160},
+			"time": {"base": 60, "per_km": 110},
+			"goodness": -4,
+			"city_bonus": -20,
+			"stolen_goods": true,
+			"crime": 1
+		},
+		{
+			"id": "arms_holdup",
+			"side": "bad",
+			"giver": "payphone",
+			"lean": 10,
+			"title": "Hold up {start}",
+			"brief": "\"{start} keeps a fat register and an itchy owner. Take both down, then lie low at {end}.\"",
+			"slots": {"start": {"tag": "gun_shop"}, "end": {"tag": "hideout", "from": "start", "min_m": 250}},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "text": "Walk up to {start}"},
+				{"do": "fight", "at": "start", "count": 2, "armed": "pistol", "text": "The owner and his nephew are armed ({left} left)"},
+				{"do": "hold", "at": "start", "seconds": 6, "car": false, "radius": 10, "text": "Empty the register"},
+				{"do": "wanted", "stars": 2},
+				{"do": "goto", "at": "end", "text": "Lie low at {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 900, "per_km": 200},
+			"time": {"base": 180, "per_km": 120},
+			"goodness": -8,
+			"city_bonus": -150,
+			"crime": 2,
+			"max_wanted": 4
+		},
+		{
+			"id": "arms_shipment",
+			"side": "good",
+			"giver": "radio",
+			"lean": 0,
+			"title": "Ammunition for {end}",
+			"brief": "Dispatch: {start} has a crate of ammunition for {end}. Their van driver called in sick.",
+			"slots": {"start": {"tag": "gun_shop", "near_player_m": 1500}, "end": {"tag": "police", "from": "start", "min_m": 250}},
+			"steps": [
+				{"do": "vehicle", "at": "start", "model": "car_van", "color": "#3a4038", "text": "Get in the van outside {start}"},
+				{"do": "goto", "at": "end", "car": "mission", "clean": true, "text": "Deliver the crate to {end} (no stars)"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 300, "per_km": 200},
+			"time": {"base": 50, "per_km": 100},
+			"goodness": 3,
+			"city_bonus": 80
+		},
+		{
+			"id": "arms_defend",
+			"side": "good",
+			"giver": "radio",
+			"lean": 10,
+			"title": "Stand guard at {start}",
+			"brief": "Dispatch: word is a gang wants what's in {start}'s back room. Stand with the owner.",
+			"slots": {"start": {"tag": "gun_shop", "near_player_m": 1200}},
+			"steps": [
+				{"do": "goto", "at": "start", "car": false, "text": "Get to {start} on foot"},
+				{"do": "defend", "at": "start", "seconds": 50, "waves": 3, "count": 4, "armed": "mixed", "radius": 18, "text": "Keep them out of {start} ({secs} s)"}
+			],
+			"route": ["start"],
+			"pay": {"base": 600, "per_km": 0},
+			"time": {"base": 220},
+			"goodness": 8,
+			"city_bonus": 150
+		},
+		{
+			"id": "arms_smuggle",
+			"side": "bad",
+			"giver": "payphone",
+			"lean": 0,
+			"title": "Guns for {end}",
+			"brief": "\"{start}'s delivery van is loaded and the driver's on lunch. {end} is buying.\"",
+			"slots": {"start": {"tag": "gun_shop"}, "end": {"tag": "crime_den", "from": "start", "min_m": 300}},
+			"steps": [
+				{"do": "vehicle", "at": "start", "model": "car_van", "color": "#3a4038", "steal": true, "text": "Steal the van outside {start}"},
+				{"do": "wanted", "stars": 1},
+				{"do": "goto", "at": "end", "car": "mission", "text": "Bring the guns to {end}"}
+			],
+			"route": ["start", "end"],
+			"pay": {"base": 600, "per_km": 220},
+			"time": {"base": 60, "per_km": 110},
+			"goodness": -6,
+			"city_bonus": -60,
+			"crime": 2,
+			"max_wanted": 3
+		},
+		{
+			"id": "map_dig",
+			"side": "good",
+			"giver": "radio",
+			"lean": 0,
+			"quest_only": true,
+			"title": "X marks the spot near {district}",
+			"brief": "The old harbor map you bought has three marks near {district}. Somebody buried something.",
+			"slots": {"start": {"tag": "gun_shop"}, "district": {"tag": "industrial", "from": "start", "min_m": 300, "max_m": 2000}},
+			"steps": [
+				{"do": "collect", "at": "district", "count": 3, "spread_m": 120, "text": "Dig up the marked spots ({left} left)"},
+				{"do": "fight", "at": "district", "count": 3, "armed": "pistol", "text": "Someone else read the map ({left} left)"}
+			],
+			"route": ["start", "district"],
+			"pay": {"base": 1500, "per_km": 0},
+			"time": {"base": 300},
+			"goodness": 0,
+			"city_bonus": 0
 		}
 	]
 }

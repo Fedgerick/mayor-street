@@ -29,6 +29,14 @@ const MAX_KICK_UP := 3.0    # m/s of upward speed one frame may add (depenetrati
 const MAX_SPIN := 5.0       # rad/s, any axis, unless the car is wrecked
 const TIP_DAMP := 3.5       # per second: roll and pitch spin bleeds off on the ground, so it won't tumble
 const RIGHTING := 9000.0    # N m per radian past 25 degrees of lean, per tonne: pushes a tipping car back down
+# What moves and stops the car (planet/tests/physics_report.gd measures all of these).
+const KNEE := 0.38          # the engine pulls its hardest up to this share of top speed, then at constant power
+const ROLLING := 0.12       # m/s2 of rolling resistance
+const ENGINE_BRAKE := 0.7   # m/s2 more when the driver is off the throttle
+const BRAKE_G := 0.95       # full braking, in g, for a car
+const BRAKE_G_HEAVY := 0.62 # ... and for a 12 tonne bus; in between by weight
+const GRIP := 1.25          # tyre friction: sideways and braking grip together top out near this many g
+const STEER_PAST_GRIP := 1.3  # full lock asks for this much more turn than the tyres can give, so it scrubs speed
 
 const MODELS := {
 	# model: [wheel radius, front axle z, rear axle z, half track, mass, max engine force, top speed m/s]
@@ -85,6 +93,12 @@ var headlights_on := false
 var _wheels: Array[VehicleWheel3D] = []
 var _engine := 4500.0
 var _top_speed := 35.0
+var _drag := 0.0                 # air drag, N per (m/s)2: the engine runs out against it exactly at top speed
+var _steer := 0.0                # the driver's steering; `steering` adds the road's own bend on msp
+var _wheelbase := 2.7
+var _land_t := 0.0                # just landed: seconds left of the cap on bouncing back up
+var _land_cap := 0.0
+var _brake_newtons := 0.0        # full braking force per wheel; brake_force is this as an impulse per physics step
 var _upside_down := 0.0
 var _brake_lights: Array[MeshInstance3D] = []
 var _lights: Array[Light3D] = []
@@ -111,6 +125,7 @@ var _seat := Vector3.ZERO        # driver's hip, body space (from the car kit's 
 var _dmg_mesh := 0
 var damage_stage := 0            # 0 clean, 1 dented, 2 smashed (smoking), 3 burnt out
 static var _spec_cache := {}
+static var _brake_mat: StandardMaterial3D   # shared by the box cars' brake lights
 
 
 func _ready() -> void:
@@ -125,12 +140,14 @@ func _ready() -> void:
 	_engine = spec[5] * HEFT
 	_top_speed = spec[6]
 	steer_speed = _feel.steer
-	# Heavy vehicles need more brake to stop at all, but still take longer.
-	brake_force = 40.0 * pow(mass / 1250.0, 0.75)
+	# Nothing slows the car but its own drag, tyres and brakes: the engine's default damping
+	# (0.15 a second, 5.7 m/s2 at a sedan's top speed) held every car to about 40% of its speed.
+	linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
+	_drag = maxf(_engine * KNEE - ROLLING * mass, 0.0) / (_top_speed * _top_speed)
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0, 0.3, 0.05)   # low, so it doesn't tip over on a kerb
 	angular_damp = 1.5
-	linear_damp = 0.05
+	linear_damp = 0.0
 	continuous_cd = true
 	can_sleep = true
 	_build_visual()
@@ -222,25 +239,24 @@ func _build_visual() -> void:
 	# Brake lights and headlight beams (only lit while driven).
 	var hl := _aabb.size.z * 0.5
 	var hw := _aabb.size.x * 0.5
-	var bmat := StandardMaterial3D.new()
-	bmat.albedo_color = Color(1, 0.1, 0.08)
-	bmat.emission_enabled = true
-	bmat.emission = Color(1, 0.08, 0.05)
-	bmat.emission_energy_multiplier = 4.0
-	for s in [-1, 1]:
-		var b := MeshInstance3D.new()
-		var q := BoxMesh.new()
-		q.size = Vector3(0.38, 0.18, 0.04)
-		b.mesh = q
-		b.material_override = bmat
-		b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		b.position = Vector3(s * (hw - 0.3), (0.75 if model != "car_truck" else 0.95) - 0.45, -hl - 0.04)
-		b.visible = false
-		_tilt.add_child(b)
-		if not _kit_shader:   # the kit shader lights its own tail lamps
+	if not _kit_shader:   # the kit shader lights its own tail lamps: no meshes to make and free
+		if _brake_mat == null:
+			_brake_mat = StandardMaterial3D.new()
+			_brake_mat.albedo_color = Color(1, 0.1, 0.08)
+			_brake_mat.emission_enabled = true
+			_brake_mat.emission = Color(1, 0.08, 0.05)
+			_brake_mat.emission_energy_multiplier = 4.0
+		for s in [-1, 1]:
+			var b := MeshInstance3D.new()
+			var q := BoxMesh.new()
+			q.size = Vector3(0.38, 0.18, 0.04)
+			b.mesh = q
+			b.material_override = _brake_mat
+			b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			b.position = Vector3(s * (hw - 0.3), (0.75 if model != "car_truck" else 0.95) - 0.45, -hl - 0.04)
+			b.visible = false
+			_tilt.add_child(b)
 			_brake_lights.append(b)
-		else:
-			b.queue_free()
 	var spot := SpotLight3D.new()
 	spot.name = "Headlights"
 	spot.position = Vector3(0, 0.8, hl + 0.1)
@@ -308,12 +324,18 @@ func _build_body(spec: Array) -> void:
 			w.suspension_max_force = mass * 14.0
 			w.damping_compression = 0.8
 			w.damping_relaxation = 1.1
-			w.wheel_friction_slip = 2.6 * _feel.grip
+			w.wheel_friction_slip = GRIP * _feel.grip
 			w.wheel_roll_influence = 0.06
 			w.use_as_steering = ax[1]
 			w.use_as_traction = true
 			add_child(w)
 			_wheels.append(w)
+	_wheelbase = maxf(absf(float(axles[0][0]) - float(axles[1][0])), 1.5)
+	# Brakes sized for the stop they should give (VehicleWheel3D.brake is an impulse per tick).
+	# Heavy vehicles brake less hard, and take longer.
+	var bg := lerpf(BRAKE_G, BRAKE_G_HEAVY, clampf((mass - 3000.0) / 9000.0, 0.0, 1.0))
+	_brake_newtons = bg * 9.8 * mass / _wheels.size()
+	brake_force = _brake_newtons / 60.0
 
 
 func forward() -> Vector3:
@@ -326,7 +348,8 @@ func speed() -> float:
 
 
 func heading_yaw() -> float:
-	var f := forward()
+	## In the local frame (on msp, the frame standing on the ball under the car).
+	var f := Planet.to_local(global_position, forward())
 	return atan2(-f.x, -f.z)
 
 
@@ -354,7 +377,7 @@ func seat_point() -> Vector3:
 func exit_point() -> Vector3:
 	## Beside the driver's door (left side), on the ground.
 	var left := global_basis.x
-	return global_position + left * (_aabb.size.x * 0.5 + 0.7) + forward() * (_seat.z + 0.15) + Vector3.UP * 0.2
+	return global_position + left * (_aabb.size.x * 0.5 + 0.7) + forward() * (_seat.z + 0.15) + _up() * 0.2
 
 
 func take_hit(amount: float, _from_pos := Vector3.ZERO, _dir := Vector3.ZERO) -> void:
@@ -398,7 +421,7 @@ func explode() -> void:
 	for w in _wheels:
 		w.engine_force = 0.0
 		w.brake = brake_force
-	apply_central_impulse(Vector3.UP * mass * 4.5)
+	apply_central_impulse(_up() * mass * 4.5)
 	apply_torque_impulse(Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * mass * 1.2)
 	exploded.emit(self)
 
@@ -425,9 +448,21 @@ func _steady_body(delta: float) -> void:
 	if wrecked:
 		return
 	var v := linear_velocity
-	var vy_cap := maxf(_last_vel.y, 0.0) + MAX_KICK_UP
-	if v.y > vy_cap:
-		v.y = vy_cap
+	var upv := _up()
+	var vy := v.dot(upv)
+	var vy_cap := maxf(_last_vel.dot(upv), 0.0) + MAX_KICK_UP
+	var fall := -_last_vel.dot(upv)
+	if fall > 2.0:
+		# Coming down hard: for the next quarter second the ground gives back a quarter of
+		# the landing speed at most, so a car (or a bus) that bottoms out on its springs
+		# thumps down and stays down instead of being bounced back up by the solver.
+		_land_cap = 0.5 + fall * 0.25
+		_land_t = 0.25
+	if _land_t > 0.0:
+		_land_t -= delta
+		vy_cap = minf(vy_cap, _land_cap)
+	if vy > vy_cap:
+		v -= upv * (vy - vy_cap)
 		linear_velocity = v
 	var grounded := false
 	for wh in _wheels:
@@ -442,9 +477,9 @@ func _steady_body(delta: float) -> void:
 		apply_torque(-(global_basis * damp))
 		# Past ~25 degrees of lean, push back toward flat.
 		var up := global_basis.y
-		var lean := acos(clampf(up.dot(Vector3.UP), -1.0, 1.0))
+		var lean := acos(clampf(up.dot(upv), -1.0, 1.0))
 		if lean > 0.44 and lean < 1.9:
-			var axis := up.cross(Vector3.UP)
+			var axis := up.cross(upv)
 			if axis.length() > 0.001:
 				apply_torque(axis.normalized() * (lean - 0.44) * RIGHTING * (mass / 1000.0))
 	if angular_velocity.length() > MAX_SPIN:
@@ -452,6 +487,7 @@ func _steady_body(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	brake_force = _brake_newtons * delta
 	_steady_body(delta)
 	# Crash damage from sudden changes in velocity.
 	var dv := (linear_velocity - _last_vel).length()
@@ -485,9 +521,12 @@ func _physics_process(delta: float) -> void:
 		hb = Input.is_action_pressed("street_handbrake")
 		if Input.is_action_just_pressed("street_reset"):
 			reset_upright()
-	# Speed-sensitive steering: full lock when slow, gentle at speed.
-	var lock := max_steer * clampf(handling, 0.5, 1.5) * lerpf(1.0, 0.32, clampf(absf(v) / _top_speed, 0.0, 1.0))
-	steering = move_toward(steering, steer_input * lock, steer_speed * delta)
+	# Speed-sensitive steering: full lock when slow; at speed, no more lock than the tyres
+	# can use (a little past it, so holding the wheel over scrubs speed and tightens the turn).
+	var grip_g: float = GRIP * handling * _feel.grip * weather_grip * 9.8 + 0.004 * v * v   # with the downforce below
+	var lock := minf(max_steer * clampf(handling, 0.5, 1.5), atan(_wheelbase * grip_g * STEER_PAST_GRIP / maxf(v * v, 1.0)))
+	_steer = move_toward(_steer, steer_input * lock, steer_speed * delta)
+	steering = _steer + _road_bend()
 
 	var braking := false
 	var ef := 0.0
@@ -497,33 +536,66 @@ func _physics_process(delta: float) -> void:
 			bf = brake_force * throttle
 			braking = true
 		else:
-			ef = _engine * handling * throttle * clampf(1.0 - v / _top_speed, 0.0, 1.0)
+			# Full pull off the line, then constant power: the pull falls as speed climbs.
+			ef = _engine * handling * throttle * minf(1.0, KNEE * _top_speed / maxf(v, 0.1))
 	elif throttle < -0.05:
 		if v > 1.0:
 			bf = brake_force * -throttle
 			braking = true
 		else:
 			ef = _engine * 0.6 * throttle * clampf(1.0 + v / (_top_speed * 0.35), 0.0, 1.0)
-	else:
-		bf = 1.5 if driver != null else brake_force * 0.3  # engine braking / parked
+	elif driver == null or absf(v) < 0.5:
+		bf = brake_force * 0.3   # parked, or held still on a slope
+	var grip: float = GRIP * handling * _feel.grip * weather_grip
 	for w in _wheels:
 		var rear := w.position.z < 0.0
 		w.brake = brake_force * 1.5 if hb and rear else bf
-		w.wheel_friction_slip = 1.5 if hb and rear else 2.6 * handling * _feel.grip * weather_grip
+		w.wheel_friction_slip = grip * 0.55 if hb and rear else grip   # locked rear wheels let go
 		w.engine_force = 0.0 if hb and rear else ef / _wheels.size()
+	_resist(absf(throttle) < 0.05 and driver != null)
 	_braking = braking or hb or (driver != null and throttle < -0.05 and v > 0.5)
 	for b in _brake_lights:
 		b.visible = _braking
 
 	# Downforce keeps it planted; anti-flip assist while on the ground.
-	apply_central_force(Vector3.DOWN * mass * 0.004 * v * v)
-	if global_basis.y.y < 0.3:
+	apply_central_force(-_up() * mass * 0.004 * v * v)
+	if global_basis.y.dot(_up()) < 0.3:
 		_upside_down += delta
 		if _upside_down > 2.5 and driver != null:
 			reset_upright()
 	else:
 		_upside_down = 0.0
 	rig.heading = heading_yaw()
+
+
+func _resist(coasting: bool) -> void:
+	## Air drag (with the square of speed), and on the ground rolling resistance and, off the
+	## throttle, engine braking. Both fade out below 1 m/s so a stopped car is not pushed about.
+	var vel := linear_velocity
+	var sp := vel.length()
+	if sp < 0.05:
+		return
+	var f := _drag * sp * sp
+	var grounded := false
+	for w in _wheels:
+		if w.is_in_contact():
+			grounded = true
+			break
+	if grounded:
+		f += (ROLLING + (ENGINE_BRAKE if coasting else 0.0)) * mass * minf(sp, 1.0)
+	apply_central_force(-vel / sp * f)
+
+
+func _road_bend() -> float:
+	## msp: the steering it takes to follow the map's own straight lines. An east-west street
+	## is a circle of latitude, which bends toward the pole (4 m in every 90 at the edge of
+	## town), so a car driven "straight" would wander off it. This holds the wheel that much
+	## over; on the equator, and heading north or south, it is nothing.
+	if not Planet.on:
+		return 0.0
+	var lat := Planet.lat_of(Planet.flat(global_position))
+	var east := Planet.to_local(global_position, forward()).x
+	return atan(_wheelbase * east * tan(lat) / Planet.R)
 
 
 func _body_motion(delta: float) -> void:
@@ -569,7 +641,28 @@ func body_tilt() -> Vector2:
 	return Vector2(_roll.x, _pitch.x)
 
 
+## Which way is up where the car is: +Y on the flat island, away from the ball's centre
+## on msp (where a point-gravity area pulls toward the centre).
+func _up() -> Vector3:
+	return Planet.up(global_position)
+
+
 func reset_upright() -> void:
+	if Planet.on:
+		var up := _up()
+		var fw := forward()
+		fw = (fw - up * fw.dot(up)).normalized()
+		if fw.length() < 0.1:
+			fw = Planet.basis(global_position).x
+		var pf := Planet.unwarp(global_position)
+		pf.y = maxf(pf.y, 0.0) + 1.0
+		global_transform = Transform3D(Basis(up.cross(fw), up, fw), Planet.warp(pf))
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		_last_vel = Vector3.ZERO
+		_accel = Vector3.ZERO
+		_upside_down = 0.0
+		return
 	var f := forward()
 	var yaw := atan2(f.x, f.z)
 	var p := global_position

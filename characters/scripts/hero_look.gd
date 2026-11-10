@@ -51,7 +51,9 @@ static var _ok := false
 static var _tried := false
 static var _built := {}       # parts key -> [ArrayMesh, shadow ArrayMesh]
 static var _rest := {}        # "part#surface" -> its arrays with the rest pose baked in
-const BUILT_MAX := 48         # outfits kept merged; crowd outfits come and go
+# Outfits kept merged; crowd outfits come and go. Each holds ~60 GPU buffers (about four per
+# surface), and AMD's driver refuses new buffers past a few thousand, so keep this small.
+const BUILT_MAX := 24
 static var _mats := {}        # material key -> ShaderMaterial
 
 
@@ -167,12 +169,15 @@ func _apply() -> void:
 		return
 	var names := cm.part_names()
 	var key := ",".join(names) + ("@mid" if mid else "@full")
-	if not _built.has(key):
-		if _built.size() >= BUILT_MAX:
-			_built.erase(_built.keys()[0])   # oldest first; models wearing it keep their copy
-		_built[key] = _build(names, mid)
-	_mesh = _built[key][0]
-	_shadow = _built[key][1]
+	var got: Array = _built.get(key, [])
+	_built.erase(key)   # re-added at the back: least recently used goes first
+	if got.is_empty():
+		while _built.size() >= BUILT_MAX:
+			_built.erase(_built.keys()[0])   # models wearing it keep their copy
+		got = _build(names, mid)
+	_built[key] = got
+	_mesh = got[0]
+	_shadow = got[1]
 	_key = key
 	cm.body.mesh = _mesh
 	cm.body.skin = _skin

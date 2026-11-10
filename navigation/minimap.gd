@@ -81,9 +81,9 @@ func _draw_content() -> void:
 	if tex:
 		var k: float = r / nav.radius_m
 		var me := Vector2(nav.me.x, nav.me.z)
-		var world := City.SIZE * City.TILE
+		var world := Vector2(City.W, City.H) * City.TILE
 		_content.draw_set_transform(c, -nav.view_angle, Vector2(k, k))
-		_content.draw_texture_rect(tex, Rect2(-me, Vector2(world, world)), false)
+		_content.draw_texture_rect(tex, Rect2(-me, world), false)
 		# GPS line along the roads, in world metres under the same transform.
 		var pts: PackedVector2Array = nav.route_points()
 		if pts.size() >= 2:

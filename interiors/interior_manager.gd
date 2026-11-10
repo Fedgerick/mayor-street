@@ -18,6 +18,8 @@ signal interior_exited(interior_id: String, building: Dictionary)
 
 # Rooms load high above the map, out of view. Not below it: the street ground is an
 # infinite WorldBoundary plane at y = 0 that pushes anything under it back up.
+# On msp (Planet.on) they float 2 km over the seam, the far side from the town, stood up
+# on the ball like everything else (over a pole the local frame would spin).
 const ORIGIN := Vector3(0.0, 2500.0, 0.0)
 const DOOR_DATA := preload("res://interiors/special_doors.gd")
 
@@ -92,7 +94,19 @@ func door_transform(b: Dictionary) -> Transform3D:
 	# Street collision blocks a special's lot inside (half - 1.4) m (CityCollision), so
 	# a door set back behind that line moves out to it, where the player can reach it.
 	local.z = maxf(local.z, int(b.get("size", 1)) * City.TILE * 0.5 - 1.4)
-	return Transform3D(basis, city.building_center(b) + basis * local)
+	return Planet.xf_rigid(Transform3D(basis, city.building_center(b) + basis * local))
+
+
+static func room_transform() -> Transform3D:
+	## Where a loaded room sits in the world.
+	if Planet.on:
+		return Transform3D(Planet.frame_at(0.0, 0.0), Planet.dir_at(0.0, 0.0) * (Planet.R + 2000.0))
+	return Transform3D(Basis.IDENTITY, ORIGIN)
+
+
+func _place_player(at: Vector3, face: Vector3) -> void:
+	var f := Planet.to_local(at, face)
+	street.player.place(at, atan2(-f.x, -f.z))
 
 
 func _sync_door(id: int) -> void:
@@ -157,7 +171,7 @@ func enter(interior_id: String, door: DoorTrigger = null, at_marker := "spawn") 
 	street.player.set_controls(false)
 	await _fade_to(1.0)
 	current = Interior.create(interior_id)
-	current.position = ORIGIN
+	current.transform = room_transform()
 	add_child(current)
 	current.exit_requested.connect(func() -> void: exit())
 	current_id = interior_id
@@ -165,8 +179,7 @@ func enter(interior_id: String, door: DoorTrigger = null, at_marker := "spawn") 
 	_go_indoors(true)
 	var mk := current.marker(at_marker)
 	var sp: Transform3D = mk.global_transform if mk else current.spawn_transform()
-	var f := -sp.basis.z
-	street.player.place(sp.origin + Vector3.UP * 0.05, atan2(-f.x, -f.z))
+	_place_player(sp.origin + Planet.up(sp.origin) * 0.05, -sp.basis.z)
 	current.arm_exit_after(0.6)
 	_title.text = door.label if door else ""
 	await _fade_to(0.0)
@@ -199,8 +212,7 @@ func exit() -> void:
 		out = Transform3D(xf.basis, xf.origin + xf.basis.z * 2.2)
 	else:
 		out = _return_to
-	var f := out.basis.z   # face the street
-	street.player.place(out.origin + Vector3.UP * 0.1, atan2(-f.x, -f.z))
+	_place_player(out.origin + Planet.up(out.origin) * 0.1, out.basis.z)  # face the street
 	await _fade_to(0.0)
 	street.player.set_controls(true)
 	busy = false

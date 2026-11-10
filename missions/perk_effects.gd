@@ -136,7 +136,7 @@ func _call_crew() -> void:
 	var c: City = missions.city
 	var router: RoadRouter = missions.director.router
 	var me: Vector3 = missions.link.position()
-	var cell := router.nearest_road(c.world_to_cell(me))
+	var cell := router.nearest_road(c.flat_to_cell(me))
 	if cell.x < 0:
 		missions.hud.news("No road for the crew to reach you", 2.5)
 		return

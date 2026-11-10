@@ -71,11 +71,14 @@ func _process(delta: float) -> void:
 # ------------------------------------------------------------------ overlay ---
 
 func _make_overlay() -> void:
-	var n := City.SIZE
-	_overlay_img = Image.create_empty(n, n, false, Image.FORMAT_RGBA8)
+	_overlay_img = Image.create_empty(City.W, City.H, false, Image.FORMAT_RGBA8)
 	_overlay_tex = ImageTexture.create_from_image(_overlay_img)
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(n * City.TILE, n * City.TILE)
+	var plane: Mesh
+	if Planet.on:
+		plane = Planet.belt_mesh(OVERLAY_Y)
+	else:
+		plane = PlaneMesh.new()
+		plane.size = Vector2(City.W * City.TILE, City.H * City.TILE)
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -87,7 +90,8 @@ func _make_overlay() -> void:
 	_overlay_mesh.mesh = plane
 	_overlay_mesh.material_override = mat
 	_overlay_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_overlay_mesh.position = Vector3(n * City.TILE * 0.5, OVERLAY_Y, n * City.TILE * 0.5)
+	if not Planet.on:
+		_overlay_mesh.position = Vector3(City.W * City.TILE * 0.5, OVERLAY_Y, City.H * City.TILE * 0.5)
 	_overlay_mesh.visible = false
 	add_child(_overlay_mesh)
 
@@ -114,23 +118,23 @@ func _refresh_overlay() -> void:
 	var vals := services.overlay_values(overlay)
 	if vals.is_empty():
 		return
-	var n := City.SIZE
+	var n := City.W * City.H
 	var data := PackedByteArray()
-	data.resize(n * n * 4)
+	data.resize(n * 4)
 	var built_only := overlay == CityServices.Overlay.HAPPINESS or overlay == CityServices.Overlay.GARBAGE \
 		or overlay == CityServices.Overlay.CRIME
 	var near_built := PackedByteArray()
 	if built_only:
-		near_built.resize(n * n)
-		for i in n * n:
+		near_built.resize(n)
+		for i in n:
 			if city.bld[i] >= 0:
-				var x := i % n
-				var y := i / n
+				var x := i % City.W
+				var y := i / City.W
 				for dy in range(-1, 2):
 					for dx in range(-1, 2):
 						if city.inside(x + dx, y + dy):
 							near_built[city.idx(x + dx, y + dy)] = 1
-	for i in n * n:
+	for i in n:
 		var c := Color(0, 0, 0, 0)
 		if city.land[i] == 1 and (not built_only or near_built[i] == 1):
 			c = overlay_color(overlay, vals[i])
@@ -138,7 +142,7 @@ func _refresh_overlay() -> void:
 		data[i * 4 + 1] = c.g8
 		data[i * 4 + 2] = c.b8
 		data[i * 4 + 3] = c.a8
-	_overlay_img.set_data(n, n, false, Image.FORMAT_RGBA8, data)
+	_overlay_img.set_data(City.W, City.H, false, Image.FORMAT_RGBA8, data)
 	_overlay_tex.update(_overlay_img)
 
 
@@ -148,14 +152,14 @@ func _refresh_lines() -> void:
 	_lines_dirty = false
 	var poles: Array[Transform3D] = []
 	var wires: Array[Transform3D] = []
-	for i in City.SIZE * City.SIZE:
+	for i in City.W * City.H:
 		if services.power_line[i] == 0:
 			continue
-		var x := i % City.SIZE
-		var y := i / City.SIZE
+		var x := i % City.W
+		var y := i / City.W
 		var p := city.cell_center(x, y)
-		var horiz := services.power_line[i - 1] == 1 if x > 0 else false
-		horiz = horiz or (x < City.SIZE - 1 and services.power_line[i + 1] == 1)
+		var horiz := services.power_line[city.idx(x - 1, y)] == 1 if (x > 0 or Planet.on) else false
+		horiz = horiz or ((x < City.W - 1 or Planet.on) and services.power_line[city.idx(x + 1, y)] == 1)
 		var b := Basis(Vector3.UP, 0.0 if horiz else PI * 0.5)
 		poles.append(Transform3D(b, p))
 		# A wire to the east and south neighbour (or the road the line meets), at both arm ends.
@@ -170,6 +174,8 @@ func _refresh_lines() -> void:
 			if not (to_line or to_grid):
 				continue
 			var q := city.cell_center(nx, ny)
+			if Planet.on:
+				q.x = p.x + Planet.dx(p.x, q.x)
 			if to_grid:
 				q = p.lerp(q, 0.5)
 			var dir := (q - p)
@@ -246,4 +252,4 @@ func _fill(node: MultiMeshInstance3D, xfs: Array[Transform3D]) -> void:
 	mm.use_colors = colors
 	mm.instance_count = xfs.size()
 	for i in xfs.size():
-		mm.set_instance_transform(i, xfs[i])
+		mm.set_instance_transform(i, Planet.xf(xfs[i]))  # flat map -> the ball on msp

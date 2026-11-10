@@ -32,6 +32,7 @@ class Spot:
 	var stands: Array[Vector3] = []    # where standing waiters stand (bus stops)
 	var taken: Array = []              # one Ped (or null) per seat, then per stand
 	var heading := 0        # bus stops: travel direction of the buses that stop here
+	var park := false       # the lot behind is a park (or a meeting spot)
 	var waiting := 0        # people waiting for the bus
 
 	func face() -> Vector3:
@@ -62,6 +63,7 @@ var _stop_mmi: MultiMeshInstance3D
 
 
 func setup(road_net: RoadNet) -> void:
+	add_to_group("seat_sources")   # the player can sit here too (player/ StreetSeating)
 	net = road_net
 	city = net.city
 	_bench_mmi = _make_mmi("Benches", BENCH_MESH, _fallback_bench())
@@ -135,8 +137,8 @@ func rebuild() -> void:
 			var h := _hash01(i, d)
 			var kind := -1
 			# Bus stops: about one every few blocks along a busy street, both sides.
-			var line_key := d * 1000 + (i % City.SIZE if d % 2 == 1 else i / City.SIZE)
-			var along := i / City.SIZE if d % 2 == 1 else i % City.SIZE
+			var line_key := d * 1000 + (i % City.W if d % 2 == 1 else i / City.W)
+			var along := i / City.W if d % 2 == 1 else i % City.W
 			var gap_ok: bool = not last_stop.has(line_key) or absi(along - last_stop[line_key]) >= 7
 			if lure > 0.25 and gap_ok and h < 0.16:
 				kind = Kind.STOP
@@ -146,6 +148,7 @@ func rebuild() -> void:
 			if kind < 0:
 				continue
 			var s := _make_spot(i, d, kind)
+			s.park = _is_park(n)
 			var prev: Spot = old.get(i * 4 + d)
 			if prev and prev.kind == kind:
 				s.taken = prev.taken
@@ -181,6 +184,16 @@ func _lure(n: int) -> float:
 		elif w == 0.0:
 			w = 0.3
 	return w
+
+
+func _is_park(n: int) -> bool:
+	if n < 0:
+		return false
+	var id: int = city.bld[n]
+	if id < 0 or not city.buildings.has(id):
+		return false
+	var tags: Array = city.buildings[id].get("tags", [])
+	return tags.has("park") or tags.has("meeting_spot")
 
 
 func _make_spot(i: int, d: int, kind: int) -> Spot:
@@ -234,7 +247,7 @@ func _set_xforms(mmi: MultiMeshInstance3D, xs: Array[Transform3D]) -> void:
 	var mm := mmi.multimesh
 	mm.instance_count = xs.size()
 	for k in xs.size():
-		mm.set_instance_transform(k, xs[k])
+		mm.set_instance_transform(k, Planet.xf(xs[k]))  # flat map -> the ball on msp
 
 
 func update_view(cam_height: float) -> void:
@@ -257,3 +270,45 @@ func near(pos: Vector3, radius: float, kind := -1) -> Array[Spot]:
 		if (kind < 0 or s.kind == kind) and s.xform.origin.distance_squared_to(pos) < r2:
 			out.append(s)
 	return out
+
+
+# ------------------------------------------------------------ the player sits ---
+# StreetSeating (player/) finds seats through the "seat_sources" group. Seats come back
+# in world space; a seat taken by a passer-by is skipped, and the player's claim keeps
+# passers-by off it (Crowd only sits on seats whose `taken` slot is null).
+
+## Free seats near a world point: {xform (world, -Z = the way a sitter faces), kind
+## ("bench" / "bus_stop"), park, flat, cell, side, spot, slot}.
+func seats_near(world_pos: Vector3, radius: float) -> Array:
+	var out := []
+	var flat := Planet.flat(world_pos)
+	for sp in near(flat, radius + 2.0):
+		for k in sp.seats.size():
+			if sp.taken[k] != null:
+				continue
+			var fp: Vector3 = sp.seats[k]
+			# Sitters face the road: the prop's +Z. Their -Z must point there.
+			var b := Basis.looking_at(sp.face(), Vector3.UP)
+			var xf := Planet.xf_rigid(Transform3D(b, fp))
+			if xf.origin.distance_to(world_pos) > radius:
+				continue
+			out.append({"xform": xf, "kind": "bench" if sp.kind == Kind.BENCH else "bus_stop", "lift": 0.0,
+				"park": sp.park and sp.kind == Kind.BENCH, "flat": fp, "cell": sp.cell, "side": sp.side,
+				"spot": sp, "slot": k, "source": self})
+	return out
+
+
+func claim_seat(seat: Dictionary, who: Object) -> bool:
+	var sp: Spot = seat.spot
+	var k: int = seat.slot
+	if k >= sp.taken.size() or (sp.taken[k] != null and sp.taken[k] != who):
+		return false
+	sp.taken[k] = who
+	return true
+
+
+func release_seat(seat: Dictionary, who: Object) -> void:
+	var sp: Spot = seat.spot
+	var k: int = seat.slot
+	if k < sp.taken.size() and sp.taken[k] == who:
+		sp.taken[k] = null

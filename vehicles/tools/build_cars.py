@@ -60,6 +60,7 @@ PART = {
     "GLASS_OPAQUE": 15,
     "SIGN": 16,      # palette colour, glows at night
     "REVERSE": 17,
+    "BEACON": 18,    # amber roof beacon, flashes with the siren flag
     "GLASS": 100,    # goes to the VehGlass surface; UV.x there = 0 clean, 1 cracked
 }
 # Palette indices (mirrored in the shader).
@@ -1037,6 +1038,49 @@ def make_specs():
         "head_z": 0.95, "head_size": (0.32, 0.18), "tail_z": 0.95, "tail_in": 0.15, "tail_size": (0.16, 0.24),
         "plate_z": 0.7, "bumper_z": 0.62, "grille_z": 1.05, "grille": (1.2, 0.05, 0.4), "body_len": 8.0,
         "paint_fn": lambda k, s, side: mi("GLOSS", WHITE), "extras": garb_extras, "tinted": False,
+    }
+
+    # ---- tow truck: flatbed with an amber beacon (the TowService carries wrecks on it)
+    def tow_extras(bm, sp, lod, surf):
+        # Deck top at z 1.12, y -4.3 .. 1.2. Cars are lifted on to it by TowService.
+        box_module(bm, -1.2, 1.2, -4.3, 1.15, 0.92, 1.12, mi("SOLID", DARK), lod, bevel=0.03)
+        box_module(bm, -1.05, 1.05, -4.1, 1.0, 0.62, 0.92, mi("SOLID", BLACK), lod, bevel=0.02)
+        box_module(bm, -1.2, 1.2, 1.0, 1.2, 1.12, 1.9, mi("SOLID", GREY), lod, bevel=0.03)   # headboard
+        if lod < 2:
+            for s in (-1, 1):
+                box_module(bm, s * 1.2 - 0.04, s * 1.2 + 0.04, -4.3, 1.0, 1.12, 1.24, mi("SOLID", GREY), lod, bevel=0.0)
+                stripe(bm, 1.2, -4.2, 1.0, 0.94, 1.08, mi("GLOSS", AMBERC), s)
+            if lod == 0:
+                for i in range(6):
+                    box_module(bm, -1.1, 1.1, -4.0 + i * 0.85, -3.96 + i * 0.85, 1.12, 1.14, mi("SOLID", GREY), lod, bevel=0.0)
+                # Winch and hook on the headboard.
+                r = cyl(0.12, 0.8, mi("CHROME"), seg=8)
+                merge(bm, r, xf=Matrix.Translation((0, 0.85, 1.28)))
+                r.free()
+        for s in (-1, 1):
+            b = rbox((0.34, 0.22, 0.16), mi("BEACON"), 0.04 if lod == 0 else 0, 1)
+            merge(bm, b, xf=Matrix.Translation((s * 0.3, 1.9, sp["H"] + 0.08)))
+            b.free()
+    st = [
+        (1.2, 1.1, 0.62, 1.7, 0.02),
+        (1.26, 1.18, 0.58, 1.74, 0.03),
+        (2.3, 1.18, 0.58, 1.74, 0.03),
+        (3.2, 1.18, 0.58, 1.64, 0.04),
+        (3.75, 1.14, 0.6, 1.42, 0.04),
+        (3.9, 1.06, 0.66, 1.28, 0.01),
+    ]
+    S["car_tow"] = {
+        "L": 2.7, "W": 2.36, "H": 2.7, "y_center": 2.55, "stations": st, "side": 0.8, "boxy": 0.7, "shoulder": 0.08,
+        "greenhouse": {"g0": 1, "g1": 3, "y_rear": 1.3, "y_front": 2.9, "z_roof": 2.7, "roof_w": 0.95,
+                       "mid_y": {2: 2.35}, "side_glass": [True, True], "rear_glass": True},
+        "axles": [(2.85, 0.5, False), (-2.3, 0.5, True)], "track": 1.0, "wheel_w": 0.3,
+        "cabin": {"y": (1.32, 3.4), "w": 1.05, "floor": 1.0, "belt": 1.6, "roof": 2.6, "seat_y": 2.25,
+                  "rear_rows": [], "roof_y": (1.35, 2.8), "uniform": 3},
+        "mirror": (3.25, 1.85), "handles": (), "handle_z": 1.3,
+        "head_z": 0.95, "head_size": (0.32, 0.18), "tail_z": 0.95, "tail_in": 0.15, "tail_size": (0.16, 0.24),
+        "plate_z": 0.7, "bumper_z": 0.62, "grille_z": 1.05, "grille": (1.2, 0.05, 0.4), "body_len": 8.2,
+        "paint_fn": lambda k, s, side: mi("GLOSS", ORANGE), "extras": tow_extras, "tinted": False,
+        "siren": {"pos": (0, 1.9, 2.75), "width": 0.9},
     }
 
     # ---- fire truck: crew cab, locker body, ladder, light bar

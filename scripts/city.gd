@@ -2,17 +2,24 @@ class_name City
 extends RefCounted
 ## The city's data and simulation. No rendering here, so it runs headless in tests.
 ##
-## The map is a SIZE x SIZE grid of 12 m tiles. Grid x maps to world +X and grid y to
-## world +Z. Each tile can hold a road, a zone, and (part of) one building.
+## The map is a W x H grid of 12 m tiles. Grid x maps to flat map +X and grid y to flat
+## map +Z. Each tile can hold a road, a zone, and (part of) one building.
+##
+## On a planet (planet/, Planet.on) the grid is a belt round the equator: x wraps east to
+## west (idx() and inside() take any x), and cell positions are flat map metres that
+## Planet.warp() stands up on the ball. world_to_cell() takes a world position either way.
 
 signal cells_changed(rect: Rect2i)
 signal building_added(id: int, animate: bool)
 signal building_removed(id: int)
+signal site_started(id: int)                 ## a building began construction (see `sites`)
+signal site_ended(id: int, finished: bool)   ## it was finished (building_added follows) or called off
 signal day_passed
 signal message(text: String)
 signal land_value_computed  ## services/ adjusts land_value in place after each recompute
 
-const SIZE := 80
+static var W := 80  # tiles east to west (planet: all the way round)
+static var H := 80  # tiles north to south
 const TILE := 12.0
 const ROAD_COST := 25
 const ZONE_COST := 10
@@ -42,6 +49,13 @@ var land_value := PackedFloat32Array()
 var coast_dist := PackedFloat32Array()
 
 var buildings := {}  # id -> Dictionary
+## Buildings under construction: id -> the entry the building will have, plus `built` (0..1)
+## and `dur` (game minutes the job takes). A site holds its lot (site_at) but is not in
+## `buildings` or `bld` yet, so the rest of the game sees an empty lot until it is finished:
+## nobody lives or works there, it has no door, powers nothing and hosts no mission.
+var sites := {}
+var site_at := PackedInt32Array()  # site id per cell, -1 none
+var construction := false  ## true (the live game, set by main): new buildings go up over time
 var _next_id := 1
 var _props := {}  # road cell index -> ids of the street props (payphones) standing there
 
@@ -70,13 +84,15 @@ func _init(seed_value: int = 1337) -> void:
 	noise.seed = seed_value
 	noise.frequency = 0.0035
 	noise.fractal_octaves = 4
-	var n := SIZE * SIZE
+	var n := W * H
 	land.resize(n)
 	height.resize(n)
 	road.resize(n)
 	zone.resize(n)
 	bld.resize(n)
 	bld.fill(-1)
+	site_at.resize(n)
+	site_at.fill(-1)
 	trees.resize(n)
 	traffic.resize(n)
 	land_value.resize(n)
@@ -88,7 +104,9 @@ func _init(seed_value: int = 1337) -> void:
 
 ## Landness at a world XZ point: > 0 is land. Shared by terrain mesh and water shader.
 func landness(wx: float, wz: float) -> float:
-	var c := SIZE * TILE * 0.5
+	if Planet.on:
+		return _planet_landness(wx, wz)
+	var c := W * TILE * 0.5
 	var dx := (wx - c) / (c * 1.02)
 	var dz := (wz - c) / (c * 0.96)
 	var r := sqrt(dx * dx + dz * dz)
@@ -97,6 +115,8 @@ func landness(wx: float, wz: float) -> float:
 
 
 func terrain_height(wx: float, wz: float) -> float:
+	if Planet.on:
+		return _planet_height(wx, wz)
 	var l := landness(wx, wz)
 	if l > 0.05:
 		return 0.0
@@ -104,10 +124,41 @@ func terrain_height(wx: float, wz: float) -> float:
 	return clampf((l - 0.05) * 60.0, -14.0, 0.0)
 
 
+## The planet's belt: land all the way round, a wavy south shore a few tiles in from the
+## belt's edge with the polar sea beyond it, and to the north tundra rising into the ice cap.
+func _planet_coast(wx: float) -> float:
+	var a := wx / (W * TILE) * TAU
+	return (H - 3.0 + noise.get_noise_2d(cos(a) * 300.0, sin(a) * 300.0) * 2.5) * TILE
+
+
+func _planet_landness(wx: float, wz: float) -> float:
+	return clampf((_planet_coast(wx) - wz) / 260.0 + 0.05, -1.0, 1.0)
+
+
+func _planet_height(wx: float, wz: float) -> float:
+	var l := _planet_landness(wx, wz)
+	if l <= 0.05:
+		return clampf((l - 0.05) * 60.0, -14.0, 0.0)
+	if wz >= 0.0:
+		return 0.0
+	var a := wx / (W * TILE) * TAU
+	var hill := noise.get_noise_3d(cos(a) * 400.0, sin(a) * 400.0, wz * 2.0) * 0.5 + 0.5
+	return smoothstep(0.0, -90.0, wz) * (2.0 + hill * 5.0) + smoothstep(-120.0, -360.0, wz) * 6.0
+
+
+## 0 below the ice line .. 1 deep in the planet's north ice cap. 0 on the flat island.
+func ice(wx: float, wz: float) -> float:
+	if not Planet.on or wz > 0.0:
+		return 0.0
+	var a := wx / (W * TILE) * TAU
+	var n := noise.get_noise_2d(cos(a) * 500.0 + 31.0, sin(a) * 500.0) * 40.0
+	return clampf((-wz - 6.0 + n) / 140.0, 0.0, 1.0)
+
+
 func _make_island() -> void:
-	for y in SIZE:
-		for x in SIZE:
-			var i := y * SIZE + x
+	for y in H:
+		for x in W:
+			var i := y * W + x
 			var wx := (x + 0.5) * TILE
 			var wz := (y + 0.5) * TILE
 			var l := landness(wx, wz)
@@ -121,7 +172,7 @@ func _make_island() -> void:
 	# Distance to coast (BFS in tiles) for land value.
 	coast_dist.fill(99.0)
 	var q: Array[int] = []
-	for i in SIZE * SIZE:
+	for i in W * H:
 		if land[i] == 0:
 			coast_dist[i] = 0.0
 			q.append(i)
@@ -129,14 +180,14 @@ func _make_island() -> void:
 	while head < q.size():
 		var i: int = q[head]
 		head += 1
-		var x := i % SIZE
-		var y := i / SIZE
+		var x := i % W
+		var y := i / W
 		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var nx: int = x + d.x
 			var ny: int = y + d.y
-			if nx < 0 or ny < 0 or nx >= SIZE or ny >= SIZE:
+			if not inside(nx, ny):
 				continue
-			var j := ny * SIZE + nx
+			var j := idx(nx, ny)
 			if coast_dist[j] > coast_dist[i] + 1.0:
 				coast_dist[j] = coast_dist[i] + 1.0
 				q.append(j)
@@ -144,9 +195,9 @@ func _make_island() -> void:
 	var wood := FastNoiseLite.new()
 	wood.seed = noise.seed + 7
 	wood.frequency = 0.02
-	for i in SIZE * SIZE:
+	for i in W * H:
 		if land[i] == 1:
-			var w := wood.get_noise_2d(i % SIZE, i / SIZE)
+			var w := wood.get_noise_2d(i % W, i / W)
 			if w > 0.12:
 				trees[i] = 3 if w > 0.35 else 2
 			elif rng.randf() < 0.06:
@@ -156,11 +207,11 @@ func _make_island() -> void:
 # -------------------------------------------------------------------- helpers ---
 
 func idx(x: int, y: int) -> int:
-	return y * SIZE + x
+	return y * W + posmod(x, W)
 
 
 func inside(x: int, y: int) -> bool:
-	return x >= 0 and y >= 0 and x < SIZE and y < SIZE
+	return y >= 0 and y < H and (Planet.on or (x >= 0 and x < W))
 
 
 func is_road(x: int, y: int) -> bool:
@@ -190,12 +241,22 @@ func road_access_dir(x: int, y: int) -> int:
 	return -1
 
 
+## Flat map metres of a cell's centre (Planet.warp() puts it on the ball).
 func cell_center(x: int, y: int) -> Vector3:
 	return Vector3((x + 0.5) * TILE, 0.0, (y + 0.5) * TILE)
 
 
+## The cell under a world position (on a planet, a point on the ball; x comes back wrapped).
 func world_to_cell(p: Vector3) -> Vector2i:
+	if Planet.on:
+		p = Planet.unwarp(p)
+		return Vector2i(posmod(floori(p.x / TILE), W), floori(p.z / TILE))
 	return Vector2i(floori(p.x / TILE), floori(p.z / TILE))
+
+
+## The cell under a flat map point.
+func flat_to_cell(p: Vector3) -> Vector2i:
+	return Vector2i(posmod(floori(p.x / TILE), W) if Planet.on else floori(p.x / TILE), floori(p.z / TILE))
 
 
 func game_day() -> int:
@@ -256,6 +317,8 @@ func place_road(path: Array[Vector2i]) -> bool:
 		var i := idx(c.x, c.y)
 		if bld[i] >= 0:
 			remove_building(bld[i])
+		if site_at[i] >= 0:
+			cancel_site(site_at[i])
 		road[i] = 1
 		zone[i] = Zone.NONE
 		trees[i] = 0
@@ -268,8 +331,16 @@ func place_road(path: Array[Vector2i]) -> bool:
 func rect_cells(a: Vector2i, b: Vector2i) -> Rect2i:
 	var p := Vector2i(mini(a.x, b.x), mini(a.y, b.y))
 	var q := Vector2i(maxi(a.x, b.x), maxi(a.y, b.y))
-	p = p.clamp(Vector2i.ZERO, Vector2i(SIZE - 1, SIZE - 1))
-	q = q.clamp(Vector2i.ZERO, Vector2i(SIZE - 1, SIZE - 1))
+	if Planet.on:
+		# The short way round: b may sit across the seam from a.
+		var dx := posmod(b.x - a.x + W / 2, W) - W / 2
+		p.x = a.x + mini(dx, 0)
+		q.x = a.x + maxi(dx, 0)
+		p.y = clampi(p.y, 0, H - 1)
+		q.y = clampi(q.y, 0, H - 1)
+		return Rect2i(p, q - p + Vector2i.ONE)
+	p = p.clamp(Vector2i.ZERO, Vector2i(W - 1, H - 1))
+	q = q.clamp(Vector2i.ZERO, Vector2i(W - 1, H - 1))
 	return Rect2i(p, q - p + Vector2i.ONE)
 
 
@@ -294,6 +365,8 @@ func place_zone(r: Rect2i, z: int) -> bool:
 				continue
 			if bld[i] >= 0:
 				remove_building(bld[i])
+			if site_at[i] >= 0:
+				cancel_site(site_at[i])
 			zone[i] = z
 			trees[i] = 0
 	_zoned_dirty = true
@@ -311,6 +384,9 @@ func bulldoze_cost(r: Rect2i) -> int:
 				n += 1 + _props.get(i, []).size()
 			elif bld[i] >= 0 and not seen.has(bld[i]):
 				seen[bld[i]] = true
+				n += 1
+			elif site_at[i] >= 0 and not seen.has(site_at[i]):
+				seen[site_at[i]] = true
 				n += 1
 	return n * BULLDOZE_COST
 
@@ -331,6 +407,8 @@ func bulldoze(r: Rect2i) -> bool:
 			var i := idx(x, y)
 			if bld[i] >= 0:
 				remove_building(bld[i])
+			if site_at[i] >= 0:
+				cancel_site(site_at[i])
 			for pid in _props.get(i, []).duplicate():
 				remove_building(pid)
 			road[i] = 0
@@ -358,9 +436,90 @@ func add_building(x: int, y: int, size: int, z: int, stage: int, rot: int, anima
 		"tint": rng.randi() % 8, "tint2": rng.randi() % 8, "connected": true,
 	}
 	b.merge(extra, true)
+	if animate and construction and size > 0:
+		_start_site(b)
+		return id
 	_insert(b)
 	building_added.emit(id, animate)
 	return id
+
+
+# ------------------------------------------------------------ construction ---
+
+## Game hours a zone building takes to put up, by stage; a 2x2 tower takes TOWER_HOURS.
+## One game hour is 10 real seconds at 1x speed, so a house is a minute and a tower 8.
+const BUILD_HOURS := [0.0, 6.0, 14.0, 30.0]
+const TOWER_HOURS := 48.0
+
+
+func build_minutes(b: Dictionary) -> float:
+	if b.has("kind"):
+		return 60.0 * (12.0 * b.size - 2.0)   # catalog buildings: 10, 22, 34 hours by size
+	if b.size == 2:
+		return 60.0 * TOWER_HOURS
+	return 60.0 * BUILD_HOURS[clampi(b.stage, 1, 3)]
+
+
+func _start_site(b: Dictionary) -> void:
+	b["built"] = 0.0
+	b["dur"] = build_minutes(b)
+	sites[b.id] = b
+	for dy in b.size:
+		for dx in b.size:
+			site_at[idx(b.x + dx, b.y + dy)] = b.id
+	site_started.emit(b.id)
+	if b.has("kind"):
+		message.emit("Work starts on %s: about %d hours" % [b.get("name", "the building"), int(b.dur / 60.0)])
+	cells_changed.emit(Rect2i(b.x, b.y, b.size, b.size))
+
+
+func _clear_site(b: Dictionary) -> void:
+	sites.erase(b.id)
+	for dy in b.size:
+		for dx in b.size:
+			site_at[idx(b.x + dx, b.y + dy)] = -1
+
+
+## Stops a job and clears its lot.
+func cancel_site(id: int) -> void:
+	if not sites.has(id):
+		return
+	var b: Dictionary = sites[id]
+	_clear_site(b)
+	site_ended.emit(id, false)
+	cells_changed.emit(Rect2i(b.x, b.y, b.size, b.size))
+
+
+func _finish_site(id: int) -> void:
+	var b: Dictionary = sites[id]
+	_clear_site(b)
+	b.erase("built")
+	b.erase("dur")
+	b["born"] = minutes
+	_insert(b)
+	site_ended.emit(id, true)
+	building_added.emit(id, false)
+	if b.has("kind"):
+		message.emit("%s is finished" % b.get("name", "The building"))
+	cells_changed.emit(Rect2i(b.x, b.y, b.size, b.size).grow(1))
+
+
+func _advance_sites(game_minutes: float) -> void:
+	if sites.is_empty() or game_minutes <= 0.0:
+		return
+	for id in sites.keys():
+		var b: Dictionary = sites[id]
+		b.built += game_minutes / maxf(float(b.dur), 1.0)
+		if b.built >= 1.0:
+			_finish_site(id)
+
+
+## The site on a cell (its entry), or {}.
+func site_on(x: int, y: int) -> Dictionary:
+	if not inside(x, y):
+		return {}
+	var id := site_at[idx(x, y)]
+	return sites[id] if id >= 0 else {}
 
 
 func _insert(b: Dictionary) -> void:
@@ -465,6 +624,10 @@ func can_place_special(kind: String, cell: Vector2i, free := false) -> String:
 		return Catalog.lock_text(kind) + " to unlock it"
 	if d.unique and not specials_of(kind).is_empty():
 		return "The city already has %s" % d.name
+	if d.unique:
+		for sb in sites.values():
+			if sb.get("kind", "") == kind:
+				return "%s is already being built" % d.name
 	if not inside(cell.x, cell.y):
 		return "Off the map"
 	if d.placement == "street":
@@ -483,6 +646,8 @@ func can_place_special(kind: String, cell: Vector2i, free := false) -> String:
 					return "Can't build on a road"
 				if bld[idx(x, y)] >= 0:
 					return "Bulldoze what's there first"
+				if site_at[idx(x, y)] >= 0:
+					return "Something is being built there"
 		if d.needs_road and front_side(cell, s) < 0:
 			return "Needs a road alongside"
 	if not free and funds < float(d.cost):
@@ -512,7 +677,8 @@ func place_special(kind: String, cell: Vector2i, rot := -1, free := false) -> in
 		_zoned_dirty = true
 		if rot < 0:
 			rot = maxi(front_side(cell, s), 0)
-	var id := add_building(cell.x, cell.y, s, Zone.NONE, 1, rot, animate_growth,
+	# What the mayor buys is built over time; what a mission or the demo spawns is just there.
+	var id := add_building(cell.x, cell.y, s, Zone.NONE, 1, rot, animate_growth and not free,
 		{"kind": kind, "name": d.name, "tags": d.tags.duplicate()})
 	cells_changed.emit(Rect2i(cell, Vector2i(maxi(s, 1), maxi(s, 1))).grow(1))
 	return id
@@ -574,13 +740,14 @@ const _INT_KEYS := ["id", "x", "y", "size", "zone", "stage", "rot", "variant", "
 ## other threads' keys must be JSON-safe.
 func to_dict() -> Dictionary:
 	return {
-		"seed": map_seed, "size": SIZE,
+		"seed": map_seed, "size": W, "h": H, "planet": Planet.on,
 		"land": Marshalls.raw_to_base64(land),
 		"height": Marshalls.raw_to_base64(height.to_byte_array()),
 		"road": Marshalls.raw_to_base64(road),
 		"zone": Marshalls.raw_to_base64(zone),
 		"trees": Marshalls.raw_to_base64(trees),
 		"buildings": buildings.values(),
+		"sites": sites.values(),
 		"next_id": _next_id,
 		"funds": funds, "tax_rate": tax_rate, "minutes": minutes, "demand": demand.duplicate(),
 		"last_income": last_income, "last_expense": last_expense,
@@ -591,8 +758,8 @@ func to_dict() -> Dictionary:
 ## Restores a city from to_dict() (after a trip through JSON). Use a City made with the same
 ## seed, before anything listens to it: a load builds the scene around the restored city.
 func from_dict(d: Dictionary) -> bool:
-	var n := SIZE * SIZE
-	if int(d.get("size", SIZE)) != SIZE:
+	var n := W * H
+	if int(d.get("size", W)) != W or int(d.get("h", 80)) != H or bool(d.get("planet", false)) != Planet.on:
 		return false
 	var a := Marshalls.base64_to_raw(str(d.get("land", "")))
 	if a.size() == n:
@@ -610,31 +777,29 @@ func from_dict(d: Dictionary) -> bool:
 	if a.size() == n:
 		trees = a
 	buildings.clear()
+	sites.clear()
 	_props.clear()
 	bld.fill(-1)
+	site_at.fill(-1)
 	var top := 0
 	for e in d.get("buildings", []):
-		if not e is Dictionary:
+		var b := _read_entry(e)
+		if b.is_empty() or not _fits(b):
 			continue
-		var b: Dictionary = e.duplicate(true)
-		if not b.has_all(_INT_KEYS):
-			continue
-		for k in _INT_KEYS:
-			b[k] = int(b[k])
-		b["seed"] = float(b.get("seed", 0.0))
-		b["born"] = float(b.get("born", 0.0))
-		b["connected"] = bool(b.get("connected", true))
-		if b.has("kind"):
-			var cd := Catalog.get_def(str(b.kind))
-			if cd.is_empty():
-				continue  # a building this version of the game doesn't know
-			b["kind"] = str(b.kind)
-			b["tags"] = cd.tags.duplicate()  # tags follow the catalog; the name is the building's own
-			if not b.has("name"):
-				b["name"] = cd.name
-		if not _fits(b):
-			continue
+		b.erase("built")
+		b.erase("dur")
 		_insert(b)
+		top = maxi(top, b.id)
+	for e in d.get("sites", []):
+		var b := _read_entry(e)
+		if b.is_empty() or b.size < 1 or sites.has(b.id) or not _fits(b):
+			continue
+		b["built"] = clampf(float(b.get("built", 0.0)), 0.0, 0.999)
+		b["dur"] = maxf(float(b.get("dur", build_minutes(b))), 1.0)
+		sites[b.id] = b
+		for dy in b.size:
+			for dx in b.size:
+				site_at[idx(b.x + dx, b.y + dy)] = b.id
 		top = maxi(top, b.id)
 	_next_id = maxi(int(d.get("next_id", 1)), top + 1)
 	funds = float(d.get("funds", funds))
@@ -654,12 +819,35 @@ func from_dict(d: Dictionary) -> bool:
 	return true
 
 
+func _read_entry(e: Variant) -> Dictionary:
+	## One saved building or site entry, checked and typed; {} when it can't be used.
+	if not e is Dictionary:
+		return {}
+	var b: Dictionary = e.duplicate(true)
+	if not b.has_all(_INT_KEYS):
+		return {}
+	for k in _INT_KEYS:
+		b[k] = int(b[k])
+	b["seed"] = float(b.get("seed", 0.0))
+	b["born"] = float(b.get("born", 0.0))
+	b["connected"] = bool(b.get("connected", true))
+	if b.has("kind"):
+		var cd := Catalog.get_def(str(b.kind))
+		if cd.is_empty():
+			return {}  # a building this version of the game doesn't know
+		b["kind"] = str(b.kind)
+		b["tags"] = cd.tags.duplicate()  # tags follow the catalog; the name is the building's own
+		if not b.has("name"):
+			b["name"] = cd.name
+	return b
+
+
 func _fits(b: Dictionary) -> bool:
 	if not inside(b.x, b.y) or buildings.has(b.id) or b.zone < 0 or b.zone > Zone.IND or b.rot < 0 or b.rot > 3:
 		return false
 	for dy in b.size:
 		for dx in b.size:
-			if not inside(b.x + dx, b.y + dy) or bld[idx(b.x + dx, b.y + dy)] >= 0:
+			if not inside(b.x + dx, b.y + dy) or bld[idx(b.x + dx, b.y + dy)] >= 0 or site_at[idx(b.x + dx, b.y + dy)] >= 0:
 				return false
 	return true
 
@@ -670,6 +858,7 @@ func _fits(b: Dictionary) -> bool:
 func advance(real_seconds: float, speed: float) -> bool:
 	var before := int(minutes / 60.0)
 	minutes += real_seconds * MINUTES_PER_SECOND * speed
+	_advance_sites(real_seconds * MINUTES_PER_SECOND * speed)
 	var after := int(minutes / 60.0)
 	for h in range(before + 1, after + 1):
 		_hour_tick()
@@ -698,7 +887,7 @@ var _zoned_dirty := true
 func _zoned_cells() -> Array[int]:
 	if _zoned_dirty:
 		_zoned_cache.clear()
-		for i in SIZE * SIZE:
+		for i in W * H:
 			if zone[i] != Zone.NONE:
 				_zoned_cache.append(i)
 		_zoned_dirty = false
@@ -717,7 +906,7 @@ func _hour_tick() -> void:
 	var tries := mini(cells.size(), 24 + cells.size() / 12)
 	for t in tries:
 		var i: int = cells[rng.randi() % cells.size()]
-		_try_grow(i % SIZE, i / SIZE)
+		_try_grow(i % W, i / W)
 
 
 func _try_grow(x: int, y: int) -> void:
@@ -732,7 +921,7 @@ func _try_grow(x: int, y: int) -> void:
 		return
 	var rot := road_access_dir(x, y)
 	if bld[i] < 0:
-		if rot < 0:
+		if rot < 0 or site_at[i] >= 0:
 			return
 		if rng.randf() < 0.45 * d:
 			add_building(x, y, 1, z, 1, rot, animate_growth)
@@ -802,7 +991,7 @@ func _day_tick() -> void:
 	compute_traffic()
 	var income := (population + (jobs_c + jobs_i) * 0.8) * tax_rate * 3.0
 	var roads := 0
-	for i in SIZE * SIZE:
+	for i in W * H:
 		roads += road[i]
 	var expense := roads * ROAD_UPKEEP
 	# Catalog buildings: upkeep, or a day's takings for businesses (negative upkeep).
@@ -823,7 +1012,7 @@ func _day_tick() -> void:
 ## cell its next step toward the nearest job. Each home puts its commuters on its road
 ## cell, and one pass back up the BFS order carries the flow along every route.
 func compute_traffic() -> void:
-	var n := SIZE * SIZE
+	var n := W * H
 	var flow := PackedFloat32Array()
 	flow.resize(n)
 	var parent := PackedInt32Array()
@@ -844,8 +1033,8 @@ func compute_traffic() -> void:
 	while head < q.size():
 		var c: int = q[head]
 		head += 1
-		var cx := c % SIZE
-		var cy := c / SIZE
+		var cx := c % W
+		var cy := c / W
 		for d in DIRS:
 			var nx: int = cx + d.x
 			var ny: int = cy + d.y
@@ -882,8 +1071,8 @@ func compute_traffic() -> void:
 		while not stack.is_empty():
 			var c: int = stack[stack.size() - 1]
 			stack.resize(stack.size() - 1)
-			var cx := c % SIZE
-			var cy := c / SIZE
+			var cx := c % W
+			var cy := c / W
 			for d in DIRS:
 				var nx: int = cx + d.x
 				var ny: int = cy + d.y
@@ -921,13 +1110,13 @@ func _building_road_cells(b: Dictionary) -> PackedInt32Array:
 		for k in s:
 			for p in [Vector2i(bx + k, by - dist), Vector2i(bx + k, by + s - 1 + dist),
 					Vector2i(bx - dist, by + k), Vector2i(bx + s - 1 + dist, by + k)]:
-				if p.x >= 0 and p.y >= 0 and p.x < SIZE and p.y < SIZE and road[p.y * SIZE + p.x] == 1:
-					out.append(p.y * SIZE + p.x)
+				if inside(p.x, p.y) and road[idx(p.x, p.y)] == 1:
+					out.append(idx(p.x, p.y))
 	return out
 
 
 func compute_land_value() -> void:
-	var n := SIZE * SIZE
+	var n := W * H
 	var com := PackedFloat32Array()
 	var ind := PackedFloat32Array()
 	var res := PackedFloat32Array()
@@ -966,38 +1155,39 @@ func compute_land_value() -> void:
 
 
 func _blur(src: PackedFloat32Array, r: int) -> PackedFloat32Array:
-	## Separable box blur (average over a (2r+1)^2 window).
+	## Separable box blur (average over a (2r+1)^2 window). On a planet it wraps east to west.
 	var tmp := PackedFloat32Array()
 	tmp.resize(src.size())
 	var out := PackedFloat32Array()
 	out.resize(src.size())
 	var k := 1.0 / float(2 * r + 1)
-	for y in SIZE:
+	var wrap := Planet.on
+	for y in H:
 		var acc := 0.0
 		for x in range(-r, r + 1):
-			if x >= 0 and x < SIZE:
-				acc += src[y * SIZE + x]
-		for x in SIZE:
-			tmp[y * SIZE + x] = acc * k
+			if wrap or (x >= 0 and x < W):
+				acc += src[y * W + posmod(x, W)]
+		for x in W:
+			tmp[y * W + x] = acc * k
 			var xo := x - r
 			var xi := x + r + 1
-			if xo >= 0:
-				acc -= src[y * SIZE + xo]
-			if xi < SIZE:
-				acc += src[y * SIZE + xi]
-	for x in SIZE:
+			if wrap or xo >= 0:
+				acc -= src[y * W + posmod(xo, W)]
+			if wrap or xi < W:
+				acc += src[y * W + posmod(xi, W)]
+	for x in W:
 		var acc := 0.0
 		for y in range(-r, r + 1):
-			if y >= 0 and y < SIZE:
-				acc += tmp[y * SIZE + x]
-		for y in SIZE:
-			out[y * SIZE + x] = acc * k
+			if y >= 0 and y < H:
+				acc += tmp[y * W + x]
+		for y in H:
+			out[y * W + x] = acc * k
 			var yo := y - r
 			var yi := y + r + 1
 			if yo >= 0:
-				acc -= tmp[yo * SIZE + x]
-			if yi < SIZE:
-				acc += tmp[yi * SIZE + x]
+				acc -= tmp[yo * W + x]
+			if yi < H:
+				acc += tmp[yi * W + x]
 	return out
 
 
@@ -1005,6 +1195,7 @@ func _blur(src: PackedFloat32Array, r: int) -> PackedFloat32Array:
 func simulate_hours(hours: int) -> void:
 	for h in hours:
 		minutes += 60.0
+		_advance_sites(60.0)
 		_hour_tick()
 		var hh := int(minutes / 60.0) % 24
 		if hh == 0:
@@ -1017,13 +1208,20 @@ func simulate_hours(hours: int) -> void:
 
 func center_cell() -> Vector2i:
 	## A land cell near the middle of the island.
-	var c := Vector2i(SIZE / 2, SIZE / 2)
+	# On the planet the town starts half way round from the x seam, so the seam (where
+	# flat x wraps) is on the far side of the ball.
+	var c := Vector2i(W / 2, H / 2 - 3) if Planet.on else Vector2i(W / 2, H / 2)
 	for r in 20:
 		for y in range(c.y - r, c.y + r + 1):
 			for x in range(c.x - r, c.x + r + 1):
 				if inside(x, y) and land[idx(x, y)] == 1:
 					return Vector2i(x, y)
 	return c
+
+
+## Grid columns from a to b, the short way round on a planet.
+func _dx(a: int, b: int) -> int:
+	return posmod(b - a + W / 2, W) - W / 2 if Planet.on else b - a
 
 
 func _free_road(x: int, y: int) -> void:
@@ -1035,32 +1233,37 @@ func _free_road(x: int, y: int) -> void:
 func build_starter() -> void:
 	## A main avenue crossing the island with a short cross street: free starter roads.
 	var c := center_cell()
-	for x in SIZE:
+	if Planet.on:
+		c.y = H / 2  # the avenue is a highway all the way round the equator
+	for x in W:
 		_free_road(x, c.y)
 	for y in range(c.y - 12, c.y + 13):
 		_free_road(c.x, y)
 	compute_land_value()
-	cells_changed.emit(Rect2i(0, 0, SIZE, SIZE))
+	cells_changed.emit(Rect2i(0, 0, W, H))
 
 
 func build_demo(grow_hours := 24 * 45) -> void:
 	## A pre-planned city for screenshots and showing off: a street grid of 2-deep blocks,
 	## downtown commercial in the middle, homes around it, industry on the west side.
 	var c := center_cell()
-	for y in SIZE:
-		for x in SIZE:
-			var dx := x - c.x
+	if Planet.on:
+		for x in W:
+			_free_road(x, H / 2)  # the equator highway
+	for y in H:
+		for x in W:
+			var dx := _dx(c.x, x)
 			var dy := y - c.y
 			if absi(dx) > 30 or absi(dy) > 27:
 				continue
 			if posmod(dx, 6) == 0 or posmod(dy, 3) == 0:
 				_free_road(x, y)
-	for y in SIZE:
-		for x in SIZE:
+	for y in H:
+		for x in W:
 			var i := idx(x, y)
 			if land[i] == 0 or road[i] == 1:
 				continue
-			var dx := x - c.x
+			var dx := _dx(c.x, x)
 			var dy := y - c.y
 			if absi(dx) > 30 or absi(dy) > 27:
 				continue
@@ -1086,8 +1289,8 @@ func build_demo(grow_hours := 24 * 45) -> void:
 		var cells := _zoned_cells()
 		for t in 120:
 			var i: int = cells[rng.randi() % cells.size()]
-			var bx := i % SIZE
-			var by := i / SIZE
+			var bx := i % W
+			var by := i / W
 			# Downtown grows faster and taller during the demo.
 			_try_grow(bx, by)
 		if h % 24 == 0:
@@ -1096,4 +1299,4 @@ func build_demo(grow_hours := 24 * 45) -> void:
 			compute_land_value()
 	animate_growth = was
 	minutes = float(game_day()) * 1440.0 + 17.5 * 60.0
-	cells_changed.emit(Rect2i(0, 0, SIZE, SIZE))
+	cells_changed.emit(Rect2i(0, 0, W, H))

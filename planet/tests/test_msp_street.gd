@@ -1,0 +1,129 @@
+extends SceneTree
+## msp street check on the real game: boot the planet demo, dive to the street, walk,
+## get in a car and drive, and check everything stays upright on the ball.
+## godot --path . -s planet/tests/test_msp_street.gd -- --demo --nosave
+
+var fails := 0
+
+
+func check(ok: bool, what: String) -> void:
+	print(("  ok   " if ok else "  FAIL ") + what)
+	if not ok:
+		fails += 1
+
+
+func _initialize() -> void:
+	_run.call_deferred()
+
+
+func _wait(s: float) -> void:
+	await create_timer(s).timeout
+
+
+func _run() -> void:
+	print("msp street tests")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _wait(1.0)
+	check(Planet.on, "the game is on the planet")
+	check(City.W == 192 and City.H == 36, "city is 192 x 36 tiles (Medium)")
+	var full := 0
+	for k in main.view._full:
+		full += 1 if main.view._full[k] else 0
+	check(full < main.view.chunks.size(), "only nearby chunks hold full detail (%d of %d)" % [full, main.view.chunks.size()])
+	main.go_street()
+	var street: StreetMode = main.street
+	while not street.active:
+		await process_frame
+	var p := street.player
+	var up := Planet.up(p.global_position)
+	check(absf(p.global_position.length() - Planet.R) < 3.0, "player stands on the ball (%.1f m off sea level)" % (p.global_position.length() - Planet.R))
+	check(p.global_basis.y.dot(up) > 0.99, "player stands upright")
+	# Benches, shelters and signal poles near the player are solid, and a move only pays
+	# for what changed.
+	await _wait(1.2)
+	var bodies: StreetBodies = street.bodies
+	var n := bodies.fixture_count()
+	check(n > 0, "fixtures near the player have bodies (%d)" % n)
+	var pole_hit := false
+	var side := p.global_basis.x
+	for h in main.life.signals.heads:
+		var w: Vector3 = Planet.xf_rigid(Transform3D(Basis.IDENTITY, h[2].origin + Vector3(0, 1.8, 0))).origin
+		if w.distance_to(p.global_position) > 100.0:
+			continue
+		var q := PhysicsRayQueryParameters3D.create(w + side * 1.5, w - side * 1.5, 1)
+		var hit := p.get_world_3d().direct_space_state.intersect_ray(q)
+		if hit and bodies._fixtures.values().has(hit.rid):
+			pole_hit = true
+			break
+	check(pole_hit, "a signal pole near the player is solid")
+	var flat_at := Planet.flat(p.global_position)
+	var t0 := Time.get_ticks_usec()
+	bodies.rebuild_fixtures(flat_at + Vector3(60, 0, 0))
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	check(ms < 4.0, "moving 60 m updates fixtures in %.2f ms (%d bodies)" % [ms, bodies.fixture_count()])
+	t0 = Time.get_ticks_usec()
+	bodies.rebuild_fixtures(flat_at + Vector3(60, 0, 0))
+	ms = (Time.get_ticks_usec() - t0) / 1000.0
+	check(ms < 1.0, "an unchanged spot costs almost nothing (%.2f ms)" % ms)
+	bodies.rebuild_fixtures(flat_at)
+	# Wrecks freed elsewhere (blown up, towed) must leave the list, not jam it: in 0.4.2
+	# they could not be erase()d and the over-the-limit loop never ended (Fedge's freeze).
+	for i in 14:
+		var w := Node3D.new()
+		street.add_child(w)
+		w.global_position = p.global_position + Vector3(i, 0, 0)
+		bodies._wrecks.append(w)
+	for i in 6:
+		bodies._wrecks[i * 2].free()
+	bodies._tidy_wrecks(flat_at)
+	var all_ok := true
+	for w in bodies._wrecks:
+		all_ok = all_ok and is_instance_valid(w)
+	check(bodies._wrecks.size() <= StreetBodies.MAX_WRECKS and all_ok, "freed wrecks drop out of the list (%d left)" % bodies._wrecks.size())
+	# A car right here, and drive it.
+	# On the nearest east-west road, pointing east.
+	var city: City = main.city
+	var o := city.world_to_cell(p.global_position)
+	var road := Vector2i(-999, 0)
+	for r in 12:
+		for y in range(o.y - r, o.y + r + 1):
+			for x in range(o.x - r, o.x + r + 1):
+				if road.x == -999 and city.road_mask(x, y) == 2 | 8 and city.road_mask(x + 1, y) == 2 | 8:
+					road = Vector2i(x, y)
+	check(road.x != -999, "found a straight road near by")
+	var at := Planet.place(city.cell_center(road.x, road.y) + Vector3(0, 0.6, 2.0))
+	var car := street.spawn_car("car_sedan", at, PI * 0.5, Color(0.8, 0.2, 0.2))
+	p.place(at + Planet.dir(at, Vector3(0, 0, 3.0)), 0.0)
+	await _wait(1.0)
+	print("    car sleeping=%s v=%s" % [car.sleeping, car.linear_velocity])
+	# Walk east along the road for two seconds.
+	p.rig.yaw = -PI * 0.5
+	var start := p.global_position
+	Input.action_press("street_forward")
+	await _wait(2.0)
+	Input.action_release("street_forward")
+	var walked := start.distance_to(p.global_position)
+	check(walked > 4.0, "walked %.1f m" % walked)
+	check(absf(p.global_position.length() - Planet.R) < 3.0, "still on the ground after walking")
+	check(p.global_basis.y.dot(Planet.up(p.global_position)) > 0.99, "upright after walking")
+	check(car.global_basis.y.dot(Planet.up(car.global_position)) > 0.95, "parked car sits upright")
+	street._enter_car(car)
+	while street.switching:
+		await process_frame
+	check(street.car == car, "got in the car")
+	var c0 := car.global_position
+	Input.action_press("street_forward")
+	await _wait(4.0)
+	print("    car v=%s throttle=%s driver=%s phys=%s" % [car.linear_velocity, car.throttle, car.driver, car.is_physics_processing()])
+	Input.action_release("street_forward")
+	var drove := c0.distance_to(car.global_position)
+	check(drove > 10.0, "drove %.1f m" % drove)
+	check(car.global_basis.y.dot(Planet.up(car.global_position)) > 0.9, "car still upright after driving")
+	check(absf(car.global_position.length() - Planet.R) < 4.0, "car still on the ground")
+	street._leave_car()
+	while street.switching:
+		await process_frame
+	check(street.car == null and p.global_basis.y.dot(Planet.up(p.global_position)) > 0.99, "out of the car, upright")
+	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
+	quit(1 if fails > 0 else 0)

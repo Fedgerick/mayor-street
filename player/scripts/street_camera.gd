@@ -87,7 +87,9 @@ func shake(amount: float) -> void:
 func _start_flight(from: Transform3D, from_fov: float, duration: float) -> void:
 	_from = from
 	_from_fov = from_fov
-	# Where the start camera is looking, on the ground plane.
+	# Where the start camera is looking, on the ground plane (flat map metres on msp, where
+	# the whole flight is worked out on the flat map and stood up on the ball).
+	from = Planet.flat_xform(from)
 	var d := -from.basis.z
 	var t := (-from.origin.y / d.y) if d.y < -0.01 else 100.0
 	_from_focus = from.origin + d * clampf(t, 1.0, 3000.0)
@@ -143,9 +145,13 @@ func _process(delta: float) -> void:
 
 
 func _fly_xf(k: float) -> Transform3D:
-	var to := _target_xf()
-	var a := _from.origin
+	var to := Planet.flat_xform(_target_xf())
+	var from := Planet.flat_xform(_from)
+	var a := from.origin
 	var b := to.origin
+	if Planet.on:  # across the seam the short way
+		b.x = a.x + Planet.dx(a.x, b.x)
+		to.origin = b
 	var diving := _to_rig != null
 	# Altitude in log space: big steps up high, fine steps near the ground.
 	var e_h := _smooth(k)
@@ -166,7 +172,7 @@ func _fly_xf(k: float) -> Transform3D:
 	var settle := _smooth(clampf((k - 0.8) / 0.2, 0.0, 1.0))
 	xf.basis = xf.basis.slerp(to.basis.orthonormalized(), settle) if settle > 0.0 else xf.basis
 	xf.origin = xf.origin.lerp(b, settle)
-	return xf
+	return Planet.xf_rigid(xf)
 
 
 static func _smooth(x: float) -> float:

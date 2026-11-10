@@ -1,6 +1,6 @@
 """Build the street people: one rig, a wardrobe of parts, and the animation set, as glTF.
 
-Run headless (needs the `bpy` pip module, Blender 4.2):
+Run headless (needs the `bpy` pip module, Blender 4.2 or 5.2):
     python3 player/tools/build_character.py
 Writes player/assets/character.glb.
 
@@ -276,31 +276,31 @@ def seg_dist(p, a, b):
 # decimates, weights and makes the LOD.
 
 def torso(b, k=0.0, shoulders=True, narrow=1.0):
-    b.ball((0, 0.0, 1.31), 0.165 + k, (1.24 * narrow, 0.8, 0.95))     # chest
+    b.ball((0, 0.0, 1.31), 0.16 + k, (1.26 * narrow, 0.78, 0.95))     # chest
     b.ball((0, -0.03, 1.285), 0.11 + k, (1.3 * narrow, 0.75, 0.8))     # front of the chest
-    b.ball((0, 0.012, 1.15), 0.15 + k, (1.06, 0.78, 1.0))              # waist
-    b.ball((0, 0.0, 1.02), 0.148 + k, (1.13, 0.8, 0.75))               # hem
+    b.ball((0, 0.012, 1.15), 0.14 + k, (1.04, 0.78, 1.0))              # waist
+    b.ball((0, 0.0, 1.02), 0.142 + k, (1.1, 0.8, 0.75))               # hem
     if shoulders:
-        b.capsule((-0.17, 0.005, 1.385), (0.17, 0.005, 1.385), 0.08 + k)
+        b.capsule((-0.175, 0.005, 1.385), (0.175, 0.005, 1.385), 0.072 + k)
 
 
 def bare_forearm(b, sx, start=0.0):
     sh, el, wr = arm_points(sx)
     if start < 1.0:
-        b.capsule(lerp(sh, el, start), el, 0.05)
-    b.capsule(el, wr, 0.044)
-    b.ball(lerp(el, wr, 0.28), 0.05)
+        b.capsule(lerp(sh, el, start), el, 0.047)
+    b.capsule(el, wr, 0.039)
+    b.ball(lerp(el, wr, 0.26), 0.045)
 
 
 def sleeve(b, sx, upto, r0=0.07, r1=0.06, cuff=0.06):
     """Shoulder cap and a sleeve down the arm; upto <= 1 ends on the upper arm,
     above 1 continues down the forearm (2 = the wrist)."""
     sh, el, wr = arm_points(sx)
-    b.ball(sh, r0 + 0.016)
+    b.ball(sh, r0 + 0.003)
     if upto <= 1.0:
         end = lerp(sh, el, upto)
         b.capsule(sh, end, r0)
-        b.ball(end, r0 + 0.004)
+        b.ball(end, r0 - 0.004)
     else:
         b.capsule(sh, el, r0)
         end = lerp(el, wr, upto - 1.0)
@@ -313,7 +313,7 @@ def top_tee(m):
     torso(sh_)
     sk = Blob()
     for sx in (1, -1):
-        sleeve(sh_, sx, 0.48, r0=0.072)
+        sleeve(sh_, sx, 0.48, r0=0.056)
         bare_forearm(sk, sx, 0.35)
     return [sh_.mesh(m["Shirt"]), sk.mesh(m["Skin"])]
 
@@ -323,26 +323,26 @@ def top_longsleeve(m):
     torso(sh_)
     sk = Blob()
     for sx in (1, -1):
-        sleeve(sh_, sx, 1.9, r0=0.069, r1=0.057, cuff=0.058)
+        sleeve(sh_, sx, 1.9, r0=0.054, r1=0.047, cuff=0.044)
         _, el, wr = arm_points(sx)
-        sk.capsule(lerp(el, wr, 0.8), wr, 0.042)
+        sk.capsule(lerp(el, wr, 0.8), wr, 0.037)
     return [sh_.mesh(m["Shirt"]), sk.mesh(m["Skin"])]
 
 
 def top_hoodie(m):
     h = Blob()
-    torso(h, 0.016)
+    torso(h, 0.008)
     h.ball((0, 0.0, 0.95), 0.152, (1.12, 0.82, 0.35))                   # waistband
-    h.ball((0, -0.12, 1.06), 0.085, (1.35, 0.4, 0.62))                  # front pocket
+    h.ball((0, -0.085, 1.07), 0.085, (1.3, 0.42, 0.6))                  # front pocket
     for i in range(9):                                                  # hood, bunched behind the neck
         a = math.radians(-112 + i * 28)
         h.ball((math.sin(a) * 0.1, math.cos(a) * 0.1 + 0.025, 1.455), 0.05, (1, 1, 0.85))
     h.ball((0, 0.13, 1.42), 0.07, (1.35, 0.7, 0.9))
     sk = Blob()
     for sx in (1, -1):
-        sleeve(h, sx, 1.86, r0=0.077, r1=0.064, cuff=0.062)
+        sleeve(h, sx, 1.86, r0=0.059, r1=0.053, cuff=0.05)
         _, el, wr = arm_points(sx)
-        sk.capsule(lerp(el, wr, 0.8), wr, 0.042)
+        sk.capsule(lerp(el, wr, 0.8), wr, 0.037)
     return [h.mesh(m["Shirt"]), sk.mesh(m["Skin"])]
 
 
@@ -353,17 +353,17 @@ def top_jacket(m):
     for sx in (1, -1):
         j = Blob()   # each half is its own shell, so the front stays open
         j.ball((0.07 * sx, 0.006, 1.31), 0.163, (1.08, 0.84, 0.97))
-        j.ball((0.07 * sx, 0.012, 1.15), 0.152, (0.98, 0.82, 1.0))
-        j.ball((0.07 * sx, 0.004, 1.0), 0.15, (1.02, 0.84, 0.85))
-        j.capsule((0.0, 0.006, 1.388), (0.175 * sx, 0.006, 1.388), 0.088)
+        j.ball((0.07 * sx, 0.012, 1.15), 0.15, (0.98, 0.82, 1.0))
+        j.ball((0.07 * sx, 0.004, 1.0), 0.148, (1.02, 0.84, 0.85))
+        j.capsule((0.0, 0.006, 1.388), (0.178 * sx, 0.006, 1.388), 0.08)
         j.capsule((0.0, 0.075, 1.455), (0.085 * sx, 0.035, 1.45), 0.032)          # collar
         j.ball((0.075 * sx, -0.112, 1.355), 0.05, (0.7, 0.32, 1.25))            # lapel
-        sleeve(j, sx, 1.88, r0=0.078, r1=0.066, cuff=0.064)
+        sleeve(j, sx, 1.88, r0=0.062, r1=0.055, cuff=0.052)
         out.append(j.mesh(m["Jacket"]))
     sk = Blob()
     for sx in (1, -1):
         _, el, wr = arm_points(sx)
-        sk.capsule(lerp(el, wr, 0.8), wr, 0.042)
+        sk.capsule(lerp(el, wr, 0.8), wr, 0.037)
     out.append(sk.mesh(m["Skin"]))
     return out
 
@@ -376,25 +376,25 @@ def top_tank(m):
         t.capsule((0.115 * sx, 0.0, 1.455), (0.1 * sx, 0.075, 1.36), 0.022)
     sk = Blob()
     sk.ball((0, 0.0, 1.355), 0.14, (1.2, 0.72, 0.62))                   # upper chest and back
-    sk.capsule((-0.16, 0.005, 1.385), (0.16, 0.005, 1.385), 0.07)
+    sk.capsule((-0.165, 0.005, 1.385), (0.165, 0.005, 1.385), 0.064)
     for sx in (1, -1):
         sh, el, _ = arm_points(sx)
-        sk.ball(sh, 0.078)
+        sk.ball(sh, 0.066)
         bare_forearm(sk, sx, 0.0)
     return [t.mesh(m["Shirt"]), sk.mesh(m["Skin"])]
 
 
 def pelvis(b, k=0.0):
-    b.ball((0, 0.0, 0.95), 0.15 + k, (1.12, 0.8, 0.72))
+    b.ball((0, 0.0, 0.95), 0.145 + k, (1.12, 0.8, 0.72))
     for sx in (1, -1):
         b.ball((0.06 * sx, 0.035, 0.885), 0.09 + k)
 
 
 def bare_leg(b, sx, start=0.0):
     hip, knee, ankle = leg_points(sx)
-    b.capsule(lerp(hip, knee, start), knee, 0.072)
-    b.capsule(knee, ankle + Vector((0, 0, 0.03)), 0.058)
-    b.ball(lerp(knee, ankle, 0.3) + Vector((0, 0.012, 0)), 0.064)
+    b.capsule(lerp(hip, knee, start), knee, 0.066)
+    b.capsule(knee, ankle + Vector((0, 0, 0.03)), 0.05)
+    b.ball(lerp(knee, ankle, 0.3) + Vector((0, 0.012, 0)), 0.058)
 
 
 def bottom_jeans(m):
@@ -402,10 +402,10 @@ def bottom_jeans(m):
     pelvis(p)
     for sx in (1, -1):
         hip, knee, ankle = leg_points(sx)
-        p.capsule(hip + Vector((0, 0, 0.02)), knee, 0.086)
-        p.ball(lerp(hip, knee, 0.25), 0.094)
-        p.capsule(knee, ankle + Vector((0, 0, 0.05)), 0.071)
-        p.ball(ankle + Vector((0, 0, 0.06)), 0.073, (1, 1, 0.55))
+        p.capsule(hip + Vector((0, 0, 0.02)), knee, 0.079)
+        p.ball(lerp(hip, knee, 0.25), 0.086)
+        p.capsule(knee, ankle + Vector((0, 0, 0.05)), 0.064)
+        p.ball(ankle + Vector((0, 0, 0.06)), 0.066, (1, 1, 0.55))
     return [p.mesh(m["Pants"])]
 
 
@@ -416,8 +416,8 @@ def bottom_shorts(m):
     for sx in (1, -1):
         hip, knee, _ = leg_points(sx)
         end = lerp(hip, knee, 0.62)
-        p.capsule(hip + Vector((0, 0, 0.02)), end, 0.082)
-        p.ball(end, 0.084, (1, 1, 0.55))
+        p.capsule(hip + Vector((0, 0, 0.02)), end, 0.075)
+        p.ball(end, 0.073, (1, 1, 0.55))
         bare_leg(sk, sx, 0.5)
     return [p.mesh(m["Pants"]), sk.mesh(m["Skin"])]
 
@@ -436,12 +436,12 @@ def bottom_skirt(m):
 
 def shoe(b, sx, boot=False):
     x = LEG_X * sx
-    b.capsule((x, 0.035, 0.056), (x, -0.112, 0.05), 0.054)
-    b.ball((x, 0.0, 0.1), 0.058)
-    b.ball((x, -0.04, 0.024), 0.03, (2.15, 3.4, 0.82))                  # sole
+    b.capsule((x, 0.035, 0.054), (x, -0.13, 0.047), 0.05)
+    b.ball((x, 0.0, 0.1), 0.054)
+    b.ball((x, -0.05, 0.024), 0.03, (2.0, 3.9, 0.82))                   # sole
     if boot:
-        b.capsule((x, 0.0, 0.08), (x, 0.004, 0.2), 0.066)
-        b.ball((x, 0.004, 0.205), 0.069, (1, 1, 0.45))
+        b.capsule((x, 0.0, 0.08), (x, 0.004, 0.2), 0.06)
+        b.ball((x, 0.004, 0.205), 0.063, (1, 1, 0.45))
 
 
 def shoes_sneakers(m):
@@ -460,9 +460,9 @@ def shoes_boots(m):
 
 def head(m):
     h = Blob(0.0065)
-    h.capsule((0, 0.008, 1.395), (0, 0.0, 1.56), 0.058)                 # neck
-    h.ball((0, 0.0, 1.665), 0.152, (0.93, 1.0, 1.08))                   # skull
-    h.ball((0, -0.03, 1.6), 0.11, (0.98, 0.95, 0.88))                   # jaw and cheeks
+    h.capsule((0, 0.008, 1.395), (0, 0.0, 1.56), 0.053)                 # neck
+    h.ball((0, 0.0, 1.665), 0.152, (0.91, 1.0, 1.08))                   # skull
+    h.ball((0, -0.03, 1.6), 0.102, (0.98, 0.95, 0.88))                  # jaw and cheeks
     h.ball((0, -0.095, 1.548), 0.04, (1.15, 0.9, 0.8))                  # chin
     h.capsule((-0.07, -0.116, 1.716), (0.07, -0.116, 1.716), 0.013)    # brow ridge
     h.capsule((0, -0.14, 1.69), (0, -0.166, 1.632), 0.014)              # nose
@@ -470,7 +470,7 @@ def head(m):
     h.capsule((-0.023, -0.142, 1.597), (0.023, -0.142, 1.597), 0.01)    # upper lip
     for sx in (-1, 1):
         h.ball((0.016 * sx, -0.157, 1.622), 0.012)                      # nostrils
-        h.ball((0.062 * sx, -0.094, 1.602), 0.04)                       # cheeks
+        h.ball((0.06 * sx, -0.094, 1.602), 0.034)                       # cheeks
         h.ball((0.146 * sx, 0.005, 1.66), 0.036, (0.42, 0.85, 1.25))    # ears
         h.ball((0.053 * sx, -0.127, 1.693), 0.022, (1.1, 0.7, 0.42))    # upper lids
     out = [h.mesh(m["Skin"])]
@@ -528,7 +528,7 @@ def hands_mitten(m):
 
 
 def hair_cap(b, k=0.0, top=1.0):
-    b.ball((0, 0.03, 1.725), 0.165 + k, (1.0, 1.04, 0.82 * top))
+    b.ball((0, 0.05, 1.75), 0.165 + k, (1.0, 1.04, 0.82 * top))
     b.ball((0, 0.06, 1.66), 0.15 + k, (0.98, 0.93, 0.95))
     for sx in (-1, 1):
         b.ball((0.112 * sx, 0.012, 1.712), 0.06 + k, (0.7, 1.15, 1.0))
@@ -540,7 +540,7 @@ def hair_short(m):
     for p in [(0, -0.095, 1.8), (-0.06, -0.085, 1.79), (0.062, -0.08, 1.795), (0.03, -0.035, 1.852),
               (-0.042, 0.0, 1.855), (0.075, 0.03, 1.83), (-0.085, 0.04, 1.82), (0.0, 0.08, 1.83)]:
         b.ball(p, 0.045)
-    b.ball((0.02, -0.118, 1.772), 0.048, (1.45, 0.62, 0.55))             # fringe
+    b.ball((0.02, -0.11, 1.788), 0.046, (1.45, 0.62, 0.5))              # fringe
     return [b.mesh(m["Hair"])]
 
 
@@ -855,6 +855,29 @@ def weight_part(ob, mode, proxy):
         set_weights(ob, fn)
 
 
+# The head is sculpted at the size the face landmarks were laid out for, then every part
+# on the head (face, hair, hats, glasses) shrinks toward the top of the neck: about six
+# and a half heads tall instead of five and a half. The blend follows the neck-to-head
+# weights, so the neck tapers into it. The hero shaders undo this to find their
+# landmarks (hero_common.gdshaderinc, head_space).
+HEAD_SCALE = 0.86
+HEAD_PIVOT = Vector((0.0, 0.0, 1.53))
+
+
+def shrink_head(ob):
+    for v in ob.data.vertices:
+        k = smooth((v.co.z - 1.47) / 0.08)
+        if k > 0.0:
+            v.co = v.co.lerp(HEAD_PIVOT + (v.co - HEAD_PIVOT) * HEAD_SCALE, k)
+    ob.data.update()
+
+
+def skin_part(ob, mode, proxy):
+    weight_part(ob, mode, proxy)
+    if mode in ("head", "hair"):
+        shrink_head(ob)
+
+
 def bind(ob, rig):
     ob.parent = rig
     mod = ob.modifiers.new("Armature", "ARMATURE")
@@ -865,10 +888,10 @@ def build_wardrobe(rig, m, proxy):
     parts = []
     for name, builder, target, mode in WARDROBE:
         ob = finish(join(builder(m), name), target)
-        weight_part(ob, mode, proxy)
+        skin_part(ob, mode, proxy)
         if name == "Hands":
             low = finish(join(hands_mitten(m), name + "_lod1"), max(int(target * LOD1), 60))
-            weight_part(low, mode, proxy)
+            skin_part(low, mode, proxy)
         else:
             low = ob.copy()
             low.data = ob.data.copy()
@@ -882,7 +905,7 @@ def build_wardrobe(rig, m, proxy):
                 RES_SCALE[0] = 2.5
                 low = finish(join(builder(m), name + "_lod1"), want)
                 RES_SCALE[0] = 1.0
-                weight_part(low, mode, proxy)
+                skin_part(low, mode, proxy)
         for o in (ob, low):
             bind(o, rig)
             parts.append(o)
@@ -1009,6 +1032,18 @@ def relaxed(p, sway=0.0):
     return p
 
 
+def action_fcurves(act):
+    """The action's curves on Blender 4.2 (act.fcurves) and 5.x (layers, strips, channel bags)."""
+    if hasattr(act, "fcurves"):
+        return list(act.fcurves)
+    out = []
+    for layer in act.layers:
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                out.extend(bag.fcurves)
+    return out
+
+
 def make_action(rig, name, frames, fn, loop=True):
     act = bpy.data.actions.new(name)
     rig.animation_data_create()
@@ -1023,7 +1058,7 @@ def make_action(rig, name, frames, fn, loop=True):
         key_pose(rig, f, pose, off)
     act.use_fake_user = True
     # Linear-ish keys are fine at 30 fps sampling; make loops seamless.
-    for fc in act.fcurves:
+    for fc in action_fcurves(act):
         for kp in fc.keyframe_points:
             kp.interpolation = "LINEAR"
     track = rig.animation_data.nla_tracks.new()
@@ -1171,18 +1206,11 @@ def sit(t):
 def sit_bench(t):
     """Sitting on a bench or chair (seat about 0.45 m), hands resting on the thighs."""
     w = math.sin(t * math.tau)
-    p = base_pose()
-    for side, sg in (("L", 1), ("R", -1)):
-        p["UpperLeg." + side] = Dir((0.1 * sg, -1, 0.04))
-        p["LowerLeg." + side] = Dir((0.04 * sg, -0.12, -1))
-        p["Foot." + side] = Dir((0.0, -0.92, -0.4))
-        p["UpperArm." + side] = Dir((0.14 * sg, -0.34, -0.93))
-        p["LowerArm." + side] = Dir((-0.05 * sg, -0.92, -0.38))
-        hand(p, side, (22, 28, 10))
+    p = seat_pose(1.0, 1.0, 0.0, 1.0)
     p["Spine"] = X(5 + 1.2 * w)
     p["Chest"] = X(2 - 0.6 * w)
     p["Head"] = X(-4) @ Z(6 * math.sin(t * math.tau * 0.5 + 1.0))
-    return p, Vector((0, 0.06, -0.43 + 0.003 * w))
+    return p, SIT_HIPS + Vector((0, 0, 0.003 * w))
 
 
 def enter_car(t):
@@ -1569,17 +1597,241 @@ def carjack(t):
     return p, Vector((0, 0.08 * pull * back, -0.05 * reach))
 
 
+# ------------------------------------------------------- planted-foot moves ---
+# Walk, Jog and Run share one 30-frame cycle with the left heel down at t = 0, so the
+# game blends them in phase. The stance foot slides back under the body at exactly
+# GAITS[name]["stride"] metres per second of clip, and CharacterModel plays the clips at
+# speed / stride, so the feet stay planted at any speed (CharacterModel.STRIDES must
+# match). The legs are solved with two-bone IK from where the ankles have to be.
+
+THIGH = (BONES["UpperLeg.L"][1] - BONES["UpperLeg.L"][0]).length
+SHIN = (BONES["LowerLeg.L"][1] - BONES["LowerLeg.L"][0]).length
+HIPS_HEAD = BONES["Hips"][0]
+FOOT_DIR = rest_dir("Foot.L")
+HEEL = Vector((0, 0.06, -0.1))    # from the ankle, foot flat
+BALL = Vector((0, -0.1, -0.1))
+ANKLE_UP = 0.1
+
+GAITS = {
+    # stride: m per clip second (two steps). duty: stance share of a cycle. back: stance
+    # shifted behind the hip (reach). drop/bob: hip
+    # height. sway: hips over the stance foot. lift: swing clearance. kick: heel up behind
+    # (running). heel/toe: foot roll at contact / push-off, degrees. lean: forward lean.
+    # arm/elbow: arm swing and bend. curl: open hand 0 .. fist 1.
+    "Walk": dict(stride=1.24, duty=0.58, back=0.04, drop=0.042, bob=0.016, sway=0.022, lift=0.06, kick=0.0,
+                 heel=16, toe=26, lean=3, arm=30, elbow=22, curl=0.0, yaw=6, roll=4, flight=False),
+    "Jog": dict(stride=2.3, duty=0.32, back=0.04, drop=0.078, bob=0.028, sway=0.012, lift=0.12, kick=0.12,
+                heel=6, toe=30, lean=8, arm=32, elbow=72, curl=0.55, yaw=8, roll=3, flight=True),
+    "Run": dict(stride=3.4, duty=0.26, back=0.04, drop=0.1, bob=0.035, sway=0.008, lift=0.2, kick=0.28,
+                heel=0, toe=36, lean=14, arm=48, elbow=90, curl=0.85, yaw=10, roll=2, flight=True),
+}
+
+
+def pitch_q(deg):
+    """Foot roll about the side axis; + lifts the toe."""
+    return Quaternion((1, 0, 0), math.radians(-deg))
+
+
+def leg_ik(p, side, hip, ankle, pitch, rh):
+    """Aim the thigh and shin so the ankle lands on `ankle` (knee bending forward), and
+    the foot at `pitch`. hip/ankle are world points, rh the hips rotation."""
+    sg = 1 if side == "L" else -1
+    d = ankle - hip
+    ln = min(d.length, (THIGH + SHIN) * 0.999)
+    u = d.normalized()
+    pole = Vector((0.08 * sg, -1, 0))
+    pole = (pole - u * pole.dot(u)).normalized()
+    ca = (THIGH * THIGH + ln * ln - SHIN * SHIN) / (2 * THIGH * ln)
+    a = math.acos(max(-1.0, min(1.0, ca)))
+    knee = hip + (u * math.cos(a) + pole * math.sin(a)) * THIGH
+    ank = hip + u * ln
+    inv = rh.inverted()
+    p["UpperLeg." + side] = Dir(inv @ (knee - hip))
+    p["LowerLeg." + side] = Dir(inv @ (ank - knee))
+    p["Foot." + side] = Dir(inv @ (pitch_q(pitch) @ FOOT_DIR))
+    return p
+
+
+def hip_joint(side, rh, off):
+    rest = BONES["UpperLeg." + side][0]
+    return HIPS_HEAD + off + rh @ (rest - HIPS_HEAD)
+
+
+def planted(flat, pitch):
+    """Ankle position for a foot rolling on the ground: flat is where the ankle is with the
+    foot flat; the heel (toe up) or the ball (heel up) stays where it was."""
+    piv = HEEL if pitch > 0 else BALL
+    return flat + piv - pitch_q(pitch) @ piv
+
+
+def foot_track(g, ph, sx):
+    """(ankle, pitch) for one foot at phase ph of the gait, in the body frame."""
+    st = g["stride"]
+    duty = g["duty"]
+    reach = st * duty * 0.5 - g.get("back", 0.0)   # lands this far ahead of the hip
+    x = sx * LEG_X * 1.02
+
+    def stance(u):
+        y = -reach + st * duty * u   # +Y is backward: the ground slides back under us
+        if u < 0.18:
+            pt = g["heel"] * (1 - smooth(u / 0.18))
+        elif u > 0.5:
+            pt = -g["toe"] * smooth((u - 0.5) / 0.5)
+        else:
+            pt = 0.0
+        return planted(Vector((x, y, ANKLE_UP)), pt), pt
+
+    if ph < duty:
+        return stance(ph / duty)
+    s = (ph - duty) / (1 - duty)
+    a0, p0 = stance(1.0)
+    a1, p1 = stance(0.0)
+    k = smooth(s)
+    if g["flight"]:
+        k = smooth(s * 1.08 - 0.04)
+    pos = a0.lerp(a1, k)
+    arc = math.sin(math.pi * s)
+    pos.z += g["lift"] * arc
+    # Running: the heel folds up behind before the knee drives through.
+    kick = math.sin(math.pi * min(s / 0.7, 1.0)) * (1 - s)
+    pos.z += g["kick"] * kick * 1.4
+    pos.y += g["kick"] * kick * 0.5
+    pt = lerp(p0, p1, smooth(s * 1.3 - 0.15)) - (25 if g["flight"] else 8) * arc * (1 - s)
+    return pos, pt
+
+
+def locomotion(name):
+    g = GAITS[name]
+
+    def fn(t):
+        ph = t % 1.0
+        c2 = math.cos(math.tau * ph)
+        mid = g["duty"] * 0.5
+        p = base_pose()
+        # Hips: lowest at foot contact when walking, mid-stance when running.
+        if g["flight"]:
+            z = -g["drop"] - g["bob"] * math.cos(2 * math.tau * (ph - mid))
+        else:
+            z = -g["drop"] - g["bob"] * math.cos(2 * math.tau * ph)
+        sway = g["sway"] * math.cos(math.tau * (ph - mid))
+        off = Vector((sway, 0, z))
+        yaw = -g["yaw"] * c2                     # the leading leg's hip comes forward
+        roll = -g["roll"] * math.cos(math.tau * (ph - mid))   # the swing side dips
+        rh = Z(yaw) @ Y(roll)
+        p["Hips"] = rh
+        for side, sx, shift in (("L", 1, 0.0), ("R", -1, 0.5)):
+            pos, pt = foot_track(g, (ph + shift) % 1.0, sx)
+            leg_ik(p, side, hip_joint(side, rh, off), pos, pt, rh)
+        # Shoulders turn against the hips; the head stays on the road ahead.
+        sh = g["yaw"] * 1.2 * c2
+        nod = math.cos(2 * math.tau * ph)
+        p["Spine"] = Z(-yaw) @ X(g["lean"] * 0.6 + 0.6 * nod)
+        p["Chest"] = Z(sh) @ X(g["lean"] * 0.4) @ Y(-roll * 0.5)
+        p["Neck"] = Z(-sh * 0.5)
+        p["Head"] = Z(-sh * 0.5) @ X(-g["lean"] * 0.8 - 0.8 * nod)
+        lag = 0.04
+        for side, sg in (("L", 1.0), ("R", -1.0)):
+            # Each arm swings with the opposite leg, a touch behind it.
+            fwd = -sg * math.cos(math.tau * (ph - lag))
+            swing = g["arm"] * fwd
+            back = g["arm"] * 0.15                     # arms hang a little behind
+            p["UpperArm." + side] = (Y((ARM_DOWN + lerp(2, 6, g["curl"])) * sg) @
+                                     X(-swing + back) @ Z(-sg * 6 * max(fwd, 0.0) * g["curl"]))
+            bend = g["elbow"] + (g["elbow"] * 0.25 + 10) * max(fwd, 0.0)
+            p["LowerArm." + side] = X(-bend)
+            p["Hand." + side] = X(-6 * g["curl"])
+            hand(p, side, lerp_curl(RELAXED, FIST, g["curl"]))
+        return p, off
+
+    return fn
+
+
+# Sitting down and standing up. The game keeps the feet still by sliding the character's
+# origin SEAT_SHIFT metres between the standing spot and the seat while these play, along
+# seat_k(t) (CharacterModel.seat_k() is the same curve). Seat height 0.45 m.
+SEAT_SHIFT = 0.4
+SIT_HIPS = Vector((0, 0.06, -0.43))
+SIT_FEET = Vector((0.172, -0.405, ANKLE_UP))   # left ankle when seated (x mirrors)
+
+
+def seat_k(t):
+    return smooth((t - 0.15) / 0.7)
+
+
+def seat_pose(hips_k, root_k, lean, arm_k):
+    """hips_k 0 standing .. 1 seated, root_k how far the origin has moved toward the seat
+    (feet stay put), lean forward lean in degrees, arm_k 0 hanging .. 1 hands on thighs."""
+    p = base_pose()
+    off = Vector((0, SIT_HIPS.y * root_k, SIT_HIPS.z * hips_k))
+    for side, sx in (("L", 1), ("R", -1)):
+        foot = Vector((sx * lerp(LEG_X * 1.05, SIT_FEET.x, root_k),
+                       SIT_FEET.y + SEAT_SHIFT * (1 - root_k), ANKLE_UP))
+        leg_ik(p, side, hip_joint(side, Quaternion(), off), foot, 0.0, Quaternion())
+        stand_u = Dir((0.14 * sx, 0.03, -0.99))
+        stand_l = Dir((0.06 * sx, -0.2, -0.98))
+        p["UpperArm." + side] = dir_lerp(stand_u, Dir((0.14 * sx, -0.34, -0.93)), arm_k)
+        p["LowerArm." + side] = dir_lerp(stand_l, Dir((-0.05 * sx, -0.92, -0.38)), arm_k)
+        hand(p, side, lerp_curl(RELAXED, (22, 28, 10), arm_k))
+    p["Spine"] = X(5 * hips_k + lean * 0.65)
+    p["Chest"] = X(2 * hips_k + lean * 0.35)
+    p["Head"] = X(-4 * hips_k - lean * 0.6)
+    return p
+
+
+def sit_down(t):
+    """From standing a step in front of a seat, back and down onto it."""
+    rk = seat_k(t)
+    hk = smooth((t - 0.2) / 0.7)
+    lean = 30 * math.sin(math.pi * min(t / 0.88, 1.0))
+    ak = smooth((t - 0.3) / 0.6)
+    p = seat_pose(hk, rk, lean, ak)
+    p["Head"] = p["Head"] @ Z(6 * math.sin(1.0) * smooth((t - 0.6) / 0.4))
+    return p, Vector((0, SIT_HIPS.y * rk, SIT_HIPS.z * hk))
+
+
+def stand_up(t):
+    """Lean forward, push off the thighs and rise, ending a step in front of the seat."""
+    rk = 1 - seat_k(t)
+    hk = 1 - smooth((t - 0.2) / 0.6)
+    lean = 40 * math.sin(math.pi * min(t / 0.8, 1.0))
+    ak = 1 - smooth((t - 0.15) / 0.55)
+    p = seat_pose(hk, rk, lean, ak)
+    p["Head"] = p["Head"] @ Z(6 * math.sin(1.0) * (1 - smooth(t / 0.3)))
+    return p, Vector((0, SIT_HIPS.y * rk, SIT_HIPS.z * hk))
+
+
+def land(t):
+    """Touching down after a fall: knees give, arms out, back up."""
+    a = math.sin(math.pi * min(t / 0.85, 1.0)) * (1.0 - 0.3 * t)
+    p = relaxed(base_pose())
+    off = Vector((0, 0.02 * a, -0.14 * a))
+    for side, sx in (("L", 1), ("R", -1)):
+        leg_ik(p, side, hip_joint(side, Quaternion(), off), Vector((sx * LEG_X * 1.15, -0.03, ANKLE_UP)),
+               0.0, Quaternion())
+        p["UpperArm." + side] = Y((ARM_DOWN - 18 * a) * sx) @ X(-14 * a)
+        p["LowerArm." + side] = X(-20 - 25 * a)
+        hand(p, side, lerp_curl(RELAXED, OPEN, a))
+    p["Spine"] = X(14 * a)
+    p["Chest"] = X(4 * a)
+    p["Head"] = X(-12 * a)
+    return p, off
+
+
 CLIPS = [
     # (name, frames, pose function, loops)
     ("Idle", 60, idle, True),
     ("IdleLook", 150, idle_look, True),
     ("IdleArms", 90, idle_arms, True),
-    ("Walk", 30, lambda t: gait(t, 0.0), True),
-    ("Run", 20, lambda t: gait(t, 1.0), True),
+    ("Walk", 30, locomotion("Walk"), True),
+    ("Jog", 30, locomotion("Jog"), True),
+    ("Run", 30, locomotion("Run"), True),
     ("Jump", 30, jump, True),
     ("Fall", 30, fall, True),
     ("Sit", 60, sit, True),
     ("SitBench", 90, sit_bench, True),
+    ("SitDown", 33, sit_down, False),
+    ("StandUp", 30, stand_up, False),
+    ("Land", 12, land, False),
     ("EnterCar", 21, enter_car, False),
     ("ExitCar", 21, exit_car, False),
     ("Talk", 120, talk, True),

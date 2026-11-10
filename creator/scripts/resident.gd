@@ -81,7 +81,7 @@ func _sync_home_door() -> void:
 	var d: Vector2i = City.DIRS[b.rot]
 	var out := Vector3(d.x, 0, d.y)
 	# The door's +Z points out to the street.
-	_home_door = interiors.add_door(Transform3D(Basis.looking_at(-out), ResidentHome.door_of(city, b)),
+	_home_door = interiors.add_door(Planet.xf_rigid(Transform3D(Basis.looking_at(-out), ResidentHome.door_of(city, b))),
 		"home", "Home")
 
 
@@ -202,7 +202,8 @@ func dress() -> void:
 
 
 ## Where to put the player after Wasted, or on loading into the street: outside home.
-## Transform3D with an INF origin when there is no home.
+## Transform3D with an INF origin when there is no home. Flat map metres (Planet.xf_rigid
+## puts it on the ball on msp).
 func respawn_point() -> Transform3D:
 	return home.spawn_transform()
 
@@ -230,14 +231,14 @@ func _place_door_marker() -> void:
 	var sp := home.spawn_transform()
 	_door_marker.visible = sp.origin.is_finite() and interiors == null
 	if _door_marker.visible:
-		_door_marker.global_position = sp.origin + Vector3(0, 1.5, 0)
+		_door_marker.global_transform = Planet.xf_rigid(Transform3D(Basis.IDENTITY, sp.origin + Vector3(0, 1.5, 0)))
 
 
 func _near_door() -> bool:
 	if interiors != null or street == null or not street.active or street.car != null:
 		return false
 	var sp := home.spawn_transform()
-	return sp.origin.is_finite() and street.player.global_position.distance_to(sp.origin) < DOOR_RADIUS
+	return sp.origin.is_finite() and Planet.place(sp.origin).distance_to(street.player.global_position) < DOOR_RADIUS
 
 
 func _process(_delta: float) -> void:

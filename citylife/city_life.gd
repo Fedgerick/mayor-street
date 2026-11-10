@@ -47,6 +47,7 @@ var nightlife := PackedFloat32Array()   # the part of ped_night from nightlife s
 var focus := Vector3.ZERO
 var cam_height := 300.0
 var car_radius := 600.0
+const PLANET_STREET_RADIUS := 105.0  # msp street level: life within this of the camera
 var ped_radius := 140.0
 var want_cars := 0
 var want_peds := 0
@@ -279,7 +280,7 @@ func _service_cells(kind: String) -> Array:
 		for st in sv.garbage_depots():
 			var p = st.get("road", st.get("center"))
 			if p is Vector3:
-				out.append(city.world_to_cell(p))
+				out.append(city.flat_to_cell(p))
 		if not out.is_empty():
 			return out
 	if kind == "garbage" and city.has_method("find_tagged"):
@@ -307,7 +308,7 @@ var _road_ped := PackedFloat32Array()
 
 
 func compute_weights() -> void:
-	var n := City.SIZE * City.SIZE
+	var n := City.W * City.H
 	car_weight.resize(n)
 	ped_weight.resize(n)
 	ped_night.resize(n)
@@ -350,13 +351,13 @@ func _add_building(id: int) -> void:
 	# Spread over road cells within two tiles of the lot.
 	for dy in range(-2, size + 2):
 		var y := by + dy
-		if y < 0 or y >= City.SIZE:
+		if y < 0 or y >= City.H:
 			continue
 		for dx in range(-2, size + 2):
 			var x := bx + dx
-			if x < 0 or x >= City.SIZE:
+			if x < 0 or x >= City.W:
 				continue
-			var i := y * City.SIZE + x
+			var i := y * City.W + x
 			if city.road[i] != 1:
 				continue
 			var near := dx >= -1 and dy >= -1 and dx <= size and dy <= size
@@ -417,16 +418,17 @@ func hour_factor(table: Array) -> float:
 
 
 func _update_view() -> void:
-	var size := City.SIZE * City.TILE
+	var size := maxi(City.W, City.H) * City.TILE
 	if camera == null or not camera.is_inside_tree():
 		# No camera (tests, tools): populate the whole island, people included.
-		focus = Vector3(size * 0.5, 0, size * 0.5)
+		focus = Vector3(City.W * City.TILE * 0.5, 0, City.H * City.TILE * 0.5)
 		cam_height = 100.0
 		car_radius = size
 		ped_radius = size
 		return
-	var o := camera.global_position
-	var d := -camera.global_transform.basis.z
+	# On msp the view is worked out on the flat map, where cars and people live.
+	var o := Planet.flat(camera.global_position)
+	var d := Planet.to_local(camera.global_position, -camera.global_transform.basis.z)
 	cam_height = o.y
 	if d.y < -0.05:
 		focus = o + d * (o.y / -d.y)
@@ -439,6 +441,14 @@ func _update_view() -> void:
 	if cam_height < 40.0:
 		# Close to the ground the focus is far ahead; centre on the camera instead.
 		focus = Vector3(o.x, 0, o.z) + Vector3(d.x, 0, d.z).normalized() * 40.0
+		if Planet.on:
+			# On the ball the ground drops behind the horizon: from eye height a car or a
+			# walker is out of sight past about 70-90 m, so only the ring that can be seen
+			# is filled. Same density as before, about half as many cars and people.
+			focus = Vector3(o.x, 0, o.z) + Vector3(d.x, 0, d.z).normalized() * 15.0
+			car_radius = PLANET_STREET_RADIUS
+			if ped_radius > 0.0:
+				ped_radius = PLANET_STREET_RADIUS
 
 
 func _update_area() -> void:
@@ -455,7 +465,10 @@ func _update_area() -> void:
 	for i in city.road.size():
 		if city.road[i] != 1:
 			continue
-		var d2 := net.center(i).distance_squared_to(focus)
+		var cc := net.center(i)
+		if Planet.on:
+			cc.x = focus.x + Planet.dx(focus.x, cc.x)  # the short way round
+		var d2 := cc.distance_squared_to(focus)
 		if d2 < r2 and net.junction[i] == 0:
 			ct += car_weight[i]
 			_car_cells.append(i)
@@ -466,12 +479,17 @@ func _update_area() -> void:
 			_ped_cells.append(i)
 			_ped_cum.append(pt)
 	# Cap the city's demand first, then apply the hour, so a big city is still quiet at 3am.
-	want_cars = int(minf(ct * density * 0.55, max_cars) * hour_factor(CAR_HOURS))
-	want_peds = int(minf(pt * density * 1.4, max_peds) * hour_factor(PED_HOURS))
+	# The caps are for the usual 150 m street ring; a smaller ring (msp) gets a smaller
+	# cap, so a busy downtown is as busy as before rather than packed tighter.
+	var ring := clampf(pow(minf(car_radius, ped_radius if ped_radius > 0.0 else car_radius) / 150.0, 2.0), 0.0, 1.0)
+	var cap_cars := max_cars * ring
+	var cap_peds := max_peds * ring
+	want_cars = int(minf(ct * density * 0.55, cap_cars) * hour_factor(CAR_HOURS))
+	want_peds = int(minf(pt * density * 1.4, cap_peds) * hour_factor(PED_HOURS))
 	if weather != null:
 		want_peds = int(want_peds * (1.0 - 0.4 * weather.rain))  # rain keeps people in
 	# Clubs and the casino keep their blocks busy late.
-	want_peds = mini(want_peds + int(minf(lt * density * 1.4, max_peds * 0.35) * nm), max_peds)
+	want_peds = mini(want_peds + int(minf(lt * density * 1.4, cap_peds * 0.35) * nm), int(cap_peds))
 	if ped_radius <= 0.0:
 		want_peds = 0
 
@@ -487,6 +505,7 @@ func _pick(cells: PackedInt32Array, cum: PackedFloat32Array) -> int:
 func _in_view(p: Vector3) -> bool:
 	if camera == null or not camera.is_inside_tree():
 		return false
+	p = Planet.place(p)  # p is flat map metres
 	return camera.is_position_in_frustum(p) and camera.global_position.distance_to(p) < STREET_FILL + cam_height
 
 
@@ -527,7 +546,7 @@ func _cull() -> void:
 	var cr := car_radius * 1.15
 	var removed := 0
 	for c in traffic.cars.duplicate():
-		var far: bool = Vector2(c.pos.x - focus.x, c.pos.z - focus.z).length() > cr
+		var far: bool = Planet.fdist(c.pos, focus) > cr
 		var extra: bool = traffic.cars.size() > want_cars * 1.2 + 4 and removed < 2 and not _in_view(c.pos) and not c.garbage and not c.bus
 		if far or extra:
 			traffic.remove(c)
@@ -539,7 +558,7 @@ func _cull() -> void:
 	var pr := ped_radius * 1.2
 	removed = 0
 	for p in crowd.peds.duplicate():
-		var far: bool = Vector2(p.pos.x - focus.x, p.pos.z - focus.z).length() > pr
+		var far: bool = Planet.fdist(p.pos, focus) > pr
 		var extra: bool = crowd.peds.size() > want_peds * 1.2 + 4 and removed < 3 and not _in_view(p.pos) and not p.crossing
 		if far or extra:
 			crowd.remove(p)

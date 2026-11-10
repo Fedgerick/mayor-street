@@ -14,8 +14,25 @@ uniform float detail = 1.0;   // 0 turns the painted detail off (Low graphics)
 varying vec3 rest_pos;
 varying vec3 rest_nrm;
 
+// The builders shrink everything on the head toward the top of the neck after sculpting it
+// (build_character.py, shrink_head). The face landmarks below are in the sculpt's own
+// space, so undo that here.
+const float HEAD_SCALE = 0.86;
+const vec3 HEAD_PIVOT = vec3(0.0, 1.53, 0.0);
+
+vec3 head_space(vec3 p) {
+	float y = p.y;
+	for (int i = 0; i < 4; i++) {
+		float k = smoothstep(1.47, 1.55, y);
+		y = p.y - k * (HEAD_SCALE - 1.0) * (y - HEAD_PIVOT.y);
+	}
+	float k = smoothstep(1.47, 1.55, y);
+	float s = mix(1.0, HEAD_SCALE, k);
+	return HEAD_PIVOT + (p - HEAD_PIVOT) / s;
+}
+
 void vertex() {
-	rest_pos = vec3(UV.x, UV.y, UV2.x);
+	rest_pos = head_space(vec3(UV.x, UV.y, UV2.x));
 	rest_nrm = COLOR.rgb * 2.0 - 1.0;
 }
 

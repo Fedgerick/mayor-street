@@ -35,8 +35,8 @@ func _ray(a: Vector3, b: Vector3, mask: int) -> Dictionary:
 func _view_solids(view: Node, city: City) -> Dictionary:
 	var groups := {}
 	var lamps: Array[Vector3] = []
-	for y in City.SIZE:
-		for x in City.SIZE:
+	for y in City.H:
+		for x in City.W:
 			var i := city.idx(x, y)
 			var c := city.cell_center(x, y)
 			if city.road[i] == 1:
@@ -102,8 +102,8 @@ func _run() -> void:
 
 	# --- Parks are open, other specials are solid -------------------------------------
 	var spot := Vector2i(-1, -1)
-	for y in range(4, City.SIZE - 4):
-		for x in range(4, City.SIZE - 4):
+	for y in range(4, City.H - 4):
+		for x in range(4, City.W - 4):
 			if spot.x < 0 and city.can_place_special("small_park", Vector2i(x, y), true) == "":
 				spot = Vector2i(x, y)
 	if spot.x >= 0:

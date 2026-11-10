@@ -31,6 +31,8 @@ const DEFAULTS := {
 	"group": "business", "size": 1, "cost": 1000, "upkeep": 0, "tier": 0, "tags": [],
 	"unique": false, "needs_road": true, "placement": "lot", "menu": true, "interior": "",
 	"unlock_hint": "", "desc": "",
+	# Unlocked once the city has this many people, apart from the milestone tiers (tier -1).
+	"unlock_pop": 0,
 	# Look: the sign and trim colour, plus a stand-in while the model is missing (a kit
 	# building of the same size, or a plain block of this colour and height).
 	"accent": Color(0.85, 0.22, 0.2), "stand_in": "c_2", "color": Color(0.75, 0.74, 0.72), "height": 10.0,
@@ -123,6 +125,13 @@ const DEFS := {
 	"warehouse": {"name": "Pier 4 Warehouse", "group": "business", "size": 1, "cost": 3000, "upkeep": -10,
 		"tier": 2, "tags": ["warehouse", "industrial"], "accent": BROWN, "stand_in": "i_2",
 		"desc": "Storage near the docks. What's inside is anyone's guess."},
+	"salvage_yard": {"name": "Rusty's Salvage & Tow", "group": "business", "size": 1, "cost": 5000, "upkeep": -15,
+		"tier": 1, "tags": ["salvage_yard", "garage", "industrial"], "accent": ORANGE, "stand_in": "i_2",
+		"desc": "Two tow trucks clear wrecks off the streets and haul them here. Takes towing jobs."},
+	"gun_shop": {"name": "Harbor Arms & Supply", "group": "business", "size": 1, "cost": 7000, "upkeep": -20,
+		"tier": -1, "unlock_pop": 2500, "tags": ["shop", "gun_shop", "robbable"], "accent": Color(0.3, 0.32, 0.3),
+		"unlock_hint": "Reach 2,500 people",
+		"desc": "Guns, ammo, med kits, armor and things for your home. Walk in and press E at the counter."},
 	"bank": {"name": "Second National Bank", "group": "business", "size": 1, "cost": 20000, "upkeep": -60,
 		"tier": 2, "tags": ["bank", "robbable", "landmark"], "unique": true, "interior": "bank", "accent": BANK_GREEN,
 		"desc": "The city's money lives here. The vault fills up in rich districts."},
@@ -210,6 +219,16 @@ static func with_tag(tag: String) -> Array:
 	for id in DEFS:
 		if tag in get_def(id).tags:
 			out.append(id)
+	return out
+
+
+## Ids unlocked by population alone (unlock_pop), with the people each needs.
+static func pop_unlocks() -> Dictionary:
+	var out := {}
+	for id in DEFS:
+		var n := int(get_def(id).unlock_pop)
+		if n > 0:
+			out[id] = n
 	return out
 
 
