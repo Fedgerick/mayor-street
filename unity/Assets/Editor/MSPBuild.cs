@@ -162,6 +162,28 @@ namespace MSP.EditorTools
             var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(iconDst);
             if (tex != null)
                 PlayerSettings.SetIcons(UnityEditor.Build.NamedBuildTarget.Unknown, new[] { tex }, IconKind.Any);
+            KeepInstancingVariants();
+        }
+
+        /// <summary>The city's kit, beacon and other instanced materials are made at runtime, so no
+        /// material asset in the build has GPU instancing on. With Graphics settings' default
+        /// "Strip Unused" the INSTANCING_ON variants are left out of the player, and every
+        /// Graphics.RenderMeshInstanced draw comes out invisible (no error). Keep them all.</summary>
+        static void KeepInstancingVariants()
+        {
+            var gs = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/GraphicsSettings.asset");
+            if (gs == null || gs.Length == 0) { Debug.LogWarning("[MSP] no GraphicsSettings asset"); return; }
+            var so = new SerializedObject(gs[0]);
+            var p = so.FindProperty("m_InstancingStripping");
+            if (p == null) { Debug.LogWarning("[MSP] GraphicsSettings has no m_InstancingStripping"); return; }
+            const int KeepAll = 2; // InstancingStripping: StripUnused 0, StripAll 1, KeepAll 2
+            if (p.intValue != KeepAll)
+            {
+                p.intValue = KeepAll;
+                so.ApplyModifiedPropertiesWithoutUndo();
+                AssetDatabase.SaveAssets();
+                Debug.Log("[MSP] Graphics settings: keep all instancing variants");
+            }
         }
 
         static void MakeScene()
