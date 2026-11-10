@@ -10,6 +10,7 @@
 //   --quality=0|1|2                  low, medium, high
 //   --screenshot=path.png            render, save, quit
 //   --nohud                          hide the HUD
+//   --overlay=power                  start with a service overlay on
 // Keys: 1-6 tools (inspect, road, R, C, I zones, bulldoze), 7 or B the build menu, Space
 // pause, comma and full stop slower and faster, N skip 10 game minutes, O overlays (zones,
 // traffic, land value), [ and ] an hour back or on. Left-drag uses the tool.
@@ -118,6 +119,11 @@ namespace MSP
             city.construction = true;  // from here on, what is built goes up over time
             view.RebuildAll();
             if (Args.Has("nohud")) hud.gameObject.SetActive(false);
+            if (Args.Has("overlay"))  // a service overlay by name (power, parks, garbage, police, fire, crime, happiness)
+            {
+                int oi = System.Array.FindIndex(CityServices.OVERLAY_NAMES, n => n.ToLowerInvariant() == Args.Get("overlay").ToLowerInvariant());
+                if (oi > 0) { servicesPanel.SetOverlay((CityServices.Overlay)oi); OnServiceOverlay((CityServices.Overlay)oi); }
+            }
             if (Args.Has("screenshot"))
             {
                 cam.inputEnabled = false;
