@@ -275,11 +275,24 @@ namespace MSP
 
         public static readonly string[] ZONE_KEYS = { "", "r", "c", "i" };
 
-        public static string BuildingMeshName(int zone, int stage, int size, int variant)
+        public static string BuildingMeshName(int zone, int stage, int size, long variant)
         {
             var list = Variants($"{ZONE_KEYS[zone]}_{stage}_{size}");
             if (list.Count == 0) return "";
-            return list[variant % list.Count];
+            return list[(int)(variant % list.Count)];
+        }
+
+        /// <summary>The mesh for a catalog building: its own model, else a zone model of its
+        /// stand-in kind, else a plain block (msp's Kit.special_mesh_name).</summary>
+        public static string SpecialMeshName(string kind, int size, long variant)
+        {
+            var d = Catalog.GetDef(kind);
+            if (d == null) return "";
+            if (d.Model != "") return d.Model;
+            var list = Variants($"{d.standIn}_{size}");
+            if (list.Count == 0 && size <= 2) list = Variants(size == 2 ? "c_3_2" : "c_2_1");
+            if (list.Count > 0) return list[(int)(variant % list.Count)];
+            return Block("special/" + kind, d.size, d.height);
         }
 
         /// <summary>A plain block (msp's Kit._block) registered under nm: a stand-in for a missing model.</summary>

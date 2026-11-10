@@ -1,11 +1,16 @@
 // The boot object in Assets/Scenes/Main.unity: builds the whole game in code, as msp's
 // scripts/main.gd does.
 //
-// Milestone 0 (pipeline check): the planet (belt, ice cap, sea), a few msp kit buildings on
-// the belt, the sun and an orbit camera. Options (after the exe name):
+// Milestone 1: msp's city on the planet. The demo city (the same one msp grows, lot for lot),
+// or with --starter the empty starter town, drawn by CityView; the city clock runs. Options
+// (after the exe name):
+//   --starter                        the starter roads instead of the demo city
 //   --view=x,z,dist,yawdeg,tiltdeg   camera framing over flat map metres
 //   --hour=10.5                      clock (sun position)
+//   --quality=0|1|2                  low, medium, high
 //   --screenshot=path.png            render, save, quit
+// Keys: Space pause, comma and full stop slower and faster, N skip 10 game minutes,
+// O overlays (zones, traffic, land value), [ and ] an hour back or on.
 using System.Collections;
 using UnityEngine;
 
@@ -15,141 +20,106 @@ namespace MSP
     {
         public const int PLANET_COLS = 192;
         public const int PLANET_ROWS = 36;
+        static readonly float[] SPEED_VALUES = { 0f, 1f, 3f, 10f };
+        static readonly float[] PLANET_MAYOR_DETAIL = { 400f, 600f, 1000f };
 
+        public City city;
+        public CityView view;
         MayorCamera cam;
         DayNight dayNight;
         PlanetSky planetSky;
-        float hour = 10.5f;
+        int speedIndex = 1;
+        int overlay;
+        int quality = 1;
 
         void Awake()
         {
             Application.targetFrameRate = 60;
-            Planet.Configure(PLANET_COLS, PLANET_ROWS);
+            Planet.Configure(PLANET_COLS, PLANET_ROWS);  // before the City: it sizes the grid
             Physics.gravity = Vector3.zero; // planet bodies apply their own pull toward the centre
         }
 
         void Start()
         {
-            hour = Args.GetF("hour", 10.5f);
-            BuildWorld();
+            quality = Mathf.Clamp(Args.GetI("quality", 1), 0, 2);
+            var t0 = Time.realtimeSinceStartup;
+            city = new City();
+            bool demo = !Args.Has("starter");
+            if (demo) city.BuildDemo();
+            else city.BuildStarter();
+            Debug.Log($"[MSP] city: {(demo ? "demo" : "starter")}, {city.buildings.Count} buildings, population {city.population} ({(Time.realtimeSinceStartup - t0) * 1000f:F0} ms)");
             dayNight = new GameObject("DayNight").AddComponent<DayNight>();
             dayNight.transform.SetParent(transform);
             planetSky = new GameObject("PlanetSky").AddComponent<PlanetSky>();
             planetSky.transform.SetParent(transform);
             planetSky.Setup(dayNight);
+            view = new GameObject("CityView").AddComponent<CityView>();
+            view.transform.SetParent(transform);
+            view.Setup(city);
+            if (Args.Has("hour")) city.minutes = city.GameDay() * 1440.0 + Args.GetF("hour", 10.5f) * 60.0;
             var camGo = new GameObject("MayorCamera");
             camGo.transform.SetParent(transform);
             cam = camGo.AddComponent<MayorCamera>();
-            cam.bounds = new Rect(0, -300, Planet.W * Planet.TILE, Planet.H * Planet.TILE + 500);
+            cam.bounds = new Rect(0, -300, City.W * City.TILE, City.H * City.TILE + 500);
             cam.Moved += dayNight.SetViewDistance;
-            dayNight.ApplyQuality(Args.GetI("quality", 1), cam.cam);
-            float[] v = { 1182f, 204f, 230f, -35f, 0f };
+            dayNight.ApplyQuality(quality, cam.cam);
+            view.SetDetailDistance(PLANET_MAYOR_DETAIL[quality]);
+            var cc = city.CenterCell();
+            var c = city.CellCenter(cc.x, cc.y);
+            cam.SetView(c + new Vector3(0, 0, 30), demo ? 260f : 330f, -35f * Mathf.Deg2Rad, 0f);
             if (Args.Has("view"))
             {
+                float[] v = { 1182f, 204f, 230f, -35f, 0f };
                 string[] parts = Args.Get("view").Split(',');
                 for (int i = 0; i < parts.Length && i < v.Length; i++)
                     float.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v[i]);
+                cam.SetView(new Vector3(v[0], 0f, v[1]), v[2], v[3] * Mathf.Deg2Rad, v[4] * Mathf.Deg2Rad);
             }
-            cam.SetView(new Vector3(v[0], 0f, v[1]), v[2], v[3] * Mathf.Deg2Rad, v[4] * Mathf.Deg2Rad);
-            if (Args.Has("screenshot")) cam.inputEnabled = false;
+            city.construction = true;  // from here on, what is built goes up over time
+            view.RebuildAll();
             if (Args.Has("screenshot"))
+            {
+                cam.inputEnabled = false;
+                speedIndex = 0;
                 StartCoroutine(Screenshot(Args.Get("screenshot")));
+            }
         }
 
         void Update()
         {
-            // [ and ] step the clock an hour (milestone-0 testing until the City clock is ported)
-            if (Input.GetKeyDown(KeyCode.LeftBracket)) hour = G.Fposmod(hour - 1f, 24f);
-            if (Input.GetKeyDown(KeyCode.RightBracket)) hour = G.Fposmod(hour + 1f, 24f);
+            if (Input.GetKeyDown(KeyCode.Space)) speedIndex = speedIndex == 0 ? 1 : 0;
+            if (Input.GetKeyDown(KeyCode.Comma)) speedIndex = Mathf.Max(speedIndex - 1, 0);
+            if (Input.GetKeyDown(KeyCode.Period)) speedIndex = Mathf.Min(speedIndex + 1, 3);
+            if (Input.GetKeyDown(KeyCode.N)) city.Advance(10.0, 1.0);
+            if (Input.GetKeyDown(KeyCode.O)) SetOverlay((overlay + 1) % 4);
+            if (Input.GetKeyDown(KeyCode.LeftBracket)) city.minutes = System.Math.Max(city.minutes - 60.0, 0.0);
+            if (Input.GetKeyDown(KeyCode.RightBracket)) city.minutes += 60.0;
+            int hourBefore = (int)(city.minutes / 60.0);
+            city.Advance(Time.deltaTime, SPEED_VALUES[speedIndex]);
+            if ((int)(city.minutes / 60.0) != hourBefore) view.MarkMapDirty();
+        }
+
+        void SetOverlay(int o)
+        {
+            overlay = o;
+            Shader.SetGlobalFloat("overlay_mode", o);
         }
 
         void LateUpdate()
         {
             // as main.gd _follow_planet_sky: the sky follows the mayor focus round the ball
             Vector3 where = Planet.Warp(cam.focus);
-            dayNight.UpdateTime(PlanetSky.LocalHour(hour, where), 0);
-            planetSky.Follow(where, cam.Eye, hour);
-        }
-
-        void BuildWorld()
-        {
-            var world = new GameObject("World").transform;
-            world.SetParent(transform);
-            var belt = new GameObject("Belt", typeof(MeshFilter), typeof(MeshRenderer));
-            belt.transform.SetParent(world);
-            belt.GetComponent<MeshFilter>().sharedMesh = Planet.BeltMesh(0f, 1);
-            belt.GetComponent<MeshRenderer>().sharedMaterial = Mats.Make(new Color(0.36f, 0.5f, 0.24f));
-            MeshUtil.Show(world, "Sea", MeshUtil.Sphere(Planet.R - 0.6f, 192, 96), Mats.Make(new Color(0.12f, 0.36f, 0.5f), 0.85f));
-            AddCap(world, "IceCap", Planet.R + 0.2f, Planet.LatOf(new Vector3(0, 0, 0)), Mathf.PI * 0.5f, new Color(0.9f, 0.94f, 0.97f));
-            PlaceSampleBuildings(world);
-
-        }
-
-        /// <summary>A row of msp's kit buildings along a street near the starter town, drawn with the
-        /// ported kit shader, to check the look before CityView is ported.</summary>
-        void PlaceSampleBuildings(Transform parent)
-        {
-            Kit.Install();
-            string[] names = { "r_1_1_a", "r_2_1_b", "c_3_1_a", "c_2_1_c", "i_2_1_a", "r_3_2_a", "c_3_2_b", "r_1_1_c" };
-            float x0 = 1152f, z = 204f;
-            var rng = new System.Random(7);
-            for (int i = 0; i < names.Length; i++)
-            {
-                int zone = names[i][0] == 'r' ? 1 : names[i][0] == 'c' ? 2 : 3;
-                int w = names[i][4] - '0';
-                var flat = new GXform(GBasis.Identity, new Vector3(x0 + i * 24f + w * 6f, 0f, z - (w - 1) * 6f));
-                var wall = Kit.WALLS[zone][rng.Next(Kit.WALLS[zone].Length)];
-                var acc = Kit.ACCENTS[rng.Next(Kit.ACCENTS.Length)];
-                var go = KitObject.Make(parent, names[i], Planet.Xf(flat), wall, new Color(acc.r, acc.g, acc.b, (float)rng.NextDouble()));
-                if (go == null) Debug.LogWarning("[MSP] missing kit mesh " + names[i]);
-            }
-            // a road strip in front of them
-            for (int i = 0; i < 20; i++)
-            {
-                var flat = new GXform(GBasis.Rotation(Vector3.up, Mathf.PI * 0.5f), new Vector3(x0 + i * 12f, 0f, z + 12f));
-                KitObject.Make(parent, "road_straight", Planet.Xf(flat), Color.white, Color.white);
-            }
-        }
-
-        /// <summary>The sphere between two latitudes (radians), as a mesh in Unity space.</summary>
-        static void AddCap(Transform parent, string name, float radius, float lat0, float lat1, Color c)
-        {
-            int rings = 24, segs = 192;
-            var verts = new Vector3[(rings + 1) * (segs + 1)];
-            var norms = new Vector3[verts.Length];
-            int k = 0;
-            for (int j = 0; j <= rings; j++)
-            {
-                float lat = Mathf.Lerp(lat0, lat1, (float)j / rings);
-                for (int i = 0; i <= segs; i++)
-                {
-                    Vector3 d = Planet.DirAt(lat, G.TAU * i / segs);
-                    verts[k] = G.U(d * radius);
-                    norms[k] = G.U(d);
-                    k++;
-                }
-            }
-            var idx = new int[rings * segs * 6];
-            k = 0;
-            for (int j = 0; j < rings; j++)
-                for (int i = 0; i < segs; i++)
-                {
-                    int a = j * (segs + 1) + i, b = a + segs + 1;
-                    // rows run north here (the belt's run south), so this order faces out
-                    idx[k++] = a; idx[k++] = b; idx[k++] = a + 1;
-                    idx[k++] = a + 1; idx[k++] = b; idx[k++] = b + 1;
-                }
-            var m = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32, vertices = verts, normals = norms, triangles = idx };
-            m.RecalculateBounds();
-            var go = new GameObject(name, typeof(MeshFilter), typeof(MeshRenderer));
-            go.transform.SetParent(parent);
-            go.GetComponent<MeshFilter>().sharedMesh = m;
-            go.GetComponent<MeshRenderer>().sharedMaterial = Mats.Make(c, 0.3f);
+            float clock = (float)city.TimeOfDay();
+            dayNight.UpdateTime(PlanetSky.LocalHour(clock, where), city.GameDay());
+            planetSky.Follow(where, cam.Eye, clock);
         }
 
         IEnumerator Screenshot(string path)
         {
-            for (int i = 0; i < 40; i++) yield return null;
+            for (int i = 0; i < 20; i++) yield return null;
+            float t = Time.realtimeSinceStartup;
+            for (int i = 0; i < 60; i++) yield return null;
+            Debug.Log($"[MSP] frame time {(Time.realtimeSinceStartup - t) / 60f * 1000f:F1} ms over 60 frames");
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(path);
             Debug.Log("[MSP] screenshot " + path);

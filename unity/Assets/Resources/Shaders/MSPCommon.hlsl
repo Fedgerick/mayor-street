@@ -15,6 +15,7 @@ float planet_radius;   // 0 = flat world; else the ball's radius
 float planet_v0;       // flat z of the equator
 float orbit_view;      // 1 seen from orbit
 float4 preview_color;
+float grid_alpha;      // tile grid lines while a build tool is active
 float2 map_size;       // city_map size in cells; 0 until CityView sets the maps
 Texture2D city_map;    // R road, G zone, B traffic, A land value (point sampled)
 Texture2D lamp_map;    // RG lamp head offset in tile, B has lamp
