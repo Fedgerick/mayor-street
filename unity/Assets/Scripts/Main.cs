@@ -392,6 +392,7 @@ namespace MSP
             float t = Time.realtimeSinceStartup;
             for (int i = 0; i < 60; i++) yield return null;
             Debug.Log($"[MSP] frame time {(Time.realtimeSinceStartup - t) / 60f * 1000f:F1} ms over 60 frames");
+            if (Args.Has("debug")) Debug.Log("[MSP] view " + view.DebugStats());
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(path);
             Debug.Log("[MSP] screenshot " + path);

@@ -294,6 +294,25 @@ namespace MSP
 
         bool WantFull(Vector2Int k) => wantFull.TryGetValue(k, out bool v) && v;
 
+        /// <summary>One line of chunk state for --debug.</summary>
+        public string DebugStats()
+        {
+            int vis = 0, full = 0, want = 0, shown = 0, stand = 0, batches = 0, bldBatches = 0;
+            foreach (var kv in chunks)
+            {
+                var ch = kv.Value;
+                if (ch.visible) vis++;
+                if (ch.full) full++;
+                if (WantFull(kv.Key)) want++;
+                if (ch.detailShown) shown++;
+                if (ch.standin != null && ch.standin.activeSelf) stand++;
+                batches += ch.batches.Count;
+                foreach (var bt in ch.batches) if (!bt.road) bldBatches++;
+            }
+            var cam = Camera.main;
+            return $"chunks {chunks.Count} visible {vis} full {full} wantFull {want} detailShown {shown} standinsOn {stand} batches {batches} (non-road {bldBatches}) dirty {dirtyOrder.Count} detail {detailDistance} cam {(cam != null ? cam.name : "none")}";
+        }
+
         static Vector3 EyeGodot()
         {
             var cam = Camera.main;
