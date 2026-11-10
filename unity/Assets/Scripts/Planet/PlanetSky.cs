@@ -75,6 +75,7 @@ namespace MSP
                 dayNight.light.intensity = 1.25f;
                 dayNight.light.enabled = true;
                 skyRot = GBasis.Rotation(Vector3.up, -(clock - 12f) / 24f * G.TAU);
+                sky.SetFloat("_HorizonDip", 0f);
                 RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
                 RenderSettings.ambientLight = new Color(0.35f, 0.38f, 0.45f) * SPACE_AMBIENT;
                 sky.SetVector("_SunDirSky", skyRot.Inverse() * dayNight.lightBasis.z);
@@ -82,7 +83,12 @@ namespace MSP
             else
             {
                 dayNight.lightBasis = q * dayNight.lightBasis;
-                skyRot = q;
+                // port change: the sky stands on the eye's own up (msp uses the focus), so its
+                // horizon can be matched to the ball's real horizon below
+                skyRot = Planet.FrameWorld(eye);
+                // port addition: how far below the local horizontal the real horizon is (see MSPSky)
+                float dip = Mathf.Acos(Mathf.Clamp(Planet.R / (Planet.R + Mathf.Max(alt, 0.5f)), -1f, 1f));
+                sky.SetFloat("_HorizonDip", Mathf.Sin(dip));
                 RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
             }
             dayNight.ApplyLight();

@@ -30,6 +30,7 @@ namespace MSP.EditorTools
             MakeUrp();
             CopyKit();
             ReimportKitIfBuiltIn();
+            KitBaker.Bake();
             MakeTemplateMaterials();
             PlayerSetup();
             MakeScene();

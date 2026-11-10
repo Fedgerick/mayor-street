@@ -27,6 +27,7 @@ Shader "MSP/Sky"
             float3 _SunDirSky;    // toward the sun, sky space
             float3 _MoonDirSky;
             float _Sunset, _Night, _CloudCover, _Pollution, _Detail, _Space;
+            float _HorizonDip;    // sin of how far the ball's real horizon sits below the local horizontal (port addition)
             float4x4 _SkyRot;     // Godot world dir -> sky dir
 
             struct A { float4 pos : POSITION; };
@@ -135,6 +136,16 @@ Shader "MSP/Sky"
                 float3 g = float3(-du.x, du.y, du.z);
                 float3 d = normalize(mul(_SkyRot, float4(g, 0)).xyz);
                 if (_Space > 0.5) return half4(space(d), 1);
+                // On a ball this small the horizon seen from the mayor camera dips far below the
+                // local horizontal, so lift the sky's horizon down to meet it (msp shows flat
+                // ground colour there instead). y' runs from -1 to 1 with y = -dip at the horizon.
+                if (_HorizonDip > 0.0)
+                {
+                    float y = (d.y + _HorizonDip) / (1.0 + _HorizonDip * sign(d.y + _HorizonDip));
+                    float2 xz = d.xz;
+                    float l = length(xz);
+                    d = float3(l > 1e-5 ? xz / l * sqrt(saturate(1.0 - y * y)) : xz, y).xzy;
+                }
                 float3 col = atmosphere(d);
                 float4 cl = clouds(d, _Detail >= 2 ? 6 : 5);
                 if (d.y > 0.0)

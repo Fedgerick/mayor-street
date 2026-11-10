@@ -85,39 +85,29 @@ namespace MSP
 
         }
 
-        /// <summary>A row of msp's kit buildings along a street near the starter town, to check
-        /// the .glb import, orientation and placement on the ball.</summary>
+        /// <summary>A row of msp's kit buildings along a street near the starter town, drawn with the
+        /// ported kit shader, to check the look before CityView is ported.</summary>
         void PlaceSampleBuildings(Transform parent)
         {
+            Kit.Install();
             string[] names = { "r_1_1_a", "r_2_1_b", "c_3_1_a", "c_2_1_c", "i_2_1_a", "r_3_2_a", "c_3_2_b", "r_1_1_c" };
             float x0 = 1152f, z = 204f;
+            var rng = new System.Random(7);
             for (int i = 0; i < names.Length; i++)
             {
-                var prefab = Resources.Load<GameObject>("Kit/buildings/" + names[i]);
-                if (prefab == null) { Debug.LogWarning("[MSP] missing kit model " + names[i]); continue; }
-                var go = Instantiate(prefab, parent);
-                go.name = names[i];
-                int w = names[i][2] - '0';
-                var flat = new GXform(GBasis.Identity, new Vector3(x0 + i * 24f + w * 6f, 0f, z));
-                G.Apply(go.transform, Planet.Xf(flat));
-                if (Args.Has("debug"))
-                {
-                    var b = new Bounds(go.transform.position, Vector3.zero);
-                    int nr = 0;
-                    foreach (var r in go.GetComponentsInChildren<Renderer>()) { b.Encapsulate(r.bounds); nr++; }
-                    var mr = go.GetComponentInChildren<Renderer>();
-                    string sh = mr != null && mr.sharedMaterial != null ? mr.sharedMaterial.shader.name + " supported=" + mr.sharedMaterial.shader.isSupported : "none";
-                    Debug.Log($"[MSP] {names[i]} pos={go.transform.position} |pos|={go.transform.position.magnitude:F1} R={Planet.R:F1} scale={go.transform.lossyScale} renderers={nr} bounds={b.center} size={b.size} shader={sh}");
-                }
+                int zone = names[i][0] == 'r' ? 1 : names[i][0] == 'c' ? 2 : 3;
+                int w = names[i][4] - '0';
+                var flat = new GXform(GBasis.Identity, new Vector3(x0 + i * 24f + w * 6f, 0f, z - (w - 1) * 6f));
+                var wall = Kit.WALLS[zone][rng.Next(Kit.WALLS[zone].Length)];
+                var acc = Kit.ACCENTS[rng.Next(Kit.ACCENTS.Length)];
+                var go = KitObject.Make(parent, names[i], Planet.Xf(flat), wall, new Color(acc.r, acc.g, acc.b, (float)rng.NextDouble()));
+                if (go == null) Debug.LogWarning("[MSP] missing kit mesh " + names[i]);
             }
             // a road strip in front of them
-            for (int i = 0; i < 16; i++)
+            for (int i = 0; i < 20; i++)
             {
-                var road = Resources.Load<GameObject>("Kit/roads/road_straight");
-                if (road == null) break;
-                var go = Instantiate(road, parent);
-                var flat = new GXform(GBasis.Rotation(Vector3.up, Mathf.PI * 0.5f), new Vector3(x0 + 6f + i * 12f, 0f, z + 12f));
-                G.Apply(go.transform, Planet.Xf(flat));
+                var flat = new GXform(GBasis.Rotation(Vector3.up, Mathf.PI * 0.5f), new Vector3(x0 + i * 12f, 0f, z + 12f));
+                KitObject.Make(parent, "road_straight", Planet.Xf(flat), Color.white, Color.white);
             }
         }
 
