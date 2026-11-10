@@ -45,7 +45,19 @@ namespace MSP
         public static bool ResetPressed => AnyDown(KeyCode.R, KeyCode.JoystickButton2);
         public static bool HornHeld => Any(KeyCode.H, KeyCode.JoystickButton4);
         public static bool LightsPressed => AnyDown(KeyCode.L);
-        public static float Throttle => Any(KeyCode.W, KeyCode.UpArrow) ? 1f : Mathf.Max(Axis("Vertical"), 0f);
+        public static float autoThrottle;   // tests (--drive): held throttle
+        public static float Throttle => Any(KeyCode.W, KeyCode.UpArrow) ? 1f : Mathf.Max(Mathf.Max(Axis("Vertical"), 0f), autoThrottle);
+        /// <summary>+1 full left, -1 full right (msp's street_left - street_right).</summary>
+        public static float Steer
+        {
+            get
+            {
+                float k = (Any(KeyCode.A, KeyCode.LeftArrow) ? 1f : 0f) - (Any(KeyCode.D, KeyCode.RightArrow) ? 1f : 0f);
+                if (k != 0f) return k;
+                float j = -Axis("Horizontal");
+                return Mathf.Abs(j) > 0.15f ? j : 0f;
+            }
+        }
         public static float Brake => Any(KeyCode.S, KeyCode.DownArrow) ? 1f : Mathf.Max(-Axis("Vertical"), 0f);
 
         /// <summary>Mouse motion this frame in pixels, y down, as Godot's InputEventMouseMotion.relative.

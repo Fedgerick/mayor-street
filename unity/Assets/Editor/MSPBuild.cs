@@ -30,8 +30,10 @@ namespace MSP.EditorTools
             MakeUrp();
             CopyKit();
             CopyCharacters();
+            VehicleBaker.CopyVehicles();
             ReimportKitIfBuiltIn();
             KitBaker.Bake();
+            VehicleBaker.Bake();
             MakeTemplateMaterials();
             PlayerSetup();
             MakeScene();

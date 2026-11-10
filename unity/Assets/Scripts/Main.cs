@@ -12,6 +12,7 @@
 //   --nohud                          hide the HUD
 //   --overlay=power                  start with a service overlay on
 //   --street                         dive to street level at the camera focus right away
+//   --drive=3                        (with --street) take the nearest parked car, full throttle 3 s
 // Keys: 1-6 tools (inspect, road, R, C, I zones, bulldoze), 7 or B the build menu, Space
 // pause, comma and full stop slower and faster, N skip 10 game minutes, O overlays (zones,
 // traffic, land value), [ and ] an hour back or on. Left-drag uses the tool. Tab: down to the
@@ -490,7 +491,7 @@ namespace MSP
             Vector3 eye = cam.Eye;
             if (InStreet)
             {
-                where = street.player.Position;
+                where = street.FocusPoint();
                 eye = G.FromU(cam.cam.transform.position);
             }
             float clock = (float)city.TimeOfDay();
@@ -505,6 +506,16 @@ namespace MSP
             {
                 while (!street.active) yield return null;   // the dive takes a few seconds
                 SetSpeed(0);
+                if (Args.Has("drive"))
+                {
+                    for (int i = 0; i < 30; i++) yield return null;   // parked cars settle on their springs
+                    bool got = street.TakeNearestCar();
+                    Debug.Log("[MSP] --drive: " + (got ? street.car.model : "no car near"));
+                    StreetInput.autoThrottle = 1f;
+                    yield return new WaitForSeconds(Args.GetF("drive", 3f));
+                    StreetInput.autoThrottle = 0f;
+                    if (got) Debug.Log($"[MSP] --drive: {street.car.Speed() * 3.6f:F0} km/h, in contact {street.car.InContact()}");
+                }
                 for (int i = 0; i < 30; i++) yield return null;
             }
             float t = Time.realtimeSinceStartup;
