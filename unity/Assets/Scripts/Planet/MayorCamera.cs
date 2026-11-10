@@ -35,7 +35,11 @@ namespace MSP
 
         void Awake()
         {
-            cam = gameObject.GetComponent<Camera>() ?? gameObject.AddComponent<Camera>();
+            // no ?? on UnityEngine.Object: a missing component can be a fake null in the editor
+            cam = gameObject.GetComponent<Camera>();
+            if (cam == null) cam = gameObject.AddComponent<Camera>();
+            // Camera.main (CityView's culling and full-detail chunks) finds only the MainCamera tag
+            gameObject.tag = "MainCamera";
             cam.fieldOfView = 45f;
             cam.nearClipPlane = 0.5f;
             cam.farClipPlane = 6000f;
