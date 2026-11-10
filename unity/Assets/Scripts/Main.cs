@@ -9,9 +9,12 @@
 //   --hour=10.5                      clock (sun position)
 //   --quality=0|1|2                  low, medium, high
 //   --screenshot=path.png            render, save, quit
-// Keys: Space pause, comma and full stop slower and faster, N skip 10 game minutes,
-// O overlays (zones, traffic, land value), [ and ] an hour back or on.
+//   --nohud                          hide the HUD
+// Keys: 1-6 tools (inspect, road, R, C, I zones, bulldoze), 7 or B the build menu, Space
+// pause, comma and full stop slower and faster, N skip 10 game minutes, O overlays (zones,
+// traffic, land value), [ and ] an hour back or on. Left-drag uses the tool.
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace MSP
@@ -23,8 +26,15 @@ namespace MSP
         static readonly float[] SPEED_VALUES = { 0f, 1f, 3f, 10f };
         static readonly float[] PLANET_MAYOR_DETAIL = { 400f, 600f, 1000f };
 
+        public enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE, BUILD }
+
         public City city;
         public CityView view;
+        public Hud hud;
+        Tool tool = Tool.INSPECT;
+        string buildKind = "";
+        bool dragging;
+        Vector2Int dragStart, hover = new Vector2Int(-1, -1);
         MayorCamera cam;
         DayNight dayNight;
         PlanetSky planetSky;
@@ -75,22 +85,45 @@ namespace MSP
                     float.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v[i]);
                 cam.SetView(new Vector3(v[0], 0f, v[1]), v[2], v[3] * Mathf.Deg2Rad, v[4] * Mathf.Deg2Rad);
             }
+            Progress.I.Begin(city);
+            hud = new GameObject("Hud").AddComponent<Hud>();
+            hud.transform.SetParent(transform);
+            hud.Setup(city);
+            hud.ToolSelected += OnToolButton;
+            hud.OverlaySelected += SetOverlay;
+            hud.SpeedSelected += SetSpeed;
+            hud.QualitySelected += SetQuality;
+            hud.BuildingChosen += ChooseBuilding;
+            city.Message += t => hud.ShowToast(t);
+            Progress.I.Notice += t => hud.ShowToast(t, true);
+            Progress.I.Started();
+            SetTool(Tool.INSPECT);
+            SetSpeed(1);
+            SetOverlay(0);
+            hud.SetQuality(quality);
             city.construction = true;  // from here on, what is built goes up over time
             view.RebuildAll();
+            if (Args.Has("nohud")) hud.gameObject.SetActive(false);
             if (Args.Has("screenshot"))
             {
                 cam.inputEnabled = false;
-                speedIndex = 0;
+                SetSpeed(0);
                 StartCoroutine(Screenshot(Args.Get("screenshot")));
             }
         }
 
         void Update()
         {
-            if (Input.GetKeyDown(KeyCode.Space)) speedIndex = speedIndex == 0 ? 1 : 0;
-            if (Input.GetKeyDown(KeyCode.Comma)) speedIndex = Mathf.Max(speedIndex - 1, 0);
-            if (Input.GetKeyDown(KeyCode.Period)) speedIndex = Mathf.Min(speedIndex + 1, 3);
+            if (hud == null) return;
+            if (Input.GetKeyDown(KeyCode.Space)) SetSpeed(speedIndex == 0 ? 1 : 0);
+            if (Input.GetKeyDown(KeyCode.Comma)) SetSpeed(Mathf.Max(speedIndex - 1, 0));
+            if (Input.GetKeyDown(KeyCode.Period)) SetSpeed(Mathf.Min(speedIndex + 1, 3));
             if (Input.GetKeyDown(KeyCode.N)) city.Advance(10.0, 1.0);
+            for (int k = 0; k < 6; k++)
+                if (Input.GetKeyDown(KeyCode.Alpha1 + k)) SetTool((Tool)k);
+            if (Input.GetKeyDown(KeyCode.Alpha7) || Input.GetKeyDown(KeyCode.B)) hud.ToggleBuildMenu();
+            if (Input.GetKeyDown(KeyCode.Escape)) { if (hud.BuildMenuOpen) hud.CloseBuildMenu(); else SetTool(Tool.INSPECT); }
+            MouseTools();
             if (Input.GetKeyDown(KeyCode.O)) SetOverlay((overlay + 1) % 4);
             if (Input.GetKeyDown(KeyCode.LeftBracket)) city.minutes = System.Math.Max(city.minutes - 60.0, 0.0);
             if (Input.GetKeyDown(KeyCode.RightBracket)) city.minutes += 60.0;
@@ -102,7 +135,233 @@ namespace MSP
         void SetOverlay(int o)
         {
             overlay = o;
+            hud?.SetOverlay(o);
             Shader.SetGlobalFloat("overlay_mode", o);
+        }
+
+        void SetSpeed(int i)
+        {
+            speedIndex = i;
+            hud?.SetSpeed(i);
+        }
+
+        void SetQuality(int q)
+        {
+            quality = q;
+            hud.SetQuality(q);
+            dayNight.ApplyQuality(q, cam.cam);
+            view.SetDetailDistance(PLANET_MAYOR_DETAIL[q]);
+            Shader.SetGlobalFloat("gfx_quality", q);
+        }
+
+        // -------------------------------------------------------------- tools ---
+
+        void OnToolButton(int t)
+        {
+            if ((Tool)t == Tool.BUILD)
+            {
+                hud.SetTool((int)tool);  // the Build button opens the menu; the tool comes from the menu
+                hud.ToggleBuildMenu();
+            }
+            else SetTool((Tool)t);
+        }
+
+        void SetTool(Tool t)
+        {
+            tool = t;
+            dragging = false;
+            if (tool != Tool.BUILD) buildKind = "";
+            hud.CloseBuildMenu();
+            hud.SetTool((int)t);
+            hud.ShowTip(Vector2.zero, "");
+            view.SetPreview(new Vector2Int[0], Color.white);
+            Shader.SetGlobalFloat("grid_alpha", tool == Tool.INSPECT ? 0f : 1f);
+        }
+
+        void ChooseBuilding(string kind)
+        {
+            buildKind = kind;
+            SetTool(Tool.BUILD);
+            UpdatePreview();
+        }
+
+        Catalog.Def BuildDef() => Catalog.GetDef(buildKind);
+
+        /// <summary>The footprint's top-left tile, with the cursor near its middle.</summary>
+        Vector2Int BuildCell(Vector2Int c)
+        {
+            int s = BuildDef()?.size ?? 1;
+            return s > 1 ? c - new Vector2Int((s - 1) / 2, (s - 1) / 2) : c;
+        }
+
+        bool CellAt(Vector2 screen, out Vector2Int c)
+        {
+            c = default;
+            if (!cam.GroundPoint(screen, out Vector3 p)) return false;
+            c = city.FlatToCell(p);
+            return city.Inside(c.x, c.y);
+        }
+
+        int ZoneForTool() => tool == Tool.RES ? City.RES : tool == Tool.COM ? City.COM : tool == Tool.IND ? City.IND : 0;
+
+        void MouseTools()
+        {
+            if (!cam.inputEnabled) return;
+            Vector2 mp = Input.mousePosition;
+            bool overUi = Hud.PointerOverUI();
+            bool haveCell = CellAt(mp, out var c) && !overUi;
+            var cc = haveCell ? c : new Vector2Int(-1, -1);
+            if (cc != hover)
+            {
+                hover = cc;
+                UpdatePreview();
+            }
+            UpdateTip(mp);
+            if (Input.GetMouseButtonDown(0) && haveCell)
+            {
+                if (tool == Tool.INSPECT) Inspect(c);
+                else if (tool == Tool.BUILD && BuildDef() != null && BuildDef().placement != "line") PlaceBuilding(c);
+                else
+                {
+                    dragStart = c;
+                    dragging = true;
+                }
+                UpdatePreview();
+            }
+            else if (Input.GetMouseButtonUp(0) && dragging)
+            {
+                dragging = false;
+                if (haveCell) Apply(dragStart, c);
+                UpdatePreview();
+            }
+            else if (Input.GetMouseButtonDown(1) && dragging)
+            {
+                dragging = false;
+                UpdatePreview();
+            }
+        }
+
+        void Apply(Vector2Int a, Vector2Int b)
+        {
+            switch (tool)
+            {
+                case Tool.ROAD: city.PlaceRoad(city.RoadPath(a, b)); break;
+                case Tool.RES: case Tool.COM: case Tool.IND: city.PlaceZone(city.RectCells(a, b), ZoneForTool()); break;
+                case Tool.BULLDOZE: city.Bulldoze(city.RectCells(a, b)); break;
+                case Tool.BUILD: hud.ShowToast("Power lines come with city services"); break;
+            }
+        }
+
+        List<Vector2Int> PreviewCells()
+        {
+            var o = new List<Vector2Int>();
+            if (hover.x < 0 || tool == Tool.INSPECT) return o;
+            var a = dragging ? dragStart : hover;
+            var d = BuildDef();
+            if (tool == Tool.ROAD || (tool == Tool.BUILD && d != null && d.placement == "line")) return city.RoadPath(a, hover);
+            if (tool == Tool.BUILD)
+            {
+                if (d == null) return o;
+                var at = BuildCell(hover);
+                for (int y = 0; y < Mathf.Max(d.size, 1); y++)
+                    for (int x = 0; x < Mathf.Max(d.size, 1); x++)
+                        if (city.Inside(at.x + x, at.y + y)) o.Add(at + new Vector2Int(x, y));
+                return o;
+            }
+            var r = city.RectCells(a, hover);
+            for (int y = r.yMin; y < r.yMax; y++)
+                for (int x = r.xMin; x < r.xMax; x++) o.Add(new Vector2Int(x, y));
+            return o;
+        }
+
+        void UpdatePreview()
+        {
+            var col = new Color(0.4f, 0.8f, 1f);
+            switch (tool)
+            {
+                case Tool.RES: col = new Color(0.3f, 1f, 0.45f); break;
+                case Tool.COM: col = new Color(0.35f, 0.65f, 1f); break;
+                case Tool.IND: col = new Color(1f, 0.75f, 0.2f); break;
+                case Tool.BULLDOZE: col = new Color(1f, 0.3f, 0.25f); break;
+                case Tool.BUILD:
+                    var d = BuildDef();
+                    bool ok = d == null || d.placement == "line" || hover.x < 0 || city.CanPlaceSpecial(buildKind, BuildCell(hover)) == "";
+                    col = ok ? new Color(0.35f, 1f, 0.5f) : new Color(1f, 0.3f, 0.25f);
+                    break;
+            }
+            view.SetPreview(PreviewCells(), col);
+        }
+
+        void UpdateTip(Vector2 pos)
+        {
+            if (hover.x < 0 || tool == Tool.INSPECT)
+            {
+                hud.ShowTip(pos, "");
+                return;
+            }
+            var a = dragging ? dragStart : hover;
+            int cost = 0;
+            switch (tool)
+            {
+                case Tool.ROAD: cost = city.RoadCost(city.RoadPath(a, hover)); break;
+                case Tool.RES: case Tool.COM: case Tool.IND: cost = city.ZoneCost(city.RectCells(a, hover), ZoneForTool()); break;
+                case Tool.BULLDOZE: cost = city.BulldozeCost(city.RectCells(a, hover)); break;
+                case Tool.BUILD:
+                    var d = BuildDef();
+                    if (d == null) break;
+                    string text = d.name;
+                    if (d.placement == "line") text += "\nComes with city services";
+                    else
+                    {
+                        string why = city.CanPlaceSpecial(buildKind, BuildCell(hover));
+                        text += "\n" + (why != "" ? why : "$" + Catalog.Thousands(d.cost));
+                    }
+                    hud.ShowTip(pos, text);
+                    return;
+            }
+            hud.ShowTip(pos, cost > 0 ? "$" + cost : "");
+        }
+
+        void PlaceBuilding(Vector2Int c)
+        {
+            int id = city.PlaceSpecial(buildKind, BuildCell(c));
+            if (id >= 0 && BuildDef().unique) SetTool(Tool.INSPECT);  // only one of these; put the tool down
+        }
+
+        void Inspect(Vector2Int c)
+        {
+            int i = city.Idx(c.x, c.y);
+            string t = $"Tile {c.x}, {c.y}\nLand value {(int)(city.landValue[i] * 100f)}%";
+            if (city.road[i] == 1)
+            {
+                t = $"Road\nTraffic {(int)(city.traffic[i] * 100f)}%";
+                foreach (int pid in city.PropsAt(i)) t += "\n" + city.buildings[pid].name;
+            }
+            else if (city.bld[i] >= 0 && city.buildings[city.bld[i]].HasKind)
+            {
+                var b = city.buildings[city.bld[i]];
+                var d = Catalog.GetDef(b.kind);
+                int up = (int)d.upkeep;
+                t = $"{b.name}\n" + (up > 0 ? $"Costs ${up} a day" : up < 0 ? $"Earns ${-up} a day" : "");
+                if (d.desc != "") t += "\n" + d.desc;
+            }
+            else if (city.bld[i] >= 0)
+            {
+                var b = city.buildings[city.bld[i]];
+                string what = b.zone == City.RES ? "residents" : "jobs";
+                t = $"{City.ZONE_NAMES[b.zone]}, stage {b.stage}\n{City.Capacity(b)} {what}\nLand value {(int)(city.landValue[i] * 100f)}%" +
+                    (b.connected ? "" : "\nNo route to jobs/workers!");
+            }
+            else if (city.siteAt[i] >= 0)
+            {
+                var sb = city.sites[city.siteAt[i]];
+                double left = (1.0 - sb.built) * sb.dur / 60.0;
+                t = $"{sb.name ?? $"{City.ZONE_NAMES[sb.zone]}, stage {sb.stage}"}\nUnder construction, {(int)(sb.built * 100.0)}% built\nAbout {(int)System.Math.Ceiling(left)} hours to go";
+            }
+            else if (city.zone[i] != 0)
+                t += $"\n{City.ZONE_NAMES[city.zone[i]]} zone, " + (city.RoadAccessDir(c.x, c.y) >= 0 ? "waiting to grow" : "needs a road within 2 tiles");
+            else if (city.land[i] == 0) t = "Shoreline (can't build)";
+            hud.info.text = t;
         }
 
         void LateUpdate()
