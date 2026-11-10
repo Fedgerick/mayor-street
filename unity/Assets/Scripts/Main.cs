@@ -512,7 +512,19 @@ namespace MSP
                     bool got = street.TakeNearestCar();
                     Debug.Log("[MSP] --drive: " + (got ? street.car.model : "no car near"));
                     StreetInput.autoThrottle = 1f;
-                    yield return new WaitForSeconds(Args.GetF("drive", 3f));
+                    float driveFor = Args.GetF("drive", 3f);
+                    if (Args.Has("drive-pullout"))
+                    {
+                        // out of the kerb lane (parked cars line it), then straight down the road
+                        float side = Args.GetF("drive-pullout", 1f);
+                        StreetInput.autoSteer = side;
+                        yield return new WaitForSeconds(0.7f);
+                        StreetInput.autoSteer = -side;
+                        yield return new WaitForSeconds(0.45f);
+                        StreetInput.autoSteer = 0f;
+                        driveFor = Mathf.Max(driveFor - 1.15f, 0f);
+                    }
+                    yield return new WaitForSeconds(driveFor);
                     StreetInput.autoThrottle = 0f;
                     if (got) Debug.Log($"[MSP] --drive: {street.car.Speed() * 3.6f:F0} km/h, in contact {street.car.InContact()}");
                 }

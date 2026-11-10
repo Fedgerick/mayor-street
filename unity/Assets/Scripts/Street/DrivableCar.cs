@@ -747,6 +747,33 @@ namespace MSP
                 new Vector3(0f, 0.45f + _heave.x, 0f)));
             WriteInstance();
             rig.Update(delta);
+            if (driver != null && Args.Has("cardebug")) DebugTelemetry();
+        }
+
+        float _dbgT;
+        readonly HashSet<string> _dbgTouch = new HashSet<string>();
+
+        void OnCollisionStay(Collision c)
+        {
+            if (driver == null || !Args.Has("cardebug")) return;
+            float depth = 0f;
+            for (int i = 0; i < c.contactCount; i++) depth = Mathf.Max(depth, -c.GetContact(i).separation);
+            _dbgTouch.Add($"{c.collider.name}[{LayerMask.LayerToName(c.collider.gameObject.layer)}] n={G.FromU(c.GetContact(0).normal):F1} d={depth:F2}");
+        }
+
+        /// <summary>--cardebug: once a second while driven, what the physics is doing.</summary>
+        void DebugTelemetry()
+        {
+            _dbgT -= Time.deltaTime;
+            if (_dbgT > 0f) return;
+            _dbgT = 1f;
+            var sb = new System.Text.StringBuilder();
+            foreach (var w in _wheels) sb.Append(w.contact ? $" {w.length:F2}/{w.force / rb.mass:F1}/e{w.engineForce:F0}/f{w.fwdImp:F1}/k{w.skid:F2}" : " air");
+            sb.Append(" touching: ").Append(_dbgTouch.Count == 0 ? "-" : string.Join("; ", _dbgTouch));
+            _dbgTouch.Clear();
+            float lean = Vector3.Angle(Basis.y, Up());
+            Debug.Log($"[MSP] car {model}: {Speed() * 3.6f:F0} km/h throttle {throttle:F2} steer {_steer:F2} lean {lean:F0}deg " +
+                      $"angvel {rb.angularVelocity.magnitude:F2} y-vel {Vector3.Dot(LinearVelocity, Up()):F2} wheels(len/accel){sb}");
         }
 
         /// <summary>VehicleKit.custom() flags: brake 2, empty 4, headlights 8.</summary>
