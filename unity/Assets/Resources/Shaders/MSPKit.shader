@@ -314,7 +314,7 @@ Shader "MSP/Kit"
                 float buildDone = UNITY_ACCESS_INSTANCED_PROP(Props, _BuildDone);
                 // unset instance props read 0: treat as "finished" (msp's default is 1000)
                 if (buildTop <= 0.0) buildTop = 1000.0;
-                if (buildDone <= 0.0) buildDone = 1000.0;
+                if (buildDone == 0.0) buildDone = 1000.0;  // 0: unset (a site passes a real cut, which can be below 0)
                 if (all(icolor == 0)) icolor = float4(1, 1, 1, 1);
 
                 float3 opos = i.opos;

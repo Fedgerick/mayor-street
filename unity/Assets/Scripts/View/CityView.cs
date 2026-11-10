@@ -96,7 +96,13 @@ namespace MSP
                     MarkDirty(new Vector2Int(cx, cy));
             detailDirty.Clear();
             RefreshMap();
+            sites = new GameObject("ConstructionSites").AddComponent<ConstructionSites>();
+            sites.transform.SetParent(transform, false);
+            sites.Setup(city, this);
         }
+
+        /// <summary>Buildings going up (City.sites).</summary>
+        public ConstructionSites sites;
 
         void MarkDirty(Vector2Int k)
         {
@@ -279,6 +285,12 @@ namespace MSP
             }
             Draw();
         }
+
+        /// <summary>Whether the chunk holding cell (x, y) is in sight (not behind the horizon).</summary>
+        public bool CellVisible(int x, int y) =>
+            !chunks.TryGetValue(new Vector2Int(G.Posmod(x, City.W) / _chunk, y / _chunk), out var ch) || ch.visible;
+
+        public int ChunkSize => _chunk;
 
         bool WantFull(Vector2Int k) => wantFull.TryGetValue(k, out bool v) && v;
 
