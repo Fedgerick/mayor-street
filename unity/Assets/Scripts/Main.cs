@@ -89,6 +89,15 @@ namespace MSP
                 int w = names[i][2] - '0';
                 var flat = new GXform(GBasis.Identity, new Vector3(x0 + i * 24f + w * 6f, 0f, z));
                 G.Apply(go.transform, Planet.Xf(flat));
+                if (Args.Has("debug"))
+                {
+                    var b = new Bounds(go.transform.position, Vector3.zero);
+                    int nr = 0;
+                    foreach (var r in go.GetComponentsInChildren<Renderer>()) { b.Encapsulate(r.bounds); nr++; }
+                    var mr = go.GetComponentInChildren<Renderer>();
+                    string sh = mr != null && mr.sharedMaterial != null ? mr.sharedMaterial.shader.name + " supported=" + mr.sharedMaterial.shader.isSupported : "none";
+                    Debug.Log($"[MSP] {names[i]} pos={go.transform.position} |pos|={go.transform.position.magnitude:F1} R={Planet.R:F1} scale={go.transform.lossyScale} renderers={nr} bounds={b.center} size={b.size} shader={sh}");
+                }
             }
             // a road strip in front of them
             for (int i = 0; i < 16; i++)
@@ -136,8 +145,9 @@ namespace MSP
                 for (int i = 0; i < segs; i++)
                 {
                     int a = j * (segs + 1) + i, b = a + segs + 1;
-                    idx[k++] = a; idx[k++] = a + 1; idx[k++] = b;
-                    idx[k++] = a + 1; idx[k++] = b + 1; idx[k++] = b;
+                    // rows run north here (the belt's run south), so this order faces out
+                    idx[k++] = a; idx[k++] = b; idx[k++] = a + 1;
+                    idx[k++] = a + 1; idx[k++] = b; idx[k++] = b + 1;
                 }
             var m = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32, vertices = verts, normals = norms, triangles = idx };
             m.RecalculateBounds();

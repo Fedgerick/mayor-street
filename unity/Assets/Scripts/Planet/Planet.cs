@@ -154,9 +154,10 @@ namespace MSP
                 {
                     int a = j * (cols + 1) + i;
                     int b = a + cols + 1;
-                    // Godot winds a, a+1, b; the mirror flips handedness, so reverse each triangle
-                    idx[k++] = a; idx[k++] = b; idx[k++] = a + 1;
-                    idx[k++] = a + 1; idx[k++] = b; idx[k++] = b + 1;
+                    // Godot winds a, a+1, b (clockwise seen from outside). The X mirror and Unity's
+                    // left-handed view cancel out on screen, so the same order faces out in Unity.
+                    idx[k++] = a; idx[k++] = a + 1; idx[k++] = b;
+                    idx[k++] = a + 1; idx[k++] = b + 1; idx[k++] = b;
                 }
             var m = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
             m.vertices = verts;
