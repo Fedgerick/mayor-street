@@ -77,7 +77,10 @@ Shader "MSP/Sky"
                 float day = 1.0 - _Night;
                 col += _Dusk.rgb * pow(sd, 6.0) * (0.12 + 0.9 * _Sunset) * day;
                 col += _SunLight * pow(sd, 90.0) * 0.12 * day;
-                col += float3(1.0, 0.5, 0.25) * _Pollution * exp(-h * 7.0) * 0.045;
+                // port change: msp's orange glow (1, 0.5, 0.25) x 0.045 sits over a near-black night
+                // horizon; with the horizon pulled down to the ball's real one (_HorizonDip) it fills
+                // the whole visible sky and reads as a brown overcast, so it's a dim blue-grey here
+                col += float3(0.42, 0.44, 0.58) * _Pollution * exp(-h * 7.0) * 0.05;
                 return lerp(col, _Ground.rgb, smoothstep(0.0, -0.1, d.y));
             }
 
@@ -101,7 +104,7 @@ Shader "MSP/Sky"
                 float sd = max(dot(d, _SunDirSky), 0.0);
                 col += _SunLight * pow(sd, 10.0) * edge * 0.5;
                 col = lerp(col, amb * 1.6 + float3(0.04, 0.035, 0.045), _Night);
-                col += float3(1.0, 0.5, 0.25) * _Pollution * exp(-d.y * 6.0) * 0.06;
+                col += float3(0.5, 0.48, 0.6) * _Pollution * exp(-d.y * 6.0) * 0.05;
                 return float4(col, cov * smoothstep(0.005, 0.14, d.y));
             }
 
