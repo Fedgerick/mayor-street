@@ -25,6 +25,12 @@ uniform float u_metal = 0.0;
 uniform float u_spec = 0.5;
 uniform bool u_wind = false;
 uniform bool u_ground_level = false;  // receives tool previews and overlays like the ground
+#ifdef CONSTRUCTION
+// Buildings going up (scripts/construction_sites.gd draws them with this variant): nothing
+// above build_top exists yet, and between build_done and build_top it is the bare frame.
+instance uniform float build_top = 1000.0;
+instance uniform float build_done = 1000.0;
+#endif
 
 varying vec3 opos;
 varying vec3 onrm;
@@ -269,6 +275,11 @@ void fragment() {
 	int pattern = int(m_c.x + 0.5);
 	int kind = int(m_c.y + 0.5);
 	bool ground_level = m_c.w > 0.5;
+#ifdef CONSTRUCTION
+	if (opos.y > build_top) {
+		discard;
+	}
+#endif
 	vec3 n = normalize(onrm);
 	vec3 tint = tint_src == 1 ? icolor.rgb : (tint_src == 2 ? icustom.rgb : vec3(1.0));
 	vec3 alb = base_color * mix(vec3(1.0), tint, tint_amount);
@@ -396,6 +407,23 @@ void fragment() {
 	} else if (kind == 6) {
 		emit += vec3(1.0, 0.05, 0.03) * (0.35 + smoothstep(0.1, 0.5, night) * 2.2);
 	}
+#ifdef CONSTRUCTION
+	if (opos.y > build_done && !ground_level && kind != 4) {
+		// The bare frame: raw concrete with a slab edge every storey, and holes for windows.
+		float storey = fract(opos.y / 3.4);
+		float slab = step(storey, 0.12);
+		if (kind == 1) {
+			alb = mix(vec3(0.03), vec3(0.5, 0.49, 0.47), slab);
+		} else {
+			alb = vec3(0.55, 0.54, 0.51) * (0.86 + 0.16 * fbm(wuv * 0.5 + seed * 5.0)) * (1.0 - 0.18 * slab);
+		}
+		emit = vec3(0.0);
+		r = 0.92;
+		m = 0.0;
+		sp = 0.3;
+		kind = 0;
+	}
+#endif
 	// A building without power keeps its windows, signs and lamps dark at night.
 	if (kind >= 1 && kind <= 3 && dark_of(city_at(cell_of(origin)))) {
 		emit *= 1.0 - smoothstep(0.1, 0.5, night);

@@ -48,6 +48,7 @@ func _run() -> void:
 	city.funds = maxf(city.funds, 60000.0)
 	var cell := _lot_for_bank(city)
 	check(cell.x >= 0, "a downtown lot beside a road for the bank")
+	city.construction = false  # built at once here; planet/tests/test_construction.gd covers sites
 	var bank := city.place_special("bank", cell)
 	check(bank >= 0, "bank placed for its price")
 	var funds0 := city.funds

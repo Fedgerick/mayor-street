@@ -52,6 +52,7 @@ var detail_distance := 0.0
 var _standin_mat: ShaderMaterial
 ## msp only: the sphere terrain's collision, and chunks behind the horizon are hidden.
 var terrain_body: StaticBody3D
+var sites: ConstructionSites  ## buildings going up (City.sites)
 const TALLEST := 90.0  # metres: a chunk stays drawn while anything this tall could peek over the horizon
 var _cull_t := 0.0
 ## msp: only chunks near the camera hold their full-detail MultiMeshes; the rest keep roads,
@@ -87,6 +88,10 @@ func setup(c: City) -> void:
 			dirty[Vector2i(cx, cy)] = true
 	_detail_dirty.clear()
 	refresh_map()
+	sites = ConstructionSites.new()
+	sites.name = "ConstructionSites"
+	add_child(sites)
+	sites.setup(city, self, _chunk)
 
 
 # ---------------------------------------------------------------- textures ---
@@ -489,6 +494,8 @@ func _rebuild_chunk(key: Vector2i) -> void:
 						var back := Basis(Vector3.UP, b.rot * PI * 0.5) * Vector3(_cell_hash(x, y, 9) * 6.0 - 3.0, 0, -4.4)
 						_add_tree(groups, center + back, x, y, 5, false)
 				continue
+			if city.site_at[i] >= 0:
+				continue  # a construction site: ConstructionSites draws it
 			if city.land[i] == 1:
 				for k in city.trees[i]:
 					var off := Vector3(_cell_hash(x, y, k) * 9.0 - 4.5, 0, _cell_hash(x, y, k + 7) * 9.0 - 4.5)
