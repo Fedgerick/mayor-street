@@ -32,6 +32,8 @@ namespace MSP
         public CityView view;
         public Hud hud;
         public CityServices services;  // power, parks, garbage, police, fire
+        public ServicesView servicesView;
+        ServicesPanel servicesPanel;
         Tool tool = Tool.INSPECT;
         string buildKind = "";
         bool dragging;
@@ -101,6 +103,13 @@ namespace MSP
             hud.BuildingChosen += ChooseBuilding;
             city.Message += t => hud.ShowToast(t);
             Progress.I.Notice += t => hud.ShowToast(t, true);
+            servicesView = new GameObject("ServicesView").AddComponent<ServicesView>();
+            servicesView.transform.SetParent(transform);
+            servicesView.Setup(services);
+            servicesPanel = new GameObject("ServicesPanel").AddComponent<ServicesPanel>();
+            servicesPanel.transform.SetParent(transform);
+            servicesPanel.Setup(hud.root, services);
+            servicesPanel.OverlaySelected += OnServiceOverlay;
             Progress.I.Started();
             SetTool(Tool.INSPECT);
             SetSpeed(1);
@@ -143,6 +152,22 @@ namespace MSP
             overlay = o;
             hud?.SetOverlay(o);
             Shader.SetGlobalFloat("overlay_mode", o);
+            if (o != 0 && servicesPanel != null)  // one overlay at a time: the zone ones or the service ones
+            {
+                servicesPanel.SetOverlay(CityServices.Overlay.NONE);
+                servicesView.SetOverlay(CityServices.Overlay.NONE);
+            }
+        }
+
+        void OnServiceOverlay(CityServices.Overlay o)
+        {
+            servicesView.SetOverlay(o);
+            if (o != CityServices.Overlay.NONE)
+            {
+                overlay = 0;
+                hud.SetOverlay(0);
+                Shader.SetGlobalFloat("overlay_mode", 0);
+            }
         }
 
         void SetSpeed(int i)

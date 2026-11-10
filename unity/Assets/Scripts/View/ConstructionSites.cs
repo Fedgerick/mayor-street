@@ -267,7 +267,7 @@ namespace MSP
         // -------------------------------------------------------------- meshes ---
 
         /// <summary>Collects boxes and beams (Godot space) into one vertex-coloured mesh.</summary>
-        class Boxes
+        internal class Boxes
         {
             readonly List<Vector3> v = new List<Vector3>();
             readonly List<Vector3> n = new List<Vector3>();

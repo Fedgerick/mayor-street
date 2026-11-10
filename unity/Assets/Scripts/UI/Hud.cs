@@ -29,7 +29,7 @@ namespace MSP
 
         public City city;
         Canvas canvas;
-        RectTransform root;
+        public RectTransform root;
         Text lblFunds, lblPop, lblJobs, lblTime, lblIncome, lblTier, taxLabel;
         public Text info;
         Text tip, toast;
