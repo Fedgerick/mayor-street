@@ -78,6 +78,15 @@ namespace MSP.EditorTools
                 AssetDatabase.ImportAsset(asset, ImportAssetOptions.ForceUpdate);
             }
             SetLegacyAnimation(asset);
+            // A failed import leaves only glTFast's ImportLog (glTFast 6.14.1 threw a job-safety
+            // error in SortAndNormalizeBoneWeightsJob on this skinned model; 6.20.0 is fine): retry.
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(asset) == null)
+            {
+                Debug.LogWarning("[MSP] character.glb has no model after import; reimporting");
+                AssetDatabase.ImportAsset(asset, ImportAssetOptions.ForceUpdate);
+                if (AssetDatabase.LoadAssetAtPath<GameObject>(asset) == null)
+                    Debug.LogError("[MSP] character.glb failed to import (see its Import Logs)");
+            }
         }
 
         /// <summary>glTFast's importer setting for animation clips, set to Legacy by reflection (so this
