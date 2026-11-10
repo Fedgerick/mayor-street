@@ -14,7 +14,7 @@ signal died
 @export var ground_accel := 14.0
 @export var air_accel := 3.0
 @export var turn_speed := 12.0
-@export var jump_velocity := 5.2
+@export var jump_velocity := 4.0   # 0.8 m off the ground (5.2 cleared 1.4 m, a car's roof)
 @export var step_height := 0.32
 @export var look_seed := 7
 
@@ -25,6 +25,8 @@ const REGEN_TO := 40.0      # health slowly comes back up to this on its own
 const REGEN_RATE := 1.0     # hp per second
 const REGEN_DELAY := 8.0    # seconds after the last hit
 
+const FALL_SAFE := 12.0     # m/s: landing slower than this (a drop of about 4.5 m) doesn't hurt
+const FALL_DAMAGE := 7.0    # health lost per m/s above it: 8 m costs a quarter, 23 m kills
 const COYOTE := 0.12
 const JUMP_BUFFER := 0.14
 
@@ -47,6 +49,8 @@ var _jump_buffer := 0.0
 var _facing := 0.0
 var _turn_rate := 0.0
 var _air_time := 0.0
+var _step_frames := 0   # just stepped up: carried level over the edge instead of snapped back down
+var _step_sink := 0.0   # the body catches up with a step over a few frames instead of popping
 
 
 func _init() -> void:
@@ -153,9 +157,14 @@ func _physics_process(delta: float) -> void:
 
 	if is_on_floor():
 		_since_floor = 0.0
+		_step_frames = 0
+	elif _step_frames > 0:
+		_step_frames -= 1      # crossing the edge of a step: level, no gravity yet
+		lv.y = 0.0
 	else:
 		_since_floor += delta
 		lv.y -= _gravity * delta * (1.6 if lv.y < 0.0 else 1.0)
+	floor_snap_length = 0.0 if _step_frames > 0 else 0.35
 
 	if controls_enabled and Input.is_action_just_pressed("street_jump"):
 		_jump_buffer = JUMP_BUFFER
@@ -176,10 +185,13 @@ func _physics_process(delta: float) -> void:
 
 	var was_floor := is_on_floor()
 	var before := global_position
+	var falling := -lv.y
 	move_and_slide()
-	if was_floor and goal != Vector3.ZERO and is_on_wall():
+	if not was_floor and is_on_floor() and falling > FALL_SAFE and not dead:
+		hurt((falling - FALL_SAFE) * FALL_DAMAGE, global_position)
+	if (was_floor or _step_frames > 0) and goal != Vector3.ZERO and is_on_wall():
 		if _try_step(before, q * goal * delta):
-			velocity -= q.y * velocity.dot(q.y)
+			velocity = q * goal   # keep walking: the wall it met was only the step's face
 	lv = q.inverse() * velocity
 
 	# Face the direction of travel.
@@ -190,6 +202,8 @@ func _physics_process(delta: float) -> void:
 		_facing = lerp_angle(_facing, atan2(-hv.x, -hv.z), 1.0 - exp(-turn_speed * delta))
 	_turn_rate = lerpf(_turn_rate, wrapf(_facing - prev, -PI, PI) / maxf(delta, 1e-4), 0.2)
 	visual.rotation.y = _facing
+	_step_sink = move_toward(_step_sink, 0.0, delta * 2.5)
+	visual.position.y = -_step_sink
 	# A real drop ends in a landing (knees give) unless we land running.
 	if is_on_floor():
 		if _air_time > 0.45 and hv.length() < 3.0:
@@ -230,6 +244,11 @@ func _try_step(from_pos: Vector3, motion: Vector3) -> bool:
 	if rise <= 0.02:
 		return false
 	global_position = from_pos + up * (rise + 0.01) + dir * motion.length()
+	# The capsule's middle is not over the step yet. Without this the floor snap pulled it
+	# straight back down against the face: a kerb took several tries and stopped the walk
+	# dead each time, and a 25 cm step could not be climbed at all.
+	_step_frames = 12
+	_step_sink = minf(_step_sink + rise, step_height)
 	return true
 
 

@@ -12,6 +12,8 @@ extends RefCounted
 signal cells_changed(rect: Rect2i)
 signal building_added(id: int, animate: bool)
 signal building_removed(id: int)
+signal site_started(id: int)                 ## a building began construction (see `sites`)
+signal site_ended(id: int, finished: bool)   ## it was finished (building_added follows) or called off
 signal day_passed
 signal message(text: String)
 signal land_value_computed  ## services/ adjusts land_value in place after each recompute
@@ -47,6 +49,13 @@ var land_value := PackedFloat32Array()
 var coast_dist := PackedFloat32Array()
 
 var buildings := {}  # id -> Dictionary
+## Buildings under construction: id -> the entry the building will have, plus `built` (0..1)
+## and `dur` (game minutes the job takes). A site holds its lot (site_at) but is not in
+## `buildings` or `bld` yet, so the rest of the game sees an empty lot until it is finished:
+## nobody lives or works there, it has no door, powers nothing and hosts no mission.
+var sites := {}
+var site_at := PackedInt32Array()  # site id per cell, -1 none
+var construction := false  ## true (the live game, set by main): new buildings go up over time
 var _next_id := 1
 var _props := {}  # road cell index -> ids of the street props (payphones) standing there
 
@@ -82,6 +91,8 @@ func _init(seed_value: int = 1337) -> void:
 	zone.resize(n)
 	bld.resize(n)
 	bld.fill(-1)
+	site_at.resize(n)
+	site_at.fill(-1)
 	trees.resize(n)
 	traffic.resize(n)
 	land_value.resize(n)
@@ -306,6 +317,8 @@ func place_road(path: Array[Vector2i]) -> bool:
 		var i := idx(c.x, c.y)
 		if bld[i] >= 0:
 			remove_building(bld[i])
+		if site_at[i] >= 0:
+			cancel_site(site_at[i])
 		road[i] = 1
 		zone[i] = Zone.NONE
 		trees[i] = 0
@@ -352,6 +365,8 @@ func place_zone(r: Rect2i, z: int) -> bool:
 				continue
 			if bld[i] >= 0:
 				remove_building(bld[i])
+			if site_at[i] >= 0:
+				cancel_site(site_at[i])
 			zone[i] = z
 			trees[i] = 0
 	_zoned_dirty = true
@@ -369,6 +384,9 @@ func bulldoze_cost(r: Rect2i) -> int:
 				n += 1 + _props.get(i, []).size()
 			elif bld[i] >= 0 and not seen.has(bld[i]):
 				seen[bld[i]] = true
+				n += 1
+			elif site_at[i] >= 0 and not seen.has(site_at[i]):
+				seen[site_at[i]] = true
 				n += 1
 	return n * BULLDOZE_COST
 
@@ -389,6 +407,8 @@ func bulldoze(r: Rect2i) -> bool:
 			var i := idx(x, y)
 			if bld[i] >= 0:
 				remove_building(bld[i])
+			if site_at[i] >= 0:
+				cancel_site(site_at[i])
 			for pid in _props.get(i, []).duplicate():
 				remove_building(pid)
 			road[i] = 0
@@ -416,9 +436,90 @@ func add_building(x: int, y: int, size: int, z: int, stage: int, rot: int, anima
 		"tint": rng.randi() % 8, "tint2": rng.randi() % 8, "connected": true,
 	}
 	b.merge(extra, true)
+	if animate and construction and size > 0:
+		_start_site(b)
+		return id
 	_insert(b)
 	building_added.emit(id, animate)
 	return id
+
+
+# ------------------------------------------------------------ construction ---
+
+## Game hours a zone building takes to put up, by stage; a 2x2 tower takes TOWER_HOURS.
+## One game hour is 10 real seconds at 1x speed, so a house is a minute and a tower 8.
+const BUILD_HOURS := [0.0, 6.0, 14.0, 30.0]
+const TOWER_HOURS := 48.0
+
+
+func build_minutes(b: Dictionary) -> float:
+	if b.has("kind"):
+		return 60.0 * (12.0 * b.size - 2.0)   # catalog buildings: 10, 22, 34 hours by size
+	if b.size == 2:
+		return 60.0 * TOWER_HOURS
+	return 60.0 * BUILD_HOURS[clampi(b.stage, 1, 3)]
+
+
+func _start_site(b: Dictionary) -> void:
+	b["built"] = 0.0
+	b["dur"] = build_minutes(b)
+	sites[b.id] = b
+	for dy in b.size:
+		for dx in b.size:
+			site_at[idx(b.x + dx, b.y + dy)] = b.id
+	site_started.emit(b.id)
+	if b.has("kind"):
+		message.emit("Work starts on %s: about %d hours" % [b.get("name", "the building"), int(b.dur / 60.0)])
+	cells_changed.emit(Rect2i(b.x, b.y, b.size, b.size))
+
+
+func _clear_site(b: Dictionary) -> void:
+	sites.erase(b.id)
+	for dy in b.size:
+		for dx in b.size:
+			site_at[idx(b.x + dx, b.y + dy)] = -1
+
+
+## Stops a job and clears its lot.
+func cancel_site(id: int) -> void:
+	if not sites.has(id):
+		return
+	var b: Dictionary = sites[id]
+	_clear_site(b)
+	site_ended.emit(id, false)
+	cells_changed.emit(Rect2i(b.x, b.y, b.size, b.size))
+
+
+func _finish_site(id: int) -> void:
+	var b: Dictionary = sites[id]
+	_clear_site(b)
+	b.erase("built")
+	b.erase("dur")
+	b["born"] = minutes
+	_insert(b)
+	site_ended.emit(id, true)
+	building_added.emit(id, false)
+	if b.has("kind"):
+		message.emit("%s is finished" % b.get("name", "The building"))
+	cells_changed.emit(Rect2i(b.x, b.y, b.size, b.size).grow(1))
+
+
+func _advance_sites(game_minutes: float) -> void:
+	if sites.is_empty() or game_minutes <= 0.0:
+		return
+	for id in sites.keys():
+		var b: Dictionary = sites[id]
+		b.built += game_minutes / maxf(float(b.dur), 1.0)
+		if b.built >= 1.0:
+			_finish_site(id)
+
+
+## The site on a cell (its entry), or {}.
+func site_on(x: int, y: int) -> Dictionary:
+	if not inside(x, y):
+		return {}
+	var id := site_at[idx(x, y)]
+	return sites[id] if id >= 0 else {}
 
 
 func _insert(b: Dictionary) -> void:
@@ -523,6 +624,10 @@ func can_place_special(kind: String, cell: Vector2i, free := false) -> String:
 		return Catalog.lock_text(kind) + " to unlock it"
 	if d.unique and not specials_of(kind).is_empty():
 		return "The city already has %s" % d.name
+	if d.unique:
+		for sb in sites.values():
+			if sb.get("kind", "") == kind:
+				return "%s is already being built" % d.name
 	if not inside(cell.x, cell.y):
 		return "Off the map"
 	if d.placement == "street":
@@ -541,6 +646,8 @@ func can_place_special(kind: String, cell: Vector2i, free := false) -> String:
 					return "Can't build on a road"
 				if bld[idx(x, y)] >= 0:
 					return "Bulldoze what's there first"
+				if site_at[idx(x, y)] >= 0:
+					return "Something is being built there"
 		if d.needs_road and front_side(cell, s) < 0:
 			return "Needs a road alongside"
 	if not free and funds < float(d.cost):
@@ -570,7 +677,8 @@ func place_special(kind: String, cell: Vector2i, rot := -1, free := false) -> in
 		_zoned_dirty = true
 		if rot < 0:
 			rot = maxi(front_side(cell, s), 0)
-	var id := add_building(cell.x, cell.y, s, Zone.NONE, 1, rot, animate_growth,
+	# What the mayor buys is built over time; what a mission or the demo spawns is just there.
+	var id := add_building(cell.x, cell.y, s, Zone.NONE, 1, rot, animate_growth and not free,
 		{"kind": kind, "name": d.name, "tags": d.tags.duplicate()})
 	cells_changed.emit(Rect2i(cell, Vector2i(maxi(s, 1), maxi(s, 1))).grow(1))
 	return id
@@ -639,6 +747,7 @@ func to_dict() -> Dictionary:
 		"zone": Marshalls.raw_to_base64(zone),
 		"trees": Marshalls.raw_to_base64(trees),
 		"buildings": buildings.values(),
+		"sites": sites.values(),
 		"next_id": _next_id,
 		"funds": funds, "tax_rate": tax_rate, "minutes": minutes, "demand": demand.duplicate(),
 		"last_income": last_income, "last_expense": last_expense,
@@ -668,31 +777,29 @@ func from_dict(d: Dictionary) -> bool:
 	if a.size() == n:
 		trees = a
 	buildings.clear()
+	sites.clear()
 	_props.clear()
 	bld.fill(-1)
+	site_at.fill(-1)
 	var top := 0
 	for e in d.get("buildings", []):
-		if not e is Dictionary:
+		var b := _read_entry(e)
+		if b.is_empty() or not _fits(b):
 			continue
-		var b: Dictionary = e.duplicate(true)
-		if not b.has_all(_INT_KEYS):
-			continue
-		for k in _INT_KEYS:
-			b[k] = int(b[k])
-		b["seed"] = float(b.get("seed", 0.0))
-		b["born"] = float(b.get("born", 0.0))
-		b["connected"] = bool(b.get("connected", true))
-		if b.has("kind"):
-			var cd := Catalog.get_def(str(b.kind))
-			if cd.is_empty():
-				continue  # a building this version of the game doesn't know
-			b["kind"] = str(b.kind)
-			b["tags"] = cd.tags.duplicate()  # tags follow the catalog; the name is the building's own
-			if not b.has("name"):
-				b["name"] = cd.name
-		if not _fits(b):
-			continue
+		b.erase("built")
+		b.erase("dur")
 		_insert(b)
+		top = maxi(top, b.id)
+	for e in d.get("sites", []):
+		var b := _read_entry(e)
+		if b.is_empty() or b.size < 1 or sites.has(b.id) or not _fits(b):
+			continue
+		b["built"] = clampf(float(b.get("built", 0.0)), 0.0, 0.999)
+		b["dur"] = maxf(float(b.get("dur", build_minutes(b))), 1.0)
+		sites[b.id] = b
+		for dy in b.size:
+			for dx in b.size:
+				site_at[idx(b.x + dx, b.y + dy)] = b.id
 		top = maxi(top, b.id)
 	_next_id = maxi(int(d.get("next_id", 1)), top + 1)
 	funds = float(d.get("funds", funds))
@@ -712,12 +819,35 @@ func from_dict(d: Dictionary) -> bool:
 	return true
 
 
+func _read_entry(e: Variant) -> Dictionary:
+	## One saved building or site entry, checked and typed; {} when it can't be used.
+	if not e is Dictionary:
+		return {}
+	var b: Dictionary = e.duplicate(true)
+	if not b.has_all(_INT_KEYS):
+		return {}
+	for k in _INT_KEYS:
+		b[k] = int(b[k])
+	b["seed"] = float(b.get("seed", 0.0))
+	b["born"] = float(b.get("born", 0.0))
+	b["connected"] = bool(b.get("connected", true))
+	if b.has("kind"):
+		var cd := Catalog.get_def(str(b.kind))
+		if cd.is_empty():
+			return {}  # a building this version of the game doesn't know
+		b["kind"] = str(b.kind)
+		b["tags"] = cd.tags.duplicate()  # tags follow the catalog; the name is the building's own
+		if not b.has("name"):
+			b["name"] = cd.name
+	return b
+
+
 func _fits(b: Dictionary) -> bool:
 	if not inside(b.x, b.y) or buildings.has(b.id) or b.zone < 0 or b.zone > Zone.IND or b.rot < 0 or b.rot > 3:
 		return false
 	for dy in b.size:
 		for dx in b.size:
-			if not inside(b.x + dx, b.y + dy) or bld[idx(b.x + dx, b.y + dy)] >= 0:
+			if not inside(b.x + dx, b.y + dy) or bld[idx(b.x + dx, b.y + dy)] >= 0 or site_at[idx(b.x + dx, b.y + dy)] >= 0:
 				return false
 	return true
 
@@ -728,6 +858,7 @@ func _fits(b: Dictionary) -> bool:
 func advance(real_seconds: float, speed: float) -> bool:
 	var before := int(minutes / 60.0)
 	minutes += real_seconds * MINUTES_PER_SECOND * speed
+	_advance_sites(real_seconds * MINUTES_PER_SECOND * speed)
 	var after := int(minutes / 60.0)
 	for h in range(before + 1, after + 1):
 		_hour_tick()
@@ -790,7 +921,7 @@ func _try_grow(x: int, y: int) -> void:
 		return
 	var rot := road_access_dir(x, y)
 	if bld[i] < 0:
-		if rot < 0:
+		if rot < 0 or site_at[i] >= 0:
 			return
 		if rng.randf() < 0.45 * d:
 			add_building(x, y, 1, z, 1, rot, animate_growth)
@@ -1064,6 +1195,7 @@ func _blur(src: PackedFloat32Array, r: int) -> PackedFloat32Array:
 func simulate_hours(hours: int) -> void:
 	for h in hours:
 		minutes += 60.0
+		_advance_sites(60.0)
 		_hour_tick()
 		var hh := int(minutes / 60.0) % 24
 		if hh == 0:

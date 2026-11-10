@@ -1,6 +1,6 @@
 """Build the high-detail player character: characters/assets/hero.glb.
 
-Run headless (needs the `bpy` pip module, Blender 4.2, like player/tools/build_character.py):
+Run headless (needs the `bpy` pip module, Blender 4.2 or 5.2, like player/tools/build_character.py):
     python3 characters/tools/build_hero.py
 
 It reuses the street people's builder (player/tools/build_character.py): the same rig, the
@@ -90,19 +90,19 @@ def leg_ring(sx, z, radius, minor, mat):
 
 def head(m):
     h = Blob(0.0042)
-    h.capsule((0, 0.01, 1.395), (0, 0.0, 1.56), 0.057)                   # neck
+    h.capsule((0, 0.01, 1.395), (0, 0.0, 1.56), 0.053)                   # neck
     h.capsule((0, 0.02, 1.43), (0, -0.025, 1.47), 0.03)                  # throat
-    h.ball((0, 0.008, 1.668), 0.152, (0.92, 1.0, 1.08))                  # skull
-    h.ball((0, -0.028, 1.6), 0.108, (0.97, 0.95, 0.86))                  # jaw and cheeks
+    h.ball((0, 0.008, 1.668), 0.152, (0.9, 1.0, 1.08))                   # skull
+    h.ball((0, -0.028, 1.6), 0.1, (0.97, 0.95, 0.86))                    # jaw and cheeks
     h.ball((0, -0.098, 1.547), 0.037, (1.2, 0.9, 0.82))                  # chin
     for sx in (-1, 1):
-        h.capsule((0.085 * sx, -0.035, 1.555), (0.03 * sx, -0.092, 1.535), 0.026)   # jawline
+        h.capsule((0.082 * sx, -0.035, 1.555), (0.03 * sx, -0.092, 1.535), 0.022)   # jawline
         h.ball((0.074 * sx, -0.1, 1.644), 0.024, (1.25, 0.8, 0.7))      # cheekbones
-        h.ball((0.058 * sx, -0.098, 1.603), 0.036)                       # cheeks
+        h.ball((0.054 * sx, -0.1, 1.612), 0.027)                         # cheeks
         h.capsule((0.03 * sx, -0.128, 1.72), (0.08 * sx, -0.115, 1.722), 0.011)    # brow ridge
         h.ball((0.145 * sx, 0.008, 1.662), 0.034, (0.38, 0.85, 1.3))     # ears
         h.ball((0.152 * sx, 0.004, 1.632), 0.016, (0.6, 0.9, 1.0))       # ear lobes
-        h.ball((0.053 * sx, -0.138, 1.69), 0.023, (1.12, 0.66, 0.3))     # upper lids
+        h.ball((0.053 * sx, -0.138, 1.6935), 0.023, (1.12, 0.66, 0.28))  # upper lids
         h.ball((0.054 * sx, -0.139, 1.652), 0.014, (1.25, 0.6, 0.32))    # lower lids
         h.ball((0.013 * sx, -0.16, 1.626), 0.0095, (1.0, 1.0, 0.85))     # nostrils
         h.ball((0.019 * sx, -0.15, 1.628), 0.012, (0.9, 1.0, 1.0))       # nose wings
@@ -124,7 +124,7 @@ def head(m):
         for a_, b_ in zip(pts, pts[1:]):
             la.capsule(a_, b_, 0.0026)
         out.append(la.mesh(m["Lashes"]))
-    mo = bead((0, -0.1495, 1.5905), 0.026, (1.0, 0.2, 0.075), m["Mouth"], 20, 6)   # mouth line
+    mo = bead((0, -0.1495, 1.5905), 0.03, (1.0, 0.2, 0.075), m["Mouth"], 20, 6)   # mouth line
     out.append(mo)
     return out
 
@@ -168,34 +168,34 @@ def face_shades(m):
 def top_tee(m):
     out = bc.top_tee(m)
     for sx in (1, -1):
-        out.append(arm_ring(sx, 0.46, 0.071, 0.008, m["Shirt"]))
-    out.append(tube_ring((0, 0.012, 0.965), 0.15, 0.009, m["Shirt"], sc=(1.12, 0.8)))
+        out.append(arm_ring(sx, 0.46, 0.054, 0.005, m["Shirt"]))
+    out.append(tube_ring((0, 0.0, 0.965), 0.143, 0.007, m["Shirt"], sc=(1.1, 0.72)))
     return out
 
 
 def top_longsleeve(m):
     out = bc.top_longsleeve(m)
     for sx in (1, -1):
-        out.append(arm_ring(sx, 1.86, 0.054, 0.012, m["Trim"]))
-    out.append(tube_ring((0, 0.012, 0.965), 0.15, 0.01, m["Shirt"], sc=(1.12, 0.8)))
+        out.append(arm_ring(sx, 1.86, 0.043, 0.009, m["Trim"]))
+    out.append(tube_ring((0, 0.0, 0.965), 0.143, 0.008, m["Shirt"], sc=(1.1, 0.72)))
     return out
 
 
 def top_hoodie(m):
     out = bc.top_hoodie(m)
     for sx in (1, -1):
-        out.append(arm_ring(sx, 1.82, 0.06, 0.014, m["Trim"]))
+        out.append(arm_ring(sx, 1.82, 0.048, 0.011, m["Trim"]))
         st = Vector((0.03 * sx, -0.105, 1.43))
         out.append(rod(st, st + Vector((0.004 * sx, -0.022, -0.17)), 0.0045, m["Laces"], 6))  # drawstrings
         out.append(bead(st + Vector((0.004 * sx, -0.022, -0.175)), 0.008, (1, 1, 1.6), m["Laces"], 8, 6))
-    out.append(tube_ring((0, 0.012, 0.935), 0.163, 0.018, m["Trim"], sc=(1.1, 0.82)))
+    out.append(tube_ring((0, 0.0, 0.935), 0.157, 0.014, m["Trim"], sc=(1.08, 0.78)))
     return out
 
 
 def top_jacket(m):
     out = bc.top_jacket(m)
     for sx in (1, -1):
-        out.append(arm_ring(sx, 1.85, 0.064, 0.012, m["Jacket"]))
+        out.append(arm_ring(sx, 1.85, 0.05, 0.009, m["Jacket"]))
         for i in range(3):   # buttons on the right half, holes on the left
             z = 1.27 - i * 0.12
             if sx > 0:
@@ -205,24 +205,24 @@ def top_jacket(m):
 
 def top_tank(m):
     out = bc.top_tank(m)
-    out.append(tube_ring((0, 0.012, 0.965), 0.135, 0.009, m["Shirt"], sc=(1.12, 0.8)))
+    out.append(tube_ring((0, 0.0, 0.965), 0.13, 0.007, m["Shirt"], sc=(1.1, 0.74)))
     return out
 
 
 def jeans_extras(m, short=False):
-    out = [tube_ring((0, 0.005, 1.0), 0.158, 0.014, m["Pants"], sc=(1.13, 0.82))]   # waistband
+    out = [tube_ring((0, 0.005, 1.0), 0.152, 0.012, m["Pants"], sc=(1.12, 0.82))]   # waistband
     for a in (-60, -20, 20, 60, 160, 200):   # belt loops
         r = math.radians(a)
-        x, y = math.sin(r) * 0.178, -math.cos(r) * 0.13
+        x, y = math.sin(r) * 0.17, -math.cos(r) * 0.125
         out.append(rod((x, y, 0.985), (x, y, 1.02), 0.006, m["Pants"], 4))
-    out.append(bead((0, -0.133, 0.998), 0.009, (1, 0.5, 1), m["Frame"], 10, 6))   # button
+    out.append(bead((0, -0.128, 0.998), 0.009, (1, 0.5, 1), m["Frame"], 10, 6))   # button
     return out
 
 
 def bottom_jeans(m):
     out = bc.bottom_jeans(m) + jeans_extras(m)
     for sx in (1, -1):
-        out.append(leg_ring(sx, 0.13, 0.072, 0.012, m["Pants"]))   # rolled hem
+        out.append(leg_ring(sx, 0.13, 0.065, 0.01, m["Pants"]))   # rolled hem
     return out
 
 
@@ -231,13 +231,13 @@ def bottom_shorts(m):
     for sx in (1, -1):
         hip, knee, _ = leg_points(sx)
         z = lerp(hip, knee, 0.62).z
-        out.append(leg_ring(sx, z, 0.084, 0.011, m["Pants"]))
+        out.append(leg_ring(sx, z, 0.074, 0.008, m["Pants"]))
     return out
 
 
 def bottom_skirt(m):
     out = bc.bottom_skirt(m)
-    out.append(tube_ring((0, 0.005, 1.0), 0.158, 0.013, m["Pants"], sc=(1.13, 0.82)))
+    out.append(tube_ring((0, 0.005, 1.0), 0.152, 0.011, m["Pants"], sc=(1.12, 0.82)))
     return out
 
 
@@ -246,15 +246,15 @@ def soles_and_laces(m, boot):
     for sx in (1, -1):
         x = LEG_X * sx
         s = Blob(0.004)
-        s.capsule((x, 0.04, 0.016), (x, -0.135, 0.016), 0.019)
-        s.ball((x, -0.045, 0.016), 0.03, (2.0, 3.6, 0.6))
+        s.capsule((x, 0.04, 0.016), (x, -0.152, 0.016), 0.018)
+        s.ball((x, -0.055, 0.016), 0.03, (1.85, 4.1, 0.6))
         out.append(s.mesh(m["Sole"]))
         top = 0.21 if boot else 0.115
         for i in range(4 if boot else 3):   # laces across the tongue
             t = i / (3.0 if boot else 2.0)
             z = lerp(0.075, top - 0.012, t)
-            yy = lerp(-0.088, -0.05, t)
-            out.append(rod((x - 0.026, yy, z), (x + 0.026, yy, z + 0.006), 0.0045, m["Laces"], 5))
+            yy = lerp(-0.1, -0.056, t)
+            out.append(rod((x - 0.024, yy, z), (x + 0.024, yy, z + 0.006), 0.0042, m["Laces"], 5))
     return out
 
 
@@ -312,7 +312,7 @@ def build_parts(rig, m, proxy):
                 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
                 bpy.ops.object.shade_smooth()
             ob = bc.join(([ob] if ob else []) + list(TRIMS), name)
-        bc.weight_part(ob, mode, proxy)
+        bc.skin_part(ob, mode, proxy)
         # The crowd's copy: the same sculpt at the street part's triangle budget.
         mid = ob.copy()
         mid.data = ob.data.copy()

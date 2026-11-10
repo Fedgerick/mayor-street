@@ -217,6 +217,7 @@ func _start(demo: bool, save := {}) -> void:
 	services.coverage_changed.connect(view.mark_map_dirty)  # power changes light or darken windows
 	if demo and save.is_empty():
 		services.build_demo_services()  # plants, depots, police, fire and parks for the demo
+	city.construction = true  # from here on, what is built goes up over time (ConstructionSites)
 	services_view = ServicesView.new()
 	add_child(services_view)
 	services_view.setup(services)
@@ -864,6 +865,11 @@ func _inspect(c: Vector2i) -> void:
 		var what := "residents" if b.zone == City.Zone.RES else "jobs"
 		t = "%s, stage %d\n%d %s\nLand value %d%%%s" % [City.ZONE_NAMES[b.zone], b.stage, city.capacity(b), what,
 			int(city.land_value[i] * 100.0), "" if b.connected else "\nNo route to jobs/workers!"]
+	elif city.site_at[i] >= 0:
+		var sb: Dictionary = city.sites[city.site_at[i]]
+		var left := (1.0 - float(sb.built)) * float(sb.dur) / 60.0
+		t = "%s\nUnder construction, %d%% built\nAbout %d hours to go" % [
+			sb.get("name", "%s, stage %d" % [City.ZONE_NAMES[sb.zone], sb.stage]), int(float(sb.built) * 100.0), int(ceil(left))]
 	elif city.zone[i] != 0:
 		t += "\n%s zone, %s" % [City.ZONE_NAMES[city.zone[i]], "waiting to grow" if city.road_access_dir(c.x, c.y) >= 0 else "needs a road within 2 tiles"]
 	elif city.land[i] == 0:

@@ -1,6 +1,6 @@
 """Build the street people: one rig, a wardrobe of parts, and the animation set, as glTF.
 
-Run headless (needs the `bpy` pip module, Blender 4.2):
+Run headless (needs the `bpy` pip module, Blender 4.2 or 5.2):
     python3 player/tools/build_character.py
 Writes player/assets/character.glb.
 
@@ -276,31 +276,31 @@ def seg_dist(p, a, b):
 # decimates, weights and makes the LOD.
 
 def torso(b, k=0.0, shoulders=True, narrow=1.0):
-    b.ball((0, 0.0, 1.31), 0.165 + k, (1.24 * narrow, 0.8, 0.95))     # chest
+    b.ball((0, 0.0, 1.31), 0.16 + k, (1.26 * narrow, 0.78, 0.95))     # chest
     b.ball((0, -0.03, 1.285), 0.11 + k, (1.3 * narrow, 0.75, 0.8))     # front of the chest
-    b.ball((0, 0.012, 1.15), 0.15 + k, (1.06, 0.78, 1.0))              # waist
-    b.ball((0, 0.0, 1.02), 0.148 + k, (1.13, 0.8, 0.75))               # hem
+    b.ball((0, 0.012, 1.15), 0.14 + k, (1.04, 0.78, 1.0))              # waist
+    b.ball((0, 0.0, 1.02), 0.142 + k, (1.1, 0.8, 0.75))               # hem
     if shoulders:
-        b.capsule((-0.17, 0.005, 1.385), (0.17, 0.005, 1.385), 0.08 + k)
+        b.capsule((-0.175, 0.005, 1.385), (0.175, 0.005, 1.385), 0.072 + k)
 
 
 def bare_forearm(b, sx, start=0.0):
     sh, el, wr = arm_points(sx)
     if start < 1.0:
-        b.capsule(lerp(sh, el, start), el, 0.05)
-    b.capsule(el, wr, 0.044)
-    b.ball(lerp(el, wr, 0.28), 0.05)
+        b.capsule(lerp(sh, el, start), el, 0.047)
+    b.capsule(el, wr, 0.039)
+    b.ball(lerp(el, wr, 0.26), 0.045)
 
 
 def sleeve(b, sx, upto, r0=0.07, r1=0.06, cuff=0.06):
     """Shoulder cap and a sleeve down the arm; upto <= 1 ends on the upper arm,
     above 1 continues down the forearm (2 = the wrist)."""
     sh, el, wr = arm_points(sx)
-    b.ball(sh, r0 + 0.016)
+    b.ball(sh, r0 + 0.003)
     if upto <= 1.0:
         end = lerp(sh, el, upto)
         b.capsule(sh, end, r0)
-        b.ball(end, r0 + 0.004)
+        b.ball(end, r0 - 0.004)
     else:
         b.capsule(sh, el, r0)
         end = lerp(el, wr, upto - 1.0)
@@ -313,7 +313,7 @@ def top_tee(m):
     torso(sh_)
     sk = Blob()
     for sx in (1, -1):
-        sleeve(sh_, sx, 0.48, r0=0.072)
+        sleeve(sh_, sx, 0.48, r0=0.056)
         bare_forearm(sk, sx, 0.35)
     return [sh_.mesh(m["Shirt"]), sk.mesh(m["Skin"])]
 
@@ -323,26 +323,26 @@ def top_longsleeve(m):
     torso(sh_)
     sk = Blob()
     for sx in (1, -1):
-        sleeve(sh_, sx, 1.9, r0=0.069, r1=0.057, cuff=0.058)
+        sleeve(sh_, sx, 1.9, r0=0.054, r1=0.047, cuff=0.044)
         _, el, wr = arm_points(sx)
-        sk.capsule(lerp(el, wr, 0.8), wr, 0.042)
+        sk.capsule(lerp(el, wr, 0.8), wr, 0.037)
     return [sh_.mesh(m["Shirt"]), sk.mesh(m["Skin"])]
 
 
 def top_hoodie(m):
     h = Blob()
-    torso(h, 0.016)
+    torso(h, 0.008)
     h.ball((0, 0.0, 0.95), 0.152, (1.12, 0.82, 0.35))                   # waistband
-    h.ball((0, -0.12, 1.06), 0.085, (1.35, 0.4, 0.62))                  # front pocket
+    h.ball((0, -0.085, 1.07), 0.085, (1.3, 0.42, 0.6))                  # front pocket
     for i in range(9):                                                  # hood, bunched behind the neck
         a = math.radians(-112 + i * 28)
         h.ball((math.sin(a) * 0.1, math.cos(a) * 0.1 + 0.025, 1.455), 0.05, (1, 1, 0.85))
     h.ball((0, 0.13, 1.42), 0.07, (1.35, 0.7, 0.9))
     sk = Blob()
     for sx in (1, -1):
-        sleeve(h, sx, 1.86, r0=0.077, r1=0.064, cuff=0.062)
+        sleeve(h, sx, 1.86, r0=0.059, r1=0.053, cuff=0.05)
         _, el, wr = arm_points(sx)
-        sk.capsule(lerp(el, wr, 0.8), wr, 0.042)
+        sk.capsule(lerp(el, wr, 0.8), wr, 0.037)
     return [h.mesh(m["Shirt"]), sk.mesh(m["Skin"])]
 
 
@@ -353,17 +353,17 @@ def top_jacket(m):
     for sx in (1, -1):
         j = Blob()   # each half is its own shell, so the front stays open
         j.ball((0.07 * sx, 0.006, 1.31), 0.163, (1.08, 0.84, 0.97))
-        j.ball((0.07 * sx, 0.012, 1.15), 0.152, (0.98, 0.82, 1.0))
-        j.ball((0.07 * sx, 0.004, 1.0), 0.15, (1.02, 0.84, 0.85))
-        j.capsule((0.0, 0.006, 1.388), (0.175 * sx, 0.006, 1.388), 0.088)
+        j.ball((0.07 * sx, 0.012, 1.15), 0.15, (0.98, 0.82, 1.0))
+        j.ball((0.07 * sx, 0.004, 1.0), 0.148, (1.02, 0.84, 0.85))
+        j.capsule((0.0, 0.006, 1.388), (0.178 * sx, 0.006, 1.388), 0.08)
         j.capsule((0.0, 0.075, 1.455), (0.085 * sx, 0.035, 1.45), 0.032)          # collar
         j.ball((0.075 * sx, -0.112, 1.355), 0.05, (0.7, 0.32, 1.25))            # lapel
-        sleeve(j, sx, 1.88, r0=0.078, r1=0.066, cuff=0.064)
+        sleeve(j, sx, 1.88, r0=0.062, r1=0.055, cuff=0.052)
         out.append(j.mesh(m["Jacket"]))
     sk = Blob()
     for sx in (1, -1):
         _, el, wr = arm_points(sx)
-        sk.capsule(lerp(el, wr, 0.8), wr, 0.042)
+        sk.capsule(lerp(el, wr, 0.8), wr, 0.037)
     out.append(sk.mesh(m["Skin"]))
     return out
 
@@ -376,25 +376,25 @@ def top_tank(m):
         t.capsule((0.115 * sx, 0.0, 1.455), (0.1 * sx, 0.075, 1.36), 0.022)
     sk = Blob()
     sk.ball((0, 0.0, 1.355), 0.14, (1.2, 0.72, 0.62))                   # upper chest and back
-    sk.capsule((-0.16, 0.005, 1.385), (0.16, 0.005, 1.385), 0.07)
+    sk.capsule((-0.165, 0.005, 1.385), (0.165, 0.005, 1.385), 0.064)
     for sx in (1, -1):
         sh, el, _ = arm_points(sx)
-        sk.ball(sh, 0.078)
+        sk.ball(sh, 0.066)
         bare_forearm(sk, sx, 0.0)
     return [t.mesh(m["Shirt"]), sk.mesh(m["Skin"])]
 
 
 def pelvis(b, k=0.0):
-    b.ball((0, 0.0, 0.95), 0.15 + k, (1.12, 0.8, 0.72))
+    b.ball((0, 0.0, 0.95), 0.145 + k, (1.12, 0.8, 0.72))
     for sx in (1, -1):
         b.ball((0.06 * sx, 0.035, 0.885), 0.09 + k)
 
 
 def bare_leg(b, sx, start=0.0):
     hip, knee, ankle = leg_points(sx)
-    b.capsule(lerp(hip, knee, start), knee, 0.072)
-    b.capsule(knee, ankle + Vector((0, 0, 0.03)), 0.058)
-    b.ball(lerp(knee, ankle, 0.3) + Vector((0, 0.012, 0)), 0.064)
+    b.capsule(lerp(hip, knee, start), knee, 0.066)
+    b.capsule(knee, ankle + Vector((0, 0, 0.03)), 0.05)
+    b.ball(lerp(knee, ankle, 0.3) + Vector((0, 0.012, 0)), 0.058)
 
 
 def bottom_jeans(m):
@@ -402,10 +402,10 @@ def bottom_jeans(m):
     pelvis(p)
     for sx in (1, -1):
         hip, knee, ankle = leg_points(sx)
-        p.capsule(hip + Vector((0, 0, 0.02)), knee, 0.086)
-        p.ball(lerp(hip, knee, 0.25), 0.094)
-        p.capsule(knee, ankle + Vector((0, 0, 0.05)), 0.071)
-        p.ball(ankle + Vector((0, 0, 0.06)), 0.073, (1, 1, 0.55))
+        p.capsule(hip + Vector((0, 0, 0.02)), knee, 0.079)
+        p.ball(lerp(hip, knee, 0.25), 0.086)
+        p.capsule(knee, ankle + Vector((0, 0, 0.05)), 0.064)
+        p.ball(ankle + Vector((0, 0, 0.06)), 0.066, (1, 1, 0.55))
     return [p.mesh(m["Pants"])]
 
 
@@ -416,8 +416,8 @@ def bottom_shorts(m):
     for sx in (1, -1):
         hip, knee, _ = leg_points(sx)
         end = lerp(hip, knee, 0.62)
-        p.capsule(hip + Vector((0, 0, 0.02)), end, 0.082)
-        p.ball(end, 0.084, (1, 1, 0.55))
+        p.capsule(hip + Vector((0, 0, 0.02)), end, 0.075)
+        p.ball(end, 0.073, (1, 1, 0.55))
         bare_leg(sk, sx, 0.5)
     return [p.mesh(m["Pants"]), sk.mesh(m["Skin"])]
 
@@ -436,12 +436,12 @@ def bottom_skirt(m):
 
 def shoe(b, sx, boot=False):
     x = LEG_X * sx
-    b.capsule((x, 0.035, 0.056), (x, -0.112, 0.05), 0.054)
-    b.ball((x, 0.0, 0.1), 0.058)
-    b.ball((x, -0.04, 0.024), 0.03, (2.15, 3.4, 0.82))                  # sole
+    b.capsule((x, 0.035, 0.054), (x, -0.13, 0.047), 0.05)
+    b.ball((x, 0.0, 0.1), 0.054)
+    b.ball((x, -0.05, 0.024), 0.03, (2.0, 3.9, 0.82))                   # sole
     if boot:
-        b.capsule((x, 0.0, 0.08), (x, 0.004, 0.2), 0.066)
-        b.ball((x, 0.004, 0.205), 0.069, (1, 1, 0.45))
+        b.capsule((x, 0.0, 0.08), (x, 0.004, 0.2), 0.06)
+        b.ball((x, 0.004, 0.205), 0.063, (1, 1, 0.45))
 
 
 def shoes_sneakers(m):
@@ -460,9 +460,9 @@ def shoes_boots(m):
 
 def head(m):
     h = Blob(0.0065)
-    h.capsule((0, 0.008, 1.395), (0, 0.0, 1.56), 0.058)                 # neck
-    h.ball((0, 0.0, 1.665), 0.152, (0.93, 1.0, 1.08))                   # skull
-    h.ball((0, -0.03, 1.6), 0.11, (0.98, 0.95, 0.88))                   # jaw and cheeks
+    h.capsule((0, 0.008, 1.395), (0, 0.0, 1.56), 0.053)                 # neck
+    h.ball((0, 0.0, 1.665), 0.152, (0.91, 1.0, 1.08))                   # skull
+    h.ball((0, -0.03, 1.6), 0.102, (0.98, 0.95, 0.88))                  # jaw and cheeks
     h.ball((0, -0.095, 1.548), 0.04, (1.15, 0.9, 0.8))                  # chin
     h.capsule((-0.07, -0.116, 1.716), (0.07, -0.116, 1.716), 0.013)    # brow ridge
     h.capsule((0, -0.14, 1.69), (0, -0.166, 1.632), 0.014)              # nose
@@ -470,7 +470,7 @@ def head(m):
     h.capsule((-0.023, -0.142, 1.597), (0.023, -0.142, 1.597), 0.01)    # upper lip
     for sx in (-1, 1):
         h.ball((0.016 * sx, -0.157, 1.622), 0.012)                      # nostrils
-        h.ball((0.062 * sx, -0.094, 1.602), 0.04)                       # cheeks
+        h.ball((0.06 * sx, -0.094, 1.602), 0.034)                       # cheeks
         h.ball((0.146 * sx, 0.005, 1.66), 0.036, (0.42, 0.85, 1.25))    # ears
         h.ball((0.053 * sx, -0.127, 1.693), 0.022, (1.1, 0.7, 0.42))    # upper lids
     out = [h.mesh(m["Skin"])]
@@ -528,7 +528,7 @@ def hands_mitten(m):
 
 
 def hair_cap(b, k=0.0, top=1.0):
-    b.ball((0, 0.03, 1.725), 0.165 + k, (1.0, 1.04, 0.82 * top))
+    b.ball((0, 0.05, 1.75), 0.165 + k, (1.0, 1.04, 0.82 * top))
     b.ball((0, 0.06, 1.66), 0.15 + k, (0.98, 0.93, 0.95))
     for sx in (-1, 1):
         b.ball((0.112 * sx, 0.012, 1.712), 0.06 + k, (0.7, 1.15, 1.0))
@@ -540,7 +540,7 @@ def hair_short(m):
     for p in [(0, -0.095, 1.8), (-0.06, -0.085, 1.79), (0.062, -0.08, 1.795), (0.03, -0.035, 1.852),
               (-0.042, 0.0, 1.855), (0.075, 0.03, 1.83), (-0.085, 0.04, 1.82), (0.0, 0.08, 1.83)]:
         b.ball(p, 0.045)
-    b.ball((0.02, -0.118, 1.772), 0.048, (1.45, 0.62, 0.55))             # fringe
+    b.ball((0.02, -0.11, 1.788), 0.046, (1.45, 0.62, 0.5))              # fringe
     return [b.mesh(m["Hair"])]
 
 
@@ -855,6 +855,29 @@ def weight_part(ob, mode, proxy):
         set_weights(ob, fn)
 
 
+# The head is sculpted at the size the face landmarks were laid out for, then every part
+# on the head (face, hair, hats, glasses) shrinks toward the top of the neck: about six
+# and a half heads tall instead of five and a half. The blend follows the neck-to-head
+# weights, so the neck tapers into it. The hero shaders undo this to find their
+# landmarks (hero_common.gdshaderinc, head_space).
+HEAD_SCALE = 0.86
+HEAD_PIVOT = Vector((0.0, 0.0, 1.53))
+
+
+def shrink_head(ob):
+    for v in ob.data.vertices:
+        k = smooth((v.co.z - 1.47) / 0.08)
+        if k > 0.0:
+            v.co = v.co.lerp(HEAD_PIVOT + (v.co - HEAD_PIVOT) * HEAD_SCALE, k)
+    ob.data.update()
+
+
+def skin_part(ob, mode, proxy):
+    weight_part(ob, mode, proxy)
+    if mode in ("head", "hair"):
+        shrink_head(ob)
+
+
 def bind(ob, rig):
     ob.parent = rig
     mod = ob.modifiers.new("Armature", "ARMATURE")
@@ -865,10 +888,10 @@ def build_wardrobe(rig, m, proxy):
     parts = []
     for name, builder, target, mode in WARDROBE:
         ob = finish(join(builder(m), name), target)
-        weight_part(ob, mode, proxy)
+        skin_part(ob, mode, proxy)
         if name == "Hands":
             low = finish(join(hands_mitten(m), name + "_lod1"), max(int(target * LOD1), 60))
-            weight_part(low, mode, proxy)
+            skin_part(low, mode, proxy)
         else:
             low = ob.copy()
             low.data = ob.data.copy()
@@ -882,7 +905,7 @@ def build_wardrobe(rig, m, proxy):
                 RES_SCALE[0] = 2.5
                 low = finish(join(builder(m), name + "_lod1"), want)
                 RES_SCALE[0] = 1.0
-                weight_part(low, mode, proxy)
+                skin_part(low, mode, proxy)
         for o in (ob, low):
             bind(o, rig)
             parts.append(o)
@@ -1009,6 +1032,18 @@ def relaxed(p, sway=0.0):
     return p
 
 
+def action_fcurves(act):
+    """The action's curves on Blender 4.2 (act.fcurves) and 5.x (layers, strips, channel bags)."""
+    if hasattr(act, "fcurves"):
+        return list(act.fcurves)
+    out = []
+    for layer in act.layers:
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                out.extend(bag.fcurves)
+    return out
+
+
 def make_action(rig, name, frames, fn, loop=True):
     act = bpy.data.actions.new(name)
     rig.animation_data_create()
@@ -1023,7 +1058,7 @@ def make_action(rig, name, frames, fn, loop=True):
         key_pose(rig, f, pose, off)
     act.use_fake_user = True
     # Linear-ish keys are fine at 30 fps sampling; make loops seamless.
-    for fc in act.fcurves:
+    for fc in action_fcurves(act):
         for kp in fc.keyframe_points:
             kp.interpolation = "LINEAR"
     track = rig.animation_data.nla_tracks.new()
