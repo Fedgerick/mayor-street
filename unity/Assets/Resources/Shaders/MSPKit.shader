@@ -236,10 +236,11 @@ Shader "MSP/Kit"
             float3 window_glass(float2 uv, float2 uv2, float3 n, float3 p_obj, float3 view, float seed, float wl, float nt,
                                 out float3 emit_out, out float tall_k, out float clear_k)
             {
-                // glTF UVs have v down from the top; Godot flips them on import, Unity (glTFast) keeps
-                // them the same way Godot shows them, so msp's 1 - v reads the same here.
-                float2 pane = float2(uv.x, 1.0 - uv.y);
-                float2 size = float2(uv2.x, 1.0 - uv2.y);
+                // Godot keeps glTF's v (down from the top) and msp reads 1 - v; glTFast already
+                // imports v as 1 - v (Unity's v runs up), so msp's 1 - v is plain uv.y here.
+                // (Flipping again made size.y negative: every pane hit is_rail(), flat and unlit.)
+                float2 pane = uv;
+                float2 size = uv2;
                 tall_k = 0.0;
                 clear_k = 0.0;
                 if (is_rail(size)) { emit_out = 0; return RAIL_GLASS; }
@@ -292,14 +293,14 @@ Shader "MSP/Kit"
 
             float3 window_flat(float2 uv, float2 uv2, float3 n, float3 p_obj, float seed, float wl, float nt, out float3 emit_out)
             {
-                float2 pane = float2(uv.x, 1.0 - uv.y);
-                if (is_rail(float2(uv2.x, 1.0 - uv2.y))) { emit_out = 0; return RAIL_GLASS; }
+                float2 pane = uv; // msp's (u, 1 - v): glTFast already flipped v (see window_glass)
+                if (is_rail(uv2)) { emit_out = 0; return RAIL_GLASS; }
                 float3 t = abs(n.y) > 0.99 ? float3(1, 0, 0) : normalize(cross(-n, float3(0, 1, 0)));
                 float3 b = normalize(cross(n, t));
                 float rid = pane_id(pane, p_obj, t, b, seed);
                 float lit = step(hash12(float2(rid, 9.1)), wl);
                 float3 lamp = float3(1.0, 0.72, 0.45) * (0.75 + 0.5 * hash12(float2(rid, 6.6)));
-                float ceiling = 0.6 + 0.4 * smoothstep(0.2, 1.0, pane.y / max(1.0 - uv2.y, 0.5));
+                float ceiling = 0.6 + 0.4 * smoothstep(0.2, 1.0, pane.y / max(uv2.y, 0.5));
                 emit_out = lamp * lit * nt * ceiling + float3(0.03, 0.04, 0.05) * (1.0 - nt);
                 return float3(0.03, 0.03, 0.03);
             }
