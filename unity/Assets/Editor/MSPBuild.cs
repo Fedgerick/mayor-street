@@ -24,8 +24,12 @@ namespace MSP.EditorTools
         [MenuItem("MSP/Setup project")]
         public static void Setup()
         {
-            CopyKit();
+            // URP first: glTFast picks its shaders from the active pipeline when it imports a
+            // .glb, so a kit imported before the URP asset is set gets built-in shaders that URP
+            // only draws in the shadow pass (invisible buildings with shadows).
             MakeUrp();
+            CopyKit();
+            ReimportKitIfBuiltIn();
             MakeTemplateMaterials();
             PlayerSetup();
             MakeScene();
@@ -76,6 +80,22 @@ namespace MSP.EditorTools
             }
             AssetDatabase.Refresh();
             Debug.Log($"[MSP] kit: {n} .glb copied");
+        }
+
+        /// <summary>Reimports Assets/Resources/Kit when its models carry glTFast's built-in RP
+        /// shaders (they were imported before URP was the active pipeline).</summary>
+        static void ReimportKitIfBuiltIn()
+        {
+            const string kit = "Assets/Resources/Kit";
+            if (!AssetDatabase.IsValidFolder(kit)) return;
+            string[] guids = AssetDatabase.FindAssets("t:GameObject", new[] { kit });
+            if (guids.Length == 0) return;
+            var go = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guids[0]));
+            var r = go != null ? go.GetComponentInChildren<Renderer>() : null;
+            var sh = r != null && r.sharedMaterial != null ? r.sharedMaterial.shader : null;
+            if (sh == null || !sh.name.StartsWith("glTF/")) return;
+            Debug.Log($"[MSP] kit was imported with built-in shader {sh.name}; reimporting for URP");
+            AssetDatabase.ImportAsset(kit, ImportAssetOptions.ImportRecursive | ImportAssetOptions.ForceUpdate);
         }
 
         static void MakeUrp()
