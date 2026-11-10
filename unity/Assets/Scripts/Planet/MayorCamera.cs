@@ -32,6 +32,8 @@ namespace MSP
 
         /// <summary>The camera's eye in Godot space.</summary>
         public Vector3 Eye => G.FromU(transform.position);
+        /// <summary>The camera as a Godot-space transform (-Z forward), as Apply() last placed it.</summary>
+        public GXform GodotXf = GXform.Identity;
 
         void Awake()
         {
@@ -214,8 +216,9 @@ namespace MSP
                 eye = focus + offset;
                 up = Vector3.up;
             }
+            GodotXf = new GXform(GBasis.LookingAt(target - eye, up), eye);
             transform.position = G.U(eye);
-            transform.rotation = G.CameraRot(GBasis.LookingAt(target - eye, up));
+            transform.rotation = G.CameraRot(GodotXf.basis);
             Moved?.Invoke(dist);
         }
     }

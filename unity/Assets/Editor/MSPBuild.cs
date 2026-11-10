@@ -29,6 +29,7 @@ namespace MSP.EditorTools
             // only draws in the shadow pass (invisible buildings with shadows).
             MakeUrp();
             CopyKit();
+            CopyCharacters();
             ReimportKitIfBuiltIn();
             KitBaker.Bake();
             MakeTemplateMaterials();
@@ -55,6 +56,57 @@ namespace MSP.EditorTools
             Debug.Log($"[MSP] build {r.summary.result}: {r.summary.totalErrors} errors, {r.summary.totalSize / 1e6:F1} MB -> {outDir}");
             if (Application.isBatchMode)
                 EditorApplication.Exit(r.summary.result == BuildResult.Succeeded ? 0 : 1);
+        }
+
+        /// <summary>msp's street person (../player/assets/character.glb) -> Assets/Resources/Characters,
+        /// imported with legacy animation clips (CharacterModel blends them on an Animation component).</summary>
+        static void CopyCharacters()
+        {
+            string src = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "player", "assets", "character.glb"));
+            string dstDir = Path.Combine(Application.dataPath, "Resources", "Characters");
+            const string asset = "Assets/Resources/Characters/character.glb";
+            if (!File.Exists(src))
+            {
+                Debug.LogWarning("[MSP] no msp character at " + src);
+                return;
+            }
+            Directory.CreateDirectory(dstDir);
+            string to = Path.Combine(dstDir, "character.glb");
+            if (!File.Exists(to) || File.GetLastWriteTimeUtc(to) < File.GetLastWriteTimeUtc(src))
+            {
+                File.Copy(src, to, true);
+                AssetDatabase.ImportAsset(asset, ImportAssetOptions.ForceUpdate);
+            }
+            SetLegacyAnimation(asset);
+        }
+
+        /// <summary>glTFast's importer setting for animation clips, set to Legacy by reflection (so this
+        /// file doesn't need glTFast's editor assembly to compile). Reimports when it changed.</summary>
+        static void SetLegacyAnimation(string path)
+        {
+            var imp = AssetImporter.GetAtPath(path);
+            if (imp == null) { Debug.LogWarning("[MSP] no importer for " + path); return; }
+            const System.Reflection.BindingFlags F = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+            object settings = null;
+            System.Reflection.FieldInfo holder = null;
+            foreach (var name in new[] { "importSettings", "editorImportSettings", "m_ImportSettings" })
+            {
+                holder = imp.GetType().GetField(name, F);
+                if (holder != null) { settings = holder.GetValue(imp); break; }
+            }
+            if (settings == null) { Debug.LogWarning($"[MSP] {imp.GetType().Name} has no import settings field; check the character's animation import by hand"); return; }
+            var field = settings.GetType().GetField("animationMethod", F);
+            var prop = field == null ? settings.GetType().GetProperty("AnimationMethod", F) : null;
+            System.Type et = field != null ? field.FieldType : prop?.PropertyType;
+            if (et == null || !et.IsEnum) { Debug.LogWarning("[MSP] glTFast import settings have no animationMethod"); return; }
+            object legacy = System.Enum.Parse(et, "Legacy");
+            object now = field != null ? field.GetValue(settings) : prop.GetValue(settings);
+            if (Equals(now, legacy)) return;
+            if (field != null) field.SetValue(settings, legacy); else prop.SetValue(settings, legacy);
+            if (settings.GetType().IsValueType) holder.SetValue(imp, settings);
+            EditorUtility.SetDirty(imp);
+            imp.SaveAndReimport();
+            Debug.Log($"[MSP] {path}: animation import set to Legacy (was {now})");
         }
 
         /// <summary>msp's kit (../assets/kit/**.glb) -> Assets/Resources/Kit, keeping the folders.</summary>

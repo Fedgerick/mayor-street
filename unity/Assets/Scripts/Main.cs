@@ -11,9 +11,11 @@
 //   --screenshot=path.png            render, save, quit
 //   --nohud                          hide the HUD
 //   --overlay=power                  start with a service overlay on
+//   --street                         dive to street level at the camera focus right away
 // Keys: 1-6 tools (inspect, road, R, C, I zones, bulldoze), 7 or B the build menu, Space
 // pause, comma and full stop slower and faster, N skip 10 game minutes, O overlays (zones,
-// traffic, land value), [ and ] an hour back or on. Left-drag uses the tool.
+// traffic, land value), [ and ] an hour back or on. Left-drag uses the tool. Tab: down to the
+// street and back up (WASD walk, Shift sprint, Space jump, mouse look, Esc frees the mouse).
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -26,6 +28,7 @@ namespace MSP
         public const int PLANET_ROWS = 36;
         static readonly float[] SPEED_VALUES = { 0f, 1f, 3f, 10f };
         static readonly float[] PLANET_MAYOR_DETAIL = { 400f, 600f, 1000f };
+        static readonly float[] PLANET_STREET_DETAIL = { 130f, 180f, 400f };  // past ~180 m the curve hides all but tall buildings
 
         public enum Tool { INSPECT, ROAD, RES, COM, IND, BULLDOZE, BUILD }
 
@@ -35,6 +38,9 @@ namespace MSP
         public CityServices services;  // power, parks, garbage, police, fire
         public ServicesView servicesView;
         ServicesPanel servicesPanel;
+        public StreetMode street;
+        int _speedBeforeStreet = 1;
+        bool InStreet => street != null && (street.active || street.busy);
         Tool tool = Tool.INSPECT;
         string buildKind = "";
         bool dragging;
@@ -111,6 +117,11 @@ namespace MSP
             servicesPanel.transform.SetParent(transform);
             servicesPanel.Setup(hud.root, services);
             servicesPanel.OverlaySelected += OnServiceOverlay;
+            street = new GameObject("StreetMode").AddComponent<StreetMode>();
+            street.transform.SetParent(transform);
+            street.Setup(city, cam.cam, null);
+            street.StreetEntered += OnStreetEntered;
+            street.StreetExited += OnStreetExited;
             Progress.I.Started();
             SetTool(Tool.INSPECT);
             SetSpeed(1);
@@ -124,6 +135,7 @@ namespace MSP
                 int oi = System.Array.FindIndex(CityServices.OVERLAY_NAMES, n => n.ToLowerInvariant() == Args.Get("overlay").ToLowerInvariant());
                 if (oi > 0) { servicesPanel.SetOverlay((CityServices.Overlay)oi); OnServiceOverlay((CityServices.Overlay)oi); }
             }
+            if (Args.Has("street")) GoStreet();
             if (Args.Has("screenshot"))
             {
                 cam.inputEnabled = false;
@@ -135,6 +147,17 @@ namespace MSP
         void Update()
         {
             if (hud == null) return;
+            if (StreetInput.ToggleViewPressed && !Args.Has("screenshot"))
+            {
+                if (InStreet) GoMayor();
+                else GoStreet();
+            }
+            if (InStreet)
+            {
+                city.Advance(Time.deltaTime, SPEED_VALUES[speedIndex]);
+                services.Update();
+                return;
+            }
             if (Input.GetKeyDown(KeyCode.Space)) SetSpeed(speedIndex == 0 ? 1 : 0);
             if (Input.GetKeyDown(KeyCode.Comma)) SetSpeed(Mathf.Max(speedIndex - 1, 0));
             if (Input.GetKeyDown(KeyCode.Period)) SetSpeed(Mathf.Min(speedIndex + 1, 3));
@@ -151,6 +174,58 @@ namespace MSP
             city.Advance(Time.deltaTime, SPEED_VALUES[speedIndex]);
             services.Update();
             if ((int)(city.minutes / 60.0) != hourBefore) view.MarkMapDirty();
+        }
+
+        // ------------------------------------------------------------ street level ---
+
+        /// <summary>Dive from the mayor view to a character on the sidewalk under the camera focus.</summary>
+        void GoStreet()
+        {
+            if (InStreet) return;
+            SetTool(Tool.INSPECT);
+            hud.ShowTip(Vector2.zero, "");
+            hud.CloseBuildMenu();
+            hud.gameObject.SetActive(false);
+            // The design keeps the street at 1x; the mayor speed comes back on the way up.
+            _speedBeforeStreet = speedIndex;
+            SetSpeed(1);
+            cam.enabled = false;
+            street.EnterStreet(cam.GodotXf, cam.cam.fieldOfView, Planet.Place(cam.focus));
+        }
+
+        void GoMayor()
+        {
+            if (street == null || !street.active || street.busy || !street.CanExit()) return;
+            // Frame the mayor view on where the player ended up, looking the same way.
+            var f = Planet.Flat(street.FocusPoint());
+            var keep = cam.cam.transform.position;
+            var keepRot = cam.cam.transform.rotation;
+            cam.SetView(new Vector3(f.x, 0f, f.z), 140f, street.ViewYaw());
+            cam.cam.transform.SetPositionAndRotation(keep, keepRot);  // the street camera flies there itself
+            street.ExitStreet(cam.GodotXf, 45f);
+        }
+
+        void OnStreetEntered()
+        {
+            dayNight.SetViewDistance(30f);
+            dayNight.SetStreetView(true);
+            view.SetDetailDistance(PLANET_STREET_DETAIL[quality]);
+            dayNight.exposureScale = 1.25f;
+            dayNight.ambientScale = 1.4f;
+        }
+
+        void OnStreetExited()
+        {
+            cam.enabled = true;
+            cam.Apply();
+            cam.cam.fieldOfView = 45f;
+            dayNight.SetViewDistance(cam.dist);
+            dayNight.SetStreetView(false);
+            view.SetDetailDistance(PLANET_MAYOR_DETAIL[quality]);
+            dayNight.exposureScale = 1f;
+            dayNight.ambientScale = 1f;
+            if (!Args.Has("nohud")) hud.gameObject.SetActive(true);
+            SetSpeed(_speedBeforeStreet);
         }
 
         void SetOverlay(int o)
@@ -187,7 +262,7 @@ namespace MSP
             quality = q;
             hud.SetQuality(q);
             dayNight.ApplyQuality(q, cam.cam);
-            view.SetDetailDistance(PLANET_MAYOR_DETAIL[q]);
+            view.SetDetailDistance((InStreet ? PLANET_STREET_DETAIL : PLANET_MAYOR_DETAIL)[q]);
             Shader.SetGlobalFloat("gfx_quality", q);
         }
 
@@ -412,14 +487,26 @@ namespace MSP
         {
             // as main.gd _follow_planet_sky: the sky follows the mayor focus round the ball
             Vector3 where = Planet.Warp(cam.focus);
+            Vector3 eye = cam.Eye;
+            if (InStreet)
+            {
+                where = street.player.Position;
+                eye = G.FromU(cam.cam.transform.position);
+            }
             float clock = (float)city.TimeOfDay();
             dayNight.UpdateTime(PlanetSky.LocalHour(clock, where), city.GameDay());
-            planetSky.Follow(where, cam.Eye, clock);
+            planetSky.Follow(where, eye, clock);
         }
 
         IEnumerator Screenshot(string path)
         {
             for (int i = 0; i < 20; i++) yield return null;
+            if (Args.Has("street"))
+            {
+                while (!street.active) yield return null;   // the dive takes a few seconds
+                SetSpeed(0);
+                for (int i = 0; i < 30; i++) yield return null;
+            }
             float t = Time.realtimeSinceStartup;
             for (int i = 0; i < 60; i++) yield return null;
             Debug.Log($"[MSP] frame time {(Time.realtimeSinceStartup - t) / 60f * 1000f:F1} ms over 60 frames");
