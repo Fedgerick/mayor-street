@@ -1,0 +1,118 @@
+[
+ {
+  "name": "globe_day",
+  "secs": 12.2
+ },
+ {
+  "name": "globe_dusk",
+  "secs": 10.61
+ },
+ {
+  "name": "globe_night",
+  "secs": 10.61
+ },
+ {
+  "name": "descent",
+  "secs": 12.2
+ },
+ {
+  "name": "downtown_orbit",
+  "secs": 12.2
+ },
+ {
+  "name": "avenue_flyover",
+  "secs": 10.61
+ },
+ {
+  "name": "construction_wide",
+  "secs": 13.79
+ },
+ {
+  "name": "construction_close",
+  "secs": 12.2
+ },
+ {
+  "name": "day_to_night",
+  "secs": 13.79
+ },
+ {
+  "name": "night_orbit",
+  "secs": 10.61
+ },
+ {
+  "name": "night_low",
+  "secs": 9.02
+ },
+ {
+  "name": "ice_cap",
+  "secs": 10.61
+ },
+ {
+  "name": "belt",
+  "secs": 10.61
+ },
+ {
+  "name": "golden_city",
+  "secs": 10.61
+ },
+ {
+  "name": "rain_city",
+  "secs": 10.61
+ },
+ {
+  "name": "fog_morning",
+  "secs": 9.02
+ },
+ {
+  "name": "dive",
+  "secs": 3.03
+ },
+ {
+  "name": "walk_follow",
+  "secs": 12.2
+ },
+ {
+  "name": "hero_front",
+  "secs": 9.02
+ },
+ {
+  "name": "crowd_corner",
+  "secs": 10.61
+ },
+ {
+  "name": "traffic",
+  "secs": 10.61
+ },
+ {
+  "name": "drive_follow",
+  "secs": 12.99
+ },
+ {
+  "name": "drive_side",
+  "secs": 9.02
+ },
+ {
+  "name": "chase",
+  "secs": 15.38
+ },
+ {
+  "name": "chase_front",
+  "secs": 10.61
+ },
+ {
+  "name": "golden_drive",
+  "secs": 10.61
+ },
+ {
+  "name": "night_drive",
+  "secs": 10.61
+ },
+ {
+  "name": "night_rain_walk",
+  "secs": 12.2
+ },
+ {
+  "name": "rise",
+  "secs": 10.61
+ }
+]

@@ -1,0 +1,11 @@
+# Cuts out\broll.avi into the b-roll videos. Run from C:\Users\russe\projects\msp-broll:
+#   powershell -ExecutionPolicy Bypass -File repo\capture\edit.ps1
+$ff = '.\ffmpeg\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe'
+$enc = @('-c:v','libx264','-preset','slow','-crf','18','-maxrate','12M','-bufsize','24M','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart')
+Write-Host '1/3  The 5 minute edit'
+& $ff -y '-ss' '2.194' '-t' '12.199' '-i' 'out\broll.avi' '-ss' '17.383' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '30.717' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '44.194' '-t' '12.199' '-i' 'out\broll.avi' '-ss' '58.994' '-t' '12.199' '-i' 'out\broll.avi' '-ss' '73.650' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '86.937' '-t' '13.789' '-i' 'out\broll.avi' '-ss' '103.794' '-t' '12.199' '-i' 'out\broll.avi' '-ss' '119.270' '-t' '13.789' '-i' 'out\broll.avi' '-ss' '136.317' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '149.173' '-t' '9.020' '-i' 'out\broll.avi' '-ss' '160.650' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '173.650' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '186.983' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '200.983' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '214.840' '-t' '9.020' '-i' 'out\broll.avi' '-ss' '225.233' '-t' '3.033' '-i' 'out\broll.avi' '-ss' '229.327' '-t' '12.199' '-i' 'out\broll.avi' '-ss' '243.373' '-t' '9.020' '-i' 'out\broll.avi' '-ss' '255.517' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '269.517' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '283.899' '-t' '12.994' '-i' 'out\broll.avi' '-ss' '298.706' '-t' '9.020' '-i' 'out\broll.avi' '-ss' '313.281' '-t' '15.379' '-i' 'out\broll.avi' '-ss' '330.850' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '347.183' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '361.183' '-t' '10.610' '-i' 'out\broll.avi' '-ss' '376.827' '-t' '12.199' '-i' 'out\broll.avi' '-ss' '394.317' '-t' '10.610' '-i' 'out\broll.avi' -/filter_complex 'repo\capture\edit_filter.txt' -map '[vout]' -map '[aout]' @enc -t 300 'out\MayorStreetPlanet-broll-5min.mp4'
+Write-Host '2/3  Every shot, full length'
+& $ff -y -i 'out\broll.avi' @enc 'out\MayorStreetPlanet-broll-all-shots.mp4'
+Write-Host '3/3  Contact sheet'
+& $ff -y -i 'out\MayorStreetPlanet-broll-5min.mp4' -vf 'fps=1/10,scale=480:-1,tile=6x5' -frames:v 1 'out\contact-sheet.png'
+Write-Host 'Done. Files are in out\'
